@@ -32,4 +32,11 @@ venv\Scripts\python.exe client.py
 - I frammenti malformati vengono saltati senza interrompere il programma.
 - La codifica è forzata a UTF-8: per `text/event-stream` `requests` assume ISO-8859-1
   e storpierebbe le lettere accentate.
-- Con `STREAM = False` (valore attuale) il testo compare tutto insieme.
+- Con `STREAM = False` il testo compare tutto insieme.
+
+## Estensione 3: chat interattiva
+
+- `client.py` ora è un ciclo `while`: scrivi una domanda qualsiasi e la risposta arriva
+  in streaming, parola per parola (`STREAM = True`).
+- La cronologia è mantenuta, quindi il modello ricorda i messaggi precedenti.
+- Per uscire: scrivi `esci` oppure premi `Ctrl+C` (anche durante la risposta).

@@ -22,6 +22,8 @@
 - Streaming: chunk malformati saltati; `resp.encoding = "utf-8"` perché requests
   decodifica `text/event-stream` come ISO-8859-1 e storpia gli accenti. `STREAM = False`
   di default (a `True` la risposta arriva in streaming).
+- Chat interattiva: ciclo `while` in `__main__` con cronologia dei messaggi, streaming attivo
+  (`STREAM = True`); si esce con `esci` o Ctrl+C (`chat()` rilancia il `KeyboardInterrupt`).
 - Compilato `requirements.txt` (`requests`, `python-dotenv`; le altre librerie sono standard library).
 
 ## Note
