@@ -12,6 +12,11 @@
   Con `MAX_TOKENS = 180` i token finivano nel ragionamento (`finish_reason: length`).
   Ora `MAX_TOKENS = 1024`, e se la risposta è comunque vuota il client distingue
   "token esauriti nel ragionamento" da "risposta vuota"; segnala anche la troncatura.
+- Corretto il caso "nessuna risposta visibile" nel terminale PowerShell: lo spinner
+  "Elaborazione in corso" (thread + `\r`) cancellava l'etichetta e la risposta.
+  Rimossi spinner e thread (`threading`, `time`); ora una riga fissa di attesa e poi
+  la risposta in streaming, con gestione di Ctrl-C. Gemma impiega 10-15 s a ragionare
+  prima di rispondere: in quel tempo non appare nulla, è normale.
 - Compilato `requirements.txt` (`requests`; le altre librerie sono standard library).
 
 ## Note

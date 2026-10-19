@@ -1,7 +1,5 @@
 import json
 import sys
-import threading
-import time
 
 import requests
 
@@ -31,31 +29,11 @@ def chat(messages: list[dict]) -> str:
         "stream": STREAM,
     }
 
-    stop = threading.Event()
-    start = time.time()
-
-    def status() -> None:
-        while not stop.wait(0.5):
-            print(
-                f"\rElaborazione in corso ({time.time() - start:.0f}s)",
-                end="",
-                flush=True,
-            )
-
-    worker = threading.Thread(target=status, daemon=True)
-    worker.start()
-
-    def clear() -> None:
-        stop.set()
-        worker.join(1)
-        print("\r" + " " * 45 + "\r", end="", flush=True)
-
     try:
         with requests.post(BASE_URL, json=payload, stream=True, timeout=300) as resp:
             resp.raise_for_status()
 
             if not STREAM:
-                clear()
                 choice = resp.json()["choices"][0]
                 content = choice["message"].get("content") or ""
                 reasoning = choice["message"].get("reasoning_content")
@@ -84,11 +62,8 @@ def chat(messages: list[dict]) -> str:
                     reasoned = True
                 content = delta.get("content")
                 if content:
-                    if not full:
-                        clear()
                     full.append(content)
                     print(content, end="", flush=True)
-            clear()
             if not full and reasoned:
                 print(EMPTY_REASONING_MSG, end="")
             elif not full:
@@ -97,8 +72,9 @@ def chat(messages: list[dict]) -> str:
                 print("(risposta troncata: aumenta MAX_TOKENS)", end="")
             print()
             return "".join(full)
-    finally:
-        stop.set()
+    except KeyboardInterrupt:
+        print("\n(interrotto)")
+        return ""
 
 
 if __name__ == "__main__":
@@ -107,7 +83,7 @@ if __name__ == "__main__":
         {"role": "user", "content": PROMPT},
     ]
     print(f"Domanda: {PROMPT}")
-    print("Assistente:", end=" ", flush=True)
+    print("Assistente (in attesa del modello, puo' richiedere qualche secondo)...")
     try:
         chat(messages)
     except requests.RequestException as e:
