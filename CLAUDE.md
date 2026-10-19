@@ -19,6 +19,9 @@
   prima di rispondere: in quel tempo non appare nulla, è normale.
 - `BASE_URL` e `MODEL` spostati da `client.py` a `.env` (caricato con `python-dotenv`);
   `.env.example` ne contiene un modello da copiare.
+- Streaming: chunk malformati saltati; `resp.encoding = "utf-8"` perché requests
+  decodifica `text/event-stream` come ISO-8859-1 e storpia gli accenti. `STREAM = False`
+  di default (a `True` la risposta arriva in streaming).
 - Compilato `requirements.txt` (`requests`, `python-dotenv`; le altre librerie sono standard library).
 
 ## Note
