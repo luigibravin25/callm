@@ -12,5 +12,4 @@ env/
 __pycache__/
 *.pyc
 
-requirements.txt
 CLAUDE.md

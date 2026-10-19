@@ -14,7 +14,7 @@ venv\Scripts\python.exe client.py
 
 - `client.py` invia a `BASE_URL` una richiesta `POST` con system prompt e prompt
   (`model`, `messages`, `temperature`, `max_tokens`) usando `requests`.
-- La risposta arriva in un unico JSON e il testo viene stampato a terminale.
+- Con `STREAM = False` la risposta arriva in un unico JSON e il testo viene stampato a terminale.
 - Gli errori di rete o del server (server spento, timeout, 404, 500) sono catturati
   e mostrati come `Errore: ...`.
 - Se il modello esaurisce i token ragionando, o la risposta è troncata, il client lo segnala
