@@ -1,8 +1,14 @@
 import json
+import sys
 import threading
 import time
 
 import requests
+
+try:
+    sys.stdout.reconfigure(errors="replace")
+except Exception:
+    pass
 
 BASE_URL = "http://127.0.0.1:1234/v1/chat/completions"
 MODEL = "google/gemma-4-e2b"
@@ -10,7 +16,10 @@ TEMPERATURE = 0.2
 MAX_TOKENS = 1024
 STREAM = True
 SYSTEM_PROMPT = "Sei un assistente utile."
-PROMPT = "Ciao, presentati in una frase."
+PROMPT = "Ciao"
+EMPTY_REASONING_MSG = (
+    "(risposta vuota: i token sono finiti nel ragionamento, aumenta MAX_TOKENS)"
+)
 
 
 def chat(messages: list[dict]) -> str:
@@ -47,11 +56,19 @@ def chat(messages: list[dict]) -> str:
 
             if not STREAM:
                 clear()
-                content = resp.json()["choices"][0]["message"].get("content") or ""
+                choice = resp.json()["choices"][0]
+                content = choice["message"].get("content") or ""
+                reasoning = choice["message"].get("reasoning_content")
                 print(content)
+                if not content and reasoning:
+                    print(EMPTY_REASONING_MSG)
+                elif choice.get("finish_reason") == "length":
+                    print("(risposta troncata: aumenta MAX_TOKENS)")
                 return content
 
             full = []
+            reasoned = False
+            finish_reason = None
             for line in resp.iter_lines(decode_unicode=True):
                 if not line or not line.startswith("data: "):
                     continue
@@ -59,7 +76,12 @@ def chat(messages: list[dict]) -> str:
                 if raw == "[DONE]":
                     break
                 chunk = json.loads(raw)
-                delta = chunk["choices"][0].get("delta", {})
+                choice = chunk["choices"][0]
+                if choice.get("finish_reason"):
+                    finish_reason = choice["finish_reason"]
+                delta = choice.get("delta", {})
+                if delta.get("reasoning_content"):
+                    reasoned = True
                 content = delta.get("content")
                 if content:
                     if not full:
@@ -67,8 +89,12 @@ def chat(messages: list[dict]) -> str:
                     full.append(content)
                     print(content, end="", flush=True)
             clear()
-            if not full:
+            if not full and reasoned:
+                print(EMPTY_REASONING_MSG, end="")
+            elif not full:
                 print("(risposta vuota dal modello)", end="")
+            elif finish_reason == "length":
+                print("(risposta troncata: aumenta MAX_TOKENS)", end="")
             print()
             return "".join(full)
     finally:
