@@ -1,15 +1,19 @@
 import json
+import os
 import sys
 
 import requests
+from dotenv import load_dotenv
 
 try:
     sys.stdout.reconfigure(errors="replace")
 except Exception:
     pass
 
-BASE_URL = "http://127.0.0.1:1234/v1/chat/completions"
-MODEL = "google/gemma-4-e2b"
+load_dotenv()
+
+BASE_URL = os.environ["BASE_URL"]
+MODEL = os.environ["MODEL"]
 TEMPERATURE = 0.2
 MAX_TOKENS = 1024
 STREAM = True

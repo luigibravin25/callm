@@ -17,7 +17,9 @@
   Rimossi spinner e thread (`threading`, `time`); ora una riga fissa di attesa e poi
   la risposta in streaming, con gestione di Ctrl-C. Gemma impiega 10-15 s a ragionare
   prima di rispondere: in quel tempo non appare nulla, è normale.
-- Compilato `requirements.txt` (`requests`; le altre librerie sono standard library).
+- `BASE_URL` e `MODEL` spostati da `client.py` a `.env` (caricato con `python-dotenv`);
+  `.env.example` ne contiene un modello da copiare.
+- Compilato `requirements.txt` (`requests`, `python-dotenv`; le altre librerie sono standard library).
 
 ## Note
 - Eseguire con l'ambiente virtuale: `venv\Scripts\python.exe client.py`.
