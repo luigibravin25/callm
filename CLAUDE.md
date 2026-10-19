@@ -10,7 +10,7 @@
 - Corretto l'output "risposta vuota dal modello": Gemma ragiona prima di rispondere
   e il server restituisce `content` vuoto con il testo in `reasoning_content`.
   Con `MAX_TOKENS = 180` i token finivano nel ragionamento (`finish_reason: length`).
-  Ora `MAX_TOKENS = 1024`, e se la risposta è comunque vuota il client distingue
+  Ora `MAX_TOKENS = 4096` (prima 1024), e se la risposta è comunque vuota il client distingue
   "token esauriti nel ragionamento" da "risposta vuota"; segnala anche la troncatura.
 - Corretto il caso "nessuna risposta visibile" nel terminale PowerShell: lo spinner
   "Elaborazione in corso" (thread + `\r`) cancellava l'etichetta e la risposta.
@@ -20,10 +20,14 @@
 - `BASE_URL` e `MODEL` spostati da `client.py` a `.env` (caricato con `python-dotenv`);
   `.env.example` ne contiene un modello da copiare.
 - Streaming: chunk malformati saltati; `resp.encoding = "utf-8"` perché requests
-  decodifica `text/event-stream` come ISO-8859-1 e storpia gli accenti. `STREAM = False`
-  di default (a `True` la risposta arriva in streaming).
-- Chat interattiva: ciclo `while` in `__main__` con cronologia dei messaggi, streaming attivo
-  (`STREAM = True`); si esce con `esci` o Ctrl+C (`chat()` rilancia il `KeyboardInterrupt`).
+  decodifica `text/event-stream` come ISO-8859-1 e storpia gli accenti. `STREAM = True`
+  (a `False` la risposta arriva tutta insieme).
+- Chat interattiva (parte dell'estensione 2 del README): ciclo `while` in `__main__`,
+  streaming attivo (`STREAM = True`); si esce con `esci` o Ctrl+C (`chat()` rilancia il
+  `KeyboardInterrupt`).
+- Estensione 3, history: lista `history` di turni user/assistant inviata a ogni richiesta
+  insieme al system prompt, così il modello ricorda la conversazione. Si cancella
+  (`history.clear()` in un `finally`) a ogni uscita dalla chat; non viene salvata su disco.
 - Compilato `requirements.txt` (`requests`, `python-dotenv`; le altre librerie sono standard library).
 
 ## Note

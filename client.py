@@ -28,7 +28,7 @@ MODEL = os.environ["MODEL"]  # es. google/gemma-4-e2b
 
 # --- Parametri di generazione ---
 TEMPERATURE = 0.2  # casualità: basso = risposte sempre simili, alto = creative
-MAX_TOKENS = 1024  # massimo di token totali (pensiero + risposta)
+MAX_TOKENS = 4096  # massimo di token totali (pensiero + risposta)
 STREAM = True  # True = la risposta arriva token per token, False = tutta insieme
 
 # --- Testo della conversazione ---
@@ -143,9 +143,10 @@ def chat(messages: list[dict]) -> str:
 # Questo blocco viene eseguito solo se lo script è avviato direttamente
 # (python client.py), non quando viene importato da un altro script
 if __name__ == "__main__":
-    # La cronologia parte dal solo messaggio di sistema e cresce a ogni turno,
-    # così il modello ricorda la conversazione
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    # History: elenco dei turni (domande dell'utente e risposte del modello).
+    # Viene inviata intera a ogni richiesta, così il modello ricorda cosa è
+    # stato detto. Vive solo in memoria e si cancella all'uscita dalla chat.
+    history = []
     print("Chat con l'LLM. Scrivi 'esci' o premi Ctrl+C per terminare.")
     try:
         while True:
@@ -154,7 +155,9 @@ if __name__ == "__main__":
                 continue
             if domanda.lower() == "esci":
                 break
-            messages.append({"role": "user", "content": domanda})
+            history.append({"role": "user", "content": domanda})
+            # Messaggio di sistema + tutta la history fino a questo momento
+            messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
             # Il modello può mettere parecchi secondi prima del primo token
             print("Assistente: ", end="", flush=True)
             try:
@@ -165,10 +168,14 @@ if __name__ == "__main__":
                 print(f"Errore: {e}")
                 raise SystemExit(1)
             if risposta:
-                messages.append({"role": "assistant", "content": risposta})
+                history.append({"role": "assistant", "content": risposta})
             else:
-                # Risposta vuota: si toglie la domanda per non sporcare la cronologia
-                messages.pop()
+                # Risposta vuota: si toglie la domanda per non sporcare la history
+                history.pop()
     except (KeyboardInterrupt, EOFError):
         print()
-    print("Chat terminata.")
+    finally:
+        # Qualunque sia il motivo dell'uscita (esci, Ctrl+C, errore) la
+        # conversazione viene cancellata: nulla resta in memoria né su disco
+        history.clear()
+        print("Chat terminata, history cancellata.")
