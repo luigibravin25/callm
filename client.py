@@ -1,51 +1,46 @@
-# Librerie standard: json per leggere lo stream, os per le variabili
-# d'ambiente, sys per la gestione della console
 import json
 import os
 import sys
 
-# requests: invia la richiesta HTTP al server dell'LLM
-# python-dotenv: legge le variabili dal file .env
 import requests
 from dotenv import load_dotenv
 
-# La console Windows usa l'encoding cp1252: senza questa riga i caratteri
-# speciali prodotti dal modello (accenti rari, ecc.) fanno crashare lo script.
-# Con errors="replace" i caratteri non rappresentabili diventano "?"
+# Su Windows la console usa cp1252: con errors="replace" i caratteri
+# speciali del modello non fanno più crashare lo script
 try:
     sys.stdout.reconfigure(errors="replace")
 except Exception:
-    pass  # se la console non lo permette, si continua senza
+    pass
 
-# Cerca il file .env nella cartella del progetto e carica le variabili
-# in esso contenute come variabili d'ambiente
+# Carica le variabili dal file .env nella cartella del progetto
 load_dotenv()
 
-# Endpoint dell'API (compatibile OpenAI) e nome del modello:
-# entrambi letti dal file .env, non scritti qui nel codice
-BASE_URL = os.environ["BASE_URL"]  # es. http://127.0.0.1:1234/v1/chat/completions
-MODEL = os.environ["MODEL"]  # es. google/gemma-4-e2b
+# Configurazione letta da .env (BASE_URL e MODEL)
+BASE_URL = os.environ["BASE_URL"]
+MODEL = os.environ["MODEL"]
 
-# --- Parametri di generazione ---
-TEMPERATURE = 0.2  # casualità: basso = risposte sempre simili, alto = creative
-MAX_TOKENS = 4096  # massimo di token totali (pensiero + risposta)
-STREAM = True  # True = la risposta arriva token per token, False = tutta insieme
+# Parametri di generazione
+TEMPERATURE = 0.2  # più basso = risposte più deterministiche
+MAX_TOKENS = 4096 # budget totale: ragionamento + risposta
+STREAM = True  # True = token per token, False = risposta in blocco
 
-# --- Testo della conversazione ---
-SYSTEM_PROMPT = "Sei un assistente utile."  # istruzioni di sistema (ruolo "system")
-PROMPT = "Ciao"  # la domanda da inviare (ruolo "user")
+# Testo fisso della conversazione
+SYSTEM_PROMPT = "Sei un assistente utile."
+PROMPT = "Ciao crea ricetta a scelta"
 
-# Messaggio d'errore mostrato quando il modello "pensa" a lungo e il budget
-# MAX_TOKENS finisce prima di produrre la risposta visibile
+# Messaggio mostrato quando il modello pensa a lungo e i token finiscono
+# prima di produrre la risposta vera e propria
 EMPTY_REASONING_MSG = (
     "(risposta vuota: i token sono finiti nel ragionamento, aumenta MAX_TOKENS)"
 )
 
 
 def chat(messages: list[dict]) -> str:
-    """Invia i messaggi all'LLM e restituisce la risposta come stringa."""
-    # Corpo della richiesta nel formato richiesto dall'API (stile OpenAI):
-    # messages è la lista completa della conversazione (system, user, ...)
+    """Invia i messaggi all'LLM e stampa la risposta (in stream se STREAM=True).
+
+    Restituisce il testo della risposta ("" se vuota o interrotta).
+    """
+    # Corpo della richiesta API 
     payload = {
         "model": MODEL,
         "messages": messages,
@@ -55,93 +50,81 @@ def chat(messages: list[dict]) -> str:
     }
 
     try:
-        # POST al server; stream=True = leggiamo la risenza man mano che arriva;
-        # timeout=300 secondi di attesa massima
+        # stream=True: la risposta arriva a pezzi (SSE), timeout di 300s
         with requests.post(BASE_URL, json=payload, stream=True, timeout=300) as resp:
-            # Se il server risponde con errore (404, 500, ...) lancia un'eccezione
             resp.raise_for_status()
 
-            # --- Caso STREAM=False: risposta unica in formato JSON ---
+            # --- Modalità non stream: una singola risposta JSON ---
             if not STREAM:
-                # choices[0] = prima (e unica) risposta generata
                 choice = resp.json()["choices"][0]
-                # content = testo visibile; reasoning_content = "pensiero" nascosto
                 content = choice["message"].get("content") or ""
                 reasoning = choice["message"].get("reasoning_content")
                 print(content)
                 if not content and reasoning:
-                    # Il modello ha solo pensato, non ha prodotto testo
+                    # Il modello ha solo "pensato": nessuna risposta visibile
                     print(EMPTY_REASONING_MSG)
                 elif choice.get("finish_reason") == "length":
-                    # finish_reason "length" = token esauriti, risposta troncata
+                    # Token esauriti: la risposta è stata troncata
                     print("(risposta troncata: aumenta MAX_TOKENS)")
                 return content
 
-            # --- Caso STREAM=True: la risposta arriva in righe "data: {...}" ---
-            full = []  # lista dei pezzi di testo ricevuti, uniti alla fine
-            reasoned = False  # diventa True se il modello invia il suo "pensiero"
-            finish_reason = None  # conterrà "stop" (fine) o "length" (troncata)
+            # --- Modalità stream: righe "data: {...}" una alla volta ---
+            full = []  # pezzi di risposta raccolti
+            reasoned = False  # True se il modello ha inviato del "pensiero"
+            finish_reason = None  # "stop" oppure "length"
 
             # Per "text/event-stream" requests assume ISO-8859-1 e storpia gli
-            # accenti (à -> Ã\xa0): si forza UTF-8, la codifica usata dal server
+            # accenti: si forza UTF-8, la codifica usata dal server
             resp.encoding = "utf-8"
 
-            # iter_lines legge lo stream una riga alla volta (decodificata in testo)
             for line in resp.iter_lines(decode_unicode=True):
-                # Le righe utili iniziano con "data: "; le altre (vuote, ecc.) si saltano
+                # Ignora righe vuote e quelle che non sono eventi SSE
                 if not line or not line.startswith("data: "):
                     continue
-                # Si toglie il prefisso "data: " per avere solo il JSON
                 raw = line[len("data: "):]
-                # "[DONE]" è il segnale di fine stream inviato dal server
+                # Fine dello stream
                 if raw == "[DONE]":
                     break
-                # Parsing del JSON del pezzo corrente
+
                 # Un chunk malformato (JSON rotto o senza "choices") viene saltato
                 try:
                     chunk = json.loads(raw)
                     choice = chunk["choices"][0]
                 except (ValueError, KeyError, IndexError, TypeError):
                     continue
-                # L'ultimo chunk contiene il motivo di fine generazione
+                # Il server indica fine generazione nell'ultimo chunk
                 if choice.get("finish_reason"):
                     finish_reason = choice["finish_reason"]
-                # delta contiene le differenze rispetto al testo già inviato
+
                 delta = choice.get("delta", {})
-                # Il reasoning_content è il pensiero del modello: qui viene solo
-                # rilevato (per diagnosticare risposte vuote), non stampato
+                # Il reasoning_content è il "pensiero" del modello: qui viene
+                # rilevato ma non stampato
                 if delta.get("reasoning_content"):
                     reasoned = True
-                # Il testo visibile della risposta è in delta.content
+
+                # Il testo visibile è solo in delta.content
                 content = delta.get("content")
                 if content:
                     full.append(content)
-                    # end="" evita il a capo dopo ogni pezzo; flush=True forza
-                    # la scritta subito sullo schermo (importante per lo stream)
                     print(content, end="", flush=True)
 
-            # A fine stream: avvisi nel caso la risposta sia vuota o troncata
+            # Messaggi a fine stream secondo il caso riscontrato
             if not full and reasoned:
-                # Solo pensiero, nessun testo: quasi sempre token finiti
                 print(EMPTY_REASONING_MSG, end="")
             elif not full:
-                # Nessun testo e nessun pensiero: risposta completamente vuota
                 print("(risposta vuota dal modello)", end="")
             elif finish_reason == "length":
-                # Risposta presente ma tagliata perché MAX_TOKENS è finito
                 print("(risposta troncata: aumenta MAX_TOKENS)", end="")
-            print()  # a capo finale
-            return "".join(full)  # restituisce la risposta completa come stringa
+            print()
+            return "".join(full)
 
     except KeyboardInterrupt:
-        # L'utente ha premuto Ctrl+C durante la risposta: si segnala e si
-        # rilancia, così il ciclo di chat in __main__ può terminare
+        # Ctrl+C durante la generazione: si segnala e si rilancia, così il
+        # ciclo di chat in __main__ può terminare
         print("\n(interrotto)")
         raise
 
 
-# Questo blocco viene eseguito solo se lo script è avviato direttamente
-# (python client.py), non quando viene importato da un altro script
 if __name__ == "__main__":
     # History: elenco dei turni (domande dell'utente e risposte del modello).
     # Viene inviata intera a ogni richiesta, così il modello ricorda cosa è
@@ -161,10 +144,9 @@ if __name__ == "__main__":
             # Il modello può mettere parecchi secondi prima del primo token
             print("Assistente: ", end="", flush=True)
             try:
-                # Stampa la risposta in streaming e la restituisce completa
                 risposta = chat(messages)
             except requests.RequestException as e:
-                # Server spento, URL sbagliato, timeout, errore di rete...
+                # Server spento, endpoint errato, timeout, ecc.
                 print(f"Errore: {e}")
                 raise SystemExit(1)
             if risposta:
