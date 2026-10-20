@@ -1,35 +1,13 @@
-# CLAUDE.md
-
-## Progetto
-`client.py`: client Python per un server LM Studio locale (API compatibile OpenAI,
-`http://127.0.0.1:1234/v1/chat/completions`, modello `google/gemma-4-e2b`).
-
-## Cosa è stato fatto
-- Creato `client.py`: invia system prompt + prompt, supporta streaming (`STREAM`)
-  e mostra un indicatore di attesa ("Elaborazione in corso") mentre il modello lavora.
-- Corretto l'output "risposta vuota dal modello": Gemma ragiona prima di rispondere
-  e il server restituisce `content` vuoto con il testo in `reasoning_content`.
-  Con `MAX_TOKENS = 180` i token finivano nel ragionamento (`finish_reason: length`).
-  Ora `MAX_TOKENS = 4096` (prima 1024), e se la risposta è comunque vuota il client distingue
-  "token esauriti nel ragionamento" da "risposta vuota"; segnala anche la troncatura.
-- Corretto il caso "nessuna risposta visibile" nel terminale PowerShell: lo spinner
-  "Elaborazione in corso" (thread + `\r`) cancellava l'etichetta e la risposta.
-  Rimossi spinner e thread (`threading`, `time`); ora una riga fissa di attesa e poi
-  la risposta in streaming, con gestione di Ctrl-C. Gemma impiega 10-15 s a ragionare
-  prima di rispondere: in quel tempo non appare nulla, è normale.
-- `BASE_URL` e `MODEL` spostati da `client.py` a `.env` (caricato con `python-dotenv`);
-  `.env.example` ne contiene un modello da copiare.
-- Streaming: chunk malformati saltati; `resp.encoding = "utf-8"` perché requests
-  decodifica `text/event-stream` come ISO-8859-1 e storpia gli accenti. `STREAM = True`
-  (a `False` la risposta arriva tutta insieme).
-- Chat interattiva (parte dell'estensione 2 del README): ciclo `while` in `__main__`,
-  streaming attivo (`STREAM = True`); si esce con `esci` o Ctrl+C (`chat()` rilancia il
-  `KeyboardInterrupt`).
-- Estensione 3, history: lista `history` di turni user/assistant inviata a ogni richiesta
-  insieme al system prompt, così il modello ricorda la conversazione. Si cancella
-  (`history.clear()` in un `finally`) a ogni uscita dalla chat; non viene salvata su disco.
-- Compilato `requirements.txt` (`requests`, `python-dotenv`; le altre librerie sono standard library).
-
-## Note
-- Eseguire con l'ambiente virtuale: `venv\Scripts\python.exe client.py`.
-- `requirements.txt` è elencato in `.gitignore`: rimuoverlo da lì se deve essere versionato.
+# Assistente del laboratorio
+- Obiettivo: un client Python per un modello locale in LM Studio.
+- client.py contiene il client da completare e modificare.
+- README.md descrive la preparazione dell'ambiente.
+- requirements.txt contiene le dipendenze concordate.
+- La configurazione (`LM_BASE_URL`, `LM_MODEL`) sta in `.env`, copiato da `.env.example`.
+- Usare PowerShell nei comandi per Windows e l'interprete `.venv`.
+- Preferire Python sincrono e modifiche circoscritte.
+- Non aggiungere dipendenze senza motivarle e concordarle.
+- Non inserire segreti, `.env`, pesi o ambiente virtuale in Git.
+- Il modello ragiona prima di rispondere: gestire i token o `reasoning_effort` per evitare risposte vuote.
+- Non salvare su disco la cronologia della chat.
+- Non sono presenti test automatici in questo checkpoint.
