@@ -26,7 +26,7 @@ STREAM = True  # True = token per token, False = risposta in blocco
 
 # Testo fisso della conversazione
 SYSTEM_PROMPT = "Sei un assistente utile."
-PROMPT = "Ciao crea ricetta a scelta"
+PROMPT = "Ciao"
 
 # Messaggio mostrato quando il modello pensa a lungo e i token finiscono
 # prima di produrre la risposta vera e propria

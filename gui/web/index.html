@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat LLM</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="icon-btn" id="menu-btn" aria-label="Menù">☰</button>
+    <h1>Chat LLM</h1>
+    <div class="menu" id="menu" hidden>
+      <div class="menu-title">Impostazioni</div>
+      <label class="toggle">
+        <span>Conserva history</span>
+        <input type="checkbox" id="history-toggle">
+        <span class="slider"></span>
+      </label>
+      <div class="toggle-state" id="history-state">Non attivato</div>
+      <label class="toggle setting">
+        <span>Streaming parole</span>
+        <input type="checkbox" id="stream-toggle">
+        <span class="slider"></span>
+      </label>
+      <div class="toggle-state" id="stream-state">Non attivato</div>
+    </div>
+  </header>
+
+  <main class="chat" id="chat">
+    <p class="empty" id="empty">Scrivi un messaggio per iniziare.</p>
+  </main>
+
+  <form class="composer" id="form">
+    <div class="composer-box">
+      <textarea id="input" rows="1" placeholder="Scrivi un messaggio..." autofocus></textarea>
+      <button class="send" id="send" type="submit" aria-label="Invia">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 19V5M5 12l7-7 7 7"/>
+        </svg>
+      </button>
+    </div>
+  </form>
+
+  <script src="/app.js"></script>
+</body>
+</html>
