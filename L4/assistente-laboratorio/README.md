@@ -60,8 +60,8 @@ $env:LM_MODEL = "google/gemma-4-e2b"
 & ..\venv\Scripts\python.exe -m pytest tests\test_modello.py tests\test_instradamento.py -k reale
 ```
 
-Al momento entrambe le prove reali falliscono con l'errore HTTP 400 descritto in
-[Diagnosi](#diagnosi).
+Con il template di prompt corretto in LM Studio (vedi [Diagnosi](#diagnosi)) entrambe le
+prove reali passano: il modello chiama `ora_corrente` con `{"fuso": "Asia/Tokyo"}`.
 
 ## Docker
 
@@ -85,31 +85,52 @@ si usa `docker compose run --rm app` (non eseguita in questa verifica: richiede 
   e il ciclo continua. In Docker controlla che l'URL usi `host.docker.internal`.
 - **Errore 400 del server**: l'app stampa
   `Il server di LM Studio ha risposto con errore 400: <testo del server> ...` e il ciclo continua.
-  Con `google/gemma-4-e2b` osservato: `Error rendering prompt with jinja template:
-  "Cannot call something that is not a function: got UndefinedValue"`. E' un problema
-  del template di prompt di quel modello in LM Studio quando la richiesta contiene
-  strumenti con parametri (l'app li allega a ogni richiesta). Vedi sotto.
+  Con `google/gemma-4-e2b` e' stato osservato: `Error rendering prompt with jinja template:
+  "Cannot call something that is not a function: got UndefinedValue"`. Causa: nel template
+  Jinja di Gemma 4 usato da LM Studio mancava la definizione della macro
+  `format_type_argument`, richiamata per i parametri degli strumenti (l'app allega lo
+  strumento a ogni richiesta). Correzione: aggiungere la macro prima di `format_parameters`
+  nel template del modello (My Models > ingranaggio del modello > Prompt > Template Jinja),
+  salvare e ricaricare il modello:
+
+  ```jinja
+  {%- macro format_type_argument(type_value) -%}
+      {%- if type_value is string -%}
+          <|"|>{{ type_value | upper }}<|"|>
+      {%- else -%}
+          [
+          {%- for t in type_value -%}
+              <|"|>{{ t | upper }}<|"|>
+              {%- if not loop.last %},{% endif -%}
+          {%- endfor -%}
+          ]
+      {%- endif -%}
+  {%- endmacro -%}
+  ```
+- **`Unexpected character` nel template**: il template salvato in LM Studio contiene un errore
+  di sintassi (per esempio righe troncate dopo una modifica a mano). Ripristina il template
+  completo di Gemma 4 e riaggiungi la macro sopra.
 
 ## Stato delle verifiche
 
 Eseguito:
 
 - `python -m pytest`: 23 passati, 2 saltati (le prove reali, non attivate).
+- Prove reali con `RUN_LM_STUDIO=1` (`-k reale`): 2 passate, con `google/gemma-4-e2b` e il
+  template corretto in LM Studio.
+- CLI locale: "Che ore sono a Tokyo?" produce nel log `Chiamata strumento ora_corrente con
+  argomenti {'fuso': 'Asia/Tokyo'}` e il risultato dello strumento, poi la risposta finale.
+- Docker: `docker compose run --rm -T app` con una domanda semplice e con "Che ore sono a
+  Tokyo?": risposta ricevuta e chiamata a `ora_corrente` visibile nel log (container che
+  raggiunge LM Studio tramite `host.docker.internal`).
 - `docker compose config` e `docker compose build`: ok.
-- Raggiungibilita' di LM Studio dal container: ok (`http://host.docker.internal:1234/v1/models`
-  risponde 200 dal container; le richieste di chat arrivano al server, che risponde 400).
-- LM Studio risponde alla chat senza strumenti (richiesta diretta, risposta `Pace.`).
 
-Non riuscito:
+Da provare / limiti:
 
-- Qualunque domanda tramite l'app (anche "Ciao, rispondi con una parola"), sia in locale sia
-  in Docker, ottiene HTTP 400 dal template jinja del modello, perche' l'app allega sempre lo
-  strumento. L'app mostra l'errore leggibile e il ciclo sopravvive.
-- Le due prove reali (`-k reale`) falliscono con lo stesso 400.
-- **Lo strumento orologio tramite il modello reale NON e' verificato.** E' verificato solo
-  con modelli simulati nei test automatici.
-
-Da provare (NON verificato): modificare o sovrascrivere il template di prompt dello stesso
-modello `google/gemma-4-e2b` in LM Studio (My Models > Prompt Template) in modo che accetti
-i tool, poi ripetere la prova reale e la domanda "Che ore sono a Tokyo?". Non e' stato
-provato e non si sa se risolva il 400.
+- La sessione interattiva `docker compose run --rm app` non e' stata eseguita (richiede un
+  terminale); e' stata provata solo la modalita' con input da pipe.
+- La correzione del template e' nella configurazione di LM Studio sul computer, non nel
+  repository: chi riproduce il progetto deve applicarla (vedi [Diagnosi](#diagnosi)).
+- Il modello non e' deterministico: in una prova di Docker ha risposto all'ora con un
+  testo molto breve ("2:01"); la chiamata allo strumento c'e' stata, ma la forma della
+  risposta varia.
