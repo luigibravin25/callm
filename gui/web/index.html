@@ -32,7 +32,15 @@
   </main>
 
   <form class="composer" id="form">
+    <div class="attachments" id="attachments" hidden></div>
     <div class="composer-box">
+      <button class="attach" id="attach" type="button" aria-label="Allega file">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </button>
+      <input type="file" id="file-input" multiple hidden>
       <textarea id="input" rows="1" placeholder="Scrivi un messaggio..." autofocus></textarea>
       <button class="send" id="send" type="submit" aria-label="Invia">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"

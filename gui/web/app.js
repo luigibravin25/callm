@@ -44,16 +44,128 @@ function thinking(el) {
   el.innerHTML = 'Sto pensando<span class="dots"><span>.</span><span>.</span><span>.</span></span>';
 }
 
-async function send(text) {
+// ---------- allegati (pulsante "+") ----------
+const attachBtn = document.getElementById("attach");
+const fileInput = document.getElementById("file-input");
+const attachList = document.getElementById("attachments");
+const MAX_TEXT = 500 * 1024;       // oltre, il contesto del modello esplode
+const MAX_IMAGE = 8 * 1024 * 1024;
+
+// Allegati in attesa di invio: { name, kind: "image" | "text", data }
+let attachments = [];
+
+attachBtn.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", async () => {
+  for (const file of fileInput.files) await addAttachment(file);
+  fileInput.value = ""; // permette di riselezionare lo stesso file
+  renderAttachments();
+});
+
+function readAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+async function addAttachment(file) {
+  try {
+    if (file.type.startsWith("image/")) {
+      if (file.size > MAX_IMAGE) throw new Error("immagine oltre 8 MB");
+      attachments.push({ name: file.name, kind: "image", data: await readAsDataURL(file) });
+    } else {
+      if (file.size > MAX_TEXT) throw new Error("file oltre 500 KB");
+      const data = await file.text();
+      // Un byte nullo indica un file binario (pdf, zip, exe...): non leggibile come testo
+      if (data.includes("\0")) throw new Error("formato non testuale");
+      attachments.push({ name: file.name, kind: "text", data });
+    }
+  } catch (err) {
+    addBubble(`Impossibile allegare "${file.name}": ${err.message}`, "bot").classList.add("error");
+  }
+}
+
+function renderAttachments() {
+  attachList.hidden = attachments.length === 0;
+  attachList.replaceChildren(...attachments.map((a, i) => {
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    let icon;
+    if (a.kind === "image") {
+      icon = document.createElement("img");
+      icon.src = a.data;
+    } else {
+      icon = document.createElement("span");
+      icon.className = "file-icon";
+      icon.textContent = "📄";
+    }
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = a.name;
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "×";
+    del.setAttribute("aria-label", "Rimuovi " + a.name);
+    del.addEventListener("click", () => {
+      attachments.splice(i, 1);
+      renderAttachments();
+    });
+    chip.append(icon, name, del);
+    return chip;
+  }));
+}
+
+// Bolla dell'utente: miniature delle immagini e nomi dei file di testo
+function addUserBubble(text, files) {
+  const el = addBubble("", "user");
+  if (files.length) {
+    const row = document.createElement("div");
+    row.className = "sent-files";
+    for (const f of files) {
+      if (f.kind === "image") {
+        const img = document.createElement("img");
+        img.src = f.data;
+        row.appendChild(img);
+      } else {
+        const tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = "📄 " + f.name;
+        row.appendChild(tag);
+      }
+    }
+    el.appendChild(row);
+  }
+  if (text) el.append(text);
+  return el;
+}
+
+// Contenuto del messaggio: stringa semplice, oppure lista di parti se ci sono immagini
+function buildContent(text, files) {
+  if (!files.length) return text;
+  const texts = files.filter((f) => f.kind === "text")
+    .map((f) => `[File: ${f.name}]\n${f.data}\n[Fine file]`);
+  const body = [...texts, text].filter(Boolean).join("\n\n");
+  const images = files.filter((f) => f.kind === "image");
+  if (!images.length) return body;
+  return [
+    { type: "text", text: body || "Descrivi l'immagine." },
+    ...images.map((f) => ({ type: "image_url", image_url: { url: f.data } })),
+  ];
+}
+
+async function send(text, files) {
   busy = true;
   sendBtn.disabled = true;
-  addBubble(text, "user");
+  addUserBubble(text, files);
   const bot = addBubble("", "bot");
   thinking(bot);
 
+  const content = buildContent(text, files);
   // Senza history il modello vede solo l'ultima domanda
-  const turns = toggle.checked ? [...history, { role: "user", content: text }]
-                               : [{ role: "user", content: text }];
+  const turns = toggle.checked ? [...history, { role: "user", content }]
+                               : [{ role: "user", content }];
   let reply = "";
   let failed = false;
 
@@ -88,7 +200,7 @@ async function send(text) {
   reply = reply.trim();
   if (!failed) bot.textContent = reply;
   if (toggle.checked && !failed && reply) {
-    history.push({ role: "user", content: text }, { role: "assistant", content: reply });
+    history.push({ role: "user", content }, { role: "assistant", content: reply });
   }
   busy = false;
   sendBtn.disabled = false;
@@ -98,10 +210,13 @@ async function send(text) {
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
-  if (!text || busy) return;
+  if ((!text && !attachments.length) || busy) return;
+  const files = attachments;
+  attachments = [];
+  renderAttachments();
   input.value = "";
   input.style.height = "auto";
-  send(text);
+  send(text, files);
 });
 
 // Invio = manda, Shift+Invio = a capo
