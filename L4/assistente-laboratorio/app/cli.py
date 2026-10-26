@@ -8,9 +8,26 @@ MSG_CONNESSIONE = (
     "e che LM_BASE_URL sia corretto."
 )
 
+MAX_DETTAGLIO = 300
 
-def main(input_fn=input, output_fn=print, llm=None) -> None:
-    grafo = build_graph(llm)
+
+def _messaggio_errore_http(errore: APIStatusError) -> str:
+    """Codice di stato, testo del server e, dove serve, un suggerimento."""
+    dettaglio = " ".join(str(errore.message).split())
+    if len(dettaglio) > MAX_DETTAGLIO:
+        dettaglio = dettaglio[:MAX_DETTAGLIO] + "..."
+    testo = (f"Il server di LM Studio ha risposto con errore {errore.status_code}: "
+             f"{dettaglio}")
+    if errore.status_code == 400:
+        testo += (" Potrebbe dipendere dal template di prompt del modello o dalla "
+                  "gestione degli strumenti in LM Studio (vedi il README, sezione Diagnosi).")
+    elif errore.status_code == 404:
+        testo += " Controlla che il modello sia caricato e che LM_MODEL sia corretto."
+    return testo
+
+
+def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5) -> None:
+    grafo = build_graph(llm, max_steps)
     cronologia = []  # solo in memoria, mai su disco
     output_fn("Scrivi un messaggio ('exit' per uscire).")
     while True:
@@ -29,8 +46,7 @@ def main(input_fn=input, output_fn=print, llm=None) -> None:
             break
         except APIStatusError as errore:
             # la domanda fallita non entra nella cronologia
-            output_fn(f"Il server di LM Studio ha risposto con errore {errore.status_code}. "
-                      "Controlla che il modello sia caricato e che LM_MODEL sia corretto.")
+            output_fn(_messaggio_errore_http(errore))
             continue
         except APIConnectionError:
             # la domanda fallita non entra nella cronologia
@@ -53,4 +69,4 @@ if __name__ == "__main__":
         impostazioni = load_settings()
     except ValueError as errore:
         raise SystemExit(f"Configurazione non valida: {errore}")
-    main(llm=build_llm(impostazioni))
+    main(llm=build_llm(impostazioni), max_steps=impostazioni.max_steps)

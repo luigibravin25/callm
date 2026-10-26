@@ -6,6 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app import tools
+from app.cli import main
 from app.config import load_settings
 from app.graph import build_graph, instrada
 
@@ -116,3 +117,14 @@ def test_prova_reale_strumento_lm_studio():
     richieste = [c["name"] for m in out["messages"]
                  if isinstance(m, AIMessage) for c in m.tool_calls]
     assert "ora_corrente" in richieste, f"nessuna chiamata allo strumento: {out['messages']}"
+
+
+def test_cli_usa_max_steps():
+    llm = ModelloCopione([_chiamata()])  # chiede sempre lo strumento
+    righe = iter(["Che ore sono a Tokyo?", "exit"])
+    uscite = []
+    main(input_fn=lambda _p="": next(righe), output_fn=uscite.append,
+         llm=llm, max_steps=1)
+    # un solo passaggio con lo strumento, poi il limite
+    assert len(llm.chiamate) == 2
+    assert any("limite di 1 passaggi" in u for u in uscite)

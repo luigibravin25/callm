@@ -107,6 +107,31 @@ def test_errore_http_del_server():
     errore = openai.InternalServerError("boom", response=risposta, body=None)
     llm = ModelloFinto([errore, "Eccomi"])
     uscite = _esegui(["ciao", "di nuovo", "exit"], llm)
-    assert any("500" in u for u in uscite)
+    messaggio = next(u for u in uscite if "500" in u)
+    assert "boom" in messaggio  # il testo del server
+    assert "Prompt Template" not in messaggio and "LM_MODEL" not in messaggio
     assert "Eccomi" in uscite
     assert [m.content for m in llm.chiamate[1]] == ["di nuovo"]
+
+
+def test_errore_400_con_messaggio_e_suggerimento():
+    risposta = httpx.Response(
+        400, request=httpx.Request("POST", "http://127.0.0.1:1234/v1/chat/completions"))
+    errore = openai.BadRequestError("Error rendering prompt with jinja template",
+                                    response=risposta, body=None)
+    llm = ModelloFinto([errore, "Eccomi"])
+    uscite = _esegui(["ciao", "di nuovo", "exit"], llm)
+    messaggio = next(u for u in uscite if "400" in u)
+    assert "Error rendering prompt with jinja template" in messaggio
+    assert "template di prompt" in messaggio
+    assert "LM_MODEL" not in messaggio
+    assert [m.content for m in llm.chiamate[1]] == ["di nuovo"]
+
+
+def test_errore_404_suggerisce_il_modello():
+    risposta = httpx.Response(
+        404, request=httpx.Request("POST", "http://127.0.0.1:1234/v1/chat/completions"))
+    errore = openai.NotFoundError("model not found", response=risposta, body=None)
+    uscite = _esegui(["ciao", "exit"], ModelloFinto([errore]))
+    messaggio = next(u for u in uscite if "404" in u)
+    assert "model not found" in messaggio and "LM_MODEL" in messaggio
