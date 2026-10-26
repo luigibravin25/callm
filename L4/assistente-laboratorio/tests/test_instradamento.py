@@ -45,8 +45,10 @@ def _orologio_fisso(monkeypatch):
 def test_instrada_a_strumenti():
     con = {"messages": [_chiamata()], "steps": 0}
     senza = {"messages": [AIMessage("ciao")], "steps": 0}
+    al_limite = {"messages": [_chiamata()], "steps": 5}
     assert instrada(con) == "strumenti"
     assert instrada(senza) == "__end__"
+    assert instrada(al_limite) == "limite"
 
 
 def test_risultato_torna_al_modello():
@@ -67,6 +69,21 @@ def test_limite_passaggi():
     ultimo = out["messages"][-1]
     assert isinstance(ultimo, AIMessage) and not ultimo.tool_calls
     assert "limite" in ultimo.content and "3" in ultimo.content
+
+
+def test_limite_chiude_le_tool_calls_pendenti():
+    llm = ModelloCopione([_chiamata(), _chiamata(id_="c2"), AIMessage("Ok, ripartiamo.")])
+    grafo = build_graph(llm, max_steps=1)
+    primo = grafo.invoke(_stato())
+    # modello chiede lo strumento (eseguito), poi lo richiede: limite raggiunto
+    secondo = grafo.invoke({"messages": primo["messages"] + [HumanMessage("e ora?")],
+                            "steps": 0})
+    assert secondo["messages"][-1].content == "Ok, ripartiamo."
+    inviati = llm.chiamate[-1]
+    richieste = {c["id"] for m in inviati if isinstance(m, AIMessage) for c in m.tool_calls}
+    risposte = {m.tool_call_id for m in inviati if isinstance(m, ToolMessage)}
+    assert richieste == {"c1", "c2"}
+    assert richieste <= risposte  # nessuna tool_call senza ToolMessage
 
 
 def test_log_chiamata_strumento(caplog):
