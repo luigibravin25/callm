@@ -12,13 +12,24 @@ class State(TypedDict):
     steps: int
 
 
+MSG_VUOTO = (
+    "Il modello ha restituito una risposta vuota: i token sono finiti nel "
+    "ragionamento. Prova ad aumentare il budget di token."
+)
+
+
 def build_graph(llm=None, max_steps: int = 5):
-    # llm e max_steps serviranno nei prossimi passi; ora non sono usati
-    def risposta(state: State) -> dict:
-        return {"messages": [AIMessage(RISPOSTA_FISSA)]}
+    # max_steps servira' con i tool; ora non e' usato
+    def modello(state: State) -> dict:
+        if llm is None:
+            return {"messages": [AIMessage(RISPOSTA_FISSA)]}
+        risposta = llm.invoke(state["messages"])
+        if not str(risposta.content).strip():
+            return {"messages": [AIMessage(MSG_VUOTO)]}
+        return {"messages": [risposta]}
 
     g = StateGraph(State)
-    g.add_node("risposta", risposta)
-    g.add_edge(START, "risposta")
-    g.add_edge("risposta", END)
+    g.add_node("modello", modello)
+    g.add_edge(START, "modello")
+    g.add_edge("modello", END)
     return g.compile()
