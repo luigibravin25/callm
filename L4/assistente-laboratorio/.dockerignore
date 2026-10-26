@@ -1,0 +1,9 @@
+.git
+.env
+venv/
+.venv/
+__pycache__/
+.pytest_cache/
+# non servono per eseguire l'app: restano fuori dal contesto di build
+docs/
+tests/
