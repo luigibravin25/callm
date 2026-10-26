@@ -99,3 +99,14 @@ def test_prova_reale_lm_studio():
     llm = build_llm(load_settings())
     uscite = _esegui(["Mi chiamo Luigi.", "Come mi chiamo?", "exit"], llm)
     assert "Luigi" in uscite[-1]
+
+
+def test_errore_http_del_server():
+    risposta = httpx.Response(
+        500, request=httpx.Request("POST", "http://127.0.0.1:1234/v1/chat/completions"))
+    errore = openai.InternalServerError("boom", response=risposta, body=None)
+    llm = ModelloFinto([errore, "Eccomi"])
+    uscite = _esegui(["ciao", "di nuovo", "exit"], llm)
+    assert any("500" in u for u in uscite)
+    assert "Eccomi" in uscite
+    assert [m.content for m in llm.chiamate[1]] == ["di nuovo"]
