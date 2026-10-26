@@ -37,7 +37,8 @@ Scrivi un messaggio; `exit`, Ctrl+C o Ctrl+Z (EOF) per uscire.
 ## Strumenti, limite e log
 
 - Se il modello chiede lo strumento, il grafo lo esegue e rimanda il risultato al modello.
-- Raggiunto `MAX_STEPS`, l'app risponde con un messaggio e si ferma.
+- Raggiunto `MAX_STEPS`, quella domanda si chiude con un messaggio di limite; la sessione
+  continua e puoi scrivere la domanda successiva.
 - Ogni chiamata agli strumenti (nome, argomenti, risultato) e' scritta nel terminale
   dal logger `app.graph` (livello INFO, su stderr).
 
@@ -58,6 +59,9 @@ $env:LM_BASE_URL = "http://127.0.0.1:1234/v1"
 $env:LM_MODEL = "google/gemma-4-e2b"
 & ..\venv\Scripts\python.exe -m pytest tests\test_modello.py tests\test_instradamento.py -k reale
 ```
+
+Al momento entrambe le prove reali falliscono con l'errore HTTP 400 descritto in
+[Diagnosi](#diagnosi).
 
 ## Docker
 
@@ -80,7 +84,7 @@ si usa `docker compose run --rm app` (non eseguita in questa verifica: richiede 
   `Impossibile raggiungere LM Studio. Controlla che il server sia avviato e che LM_BASE_URL sia corretto.`
   e il ciclo continua. In Docker controlla che l'URL usi `host.docker.internal`.
 - **Errore 400 del server**: l'app stampa
-  `Il server di LM Studio ha risposto con errore 400. ...` e il ciclo continua.
+  `Il server di LM Studio ha risposto con errore 400: <testo del server> ...` e il ciclo continua.
   Con `google/gemma-4-e2b` osservato: `Error rendering prompt with jinja template:
   "Cannot call something that is not a function: got UndefinedValue"`. E' un problema
   del template di prompt di quel modello in LM Studio quando la richiesta contiene
@@ -90,7 +94,7 @@ si usa `docker compose run --rm app` (non eseguita in questa verifica: richiede 
 
 Eseguito:
 
-- `python -m pytest`: 20 passati, 2 saltati (le prove reali, non attivate).
+- `python -m pytest`: 23 passati, 2 saltati (le prove reali, non attivate).
 - `docker compose config` e `docker compose build`: ok.
 - Raggiungibilita' di LM Studio dal container: ok (`http://host.docker.internal:1234/v1/models`
   risponde 200 dal container; le richieste di chat arrivano al server, che risponde 400).
@@ -105,6 +109,7 @@ Non riuscito:
 - **Lo strumento orologio tramite il modello reale NON e' verificato.** E' verificato solo
   con modelli simulati nei test automatici.
 
-Da provare: un modello il cui template accetti i tool (per esempio una variante
-`lmstudio-community`, o un template sovrascritto in My Models > Prompt Template) e poi
-ripetere la prova reale e la domanda "Che ore sono a Tokyo?".
+Da provare (NON verificato): modificare o sovrascrivere il template di prompt dello stesso
+modello `google/gemma-4-e2b` in LM Studio (My Models > Prompt Template) in modo che accetti
+i tool, poi ripetere la prova reale e la domanda "Che ore sono a Tokyo?". Non e' stato
+provato e non si sa se risolva il 400.
