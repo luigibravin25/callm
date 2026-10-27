@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    image: assistente-laboratorio-app
+    environment:
+      # LM Studio gira sull'host: 127.0.0.1 nel container sarebbe il container stesso.
+      # Non si usa LM_BASE_URL: il .env locale (L4/.env) contiene 127.0.0.1 e Compose lo leggerebbe.
+      LM_BASE_URL: ${DOCKER_LM_BASE_URL:-http://host.docker.internal:1234/v1}
+      LM_MODEL: ${LM_MODEL:-google/gemma-4-e2b}
+      MAX_STEPS: ${MAX_STEPS:-5}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    stdin_open: true
+    tty: true
