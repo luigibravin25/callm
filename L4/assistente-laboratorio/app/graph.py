@@ -1,11 +1,12 @@
 import logging
 from typing import Annotated, Literal, TypedDict
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
+from app.llm import SYSTEM_PROMPT
 from app.tools import STRUMENTI
 
 logger = logging.getLogger("app.graph")
@@ -32,15 +33,33 @@ def instrada(state: State, max_steps: int = 5) -> Literal["strumenti", "limite",
     return END
 
 
-def build_graph(llm=None, max_steps: int = 5):
+def build_graph(llm=None, max_steps: int = 5, on_token=None):
+    """Con `on_token` il testo arriva token per token (llm.stream), altrimenti in blocco."""
     # il modello va gia' associato agli strumenti da build_llm
     nodo_strumenti = ToolNode(STRUMENTI)
 
+    def emetti(testo: str) -> None:
+        if on_token and testo:
+            on_token(testo)
+
+    def chiedi_al_modello(messaggi: list) -> AIMessage:
+        if on_token is None:
+            return llm.invoke(messaggi)
+        risposta = None
+        for pezzo in llm.stream(messaggi):
+            if isinstance(pezzo.content, str):
+                emetti(pezzo.content)
+            risposta = pezzo if risposta is None else risposta + pezzo
+        return risposta if risposta is not None else AIMessage("")
+
     def modello(state: State) -> dict:
         if llm is None:
+            emetti(RISPOSTA_FISSA)
             return {"messages": [AIMessage(RISPOSTA_FISSA)]}
-        risposta = llm.invoke(state["messages"])
+        # il prompt di sistema viene anteposto a ogni richiesta, non entra nella cronologia
+        risposta = chiedi_al_modello([SystemMessage(SYSTEM_PROMPT)] + state["messages"])
         if not risposta.tool_calls and not str(risposta.content).strip():
+            emetti(MSG_VUOTO)
             return {"messages": [AIMessage(MSG_VUOTO)]}
         return {"messages": [risposta]}
 
@@ -59,9 +78,10 @@ def build_graph(llm=None, max_steps: int = 5):
             "Chiamata non eseguita: raggiunto il limite di passaggi.",
             tool_call_id=c["id"], name=c["name"], status="error")
             for c in state["messages"][-1].tool_calls]
-        return {"messages": chiuse + [AIMessage(
-            f"Ho raggiunto il limite di {max_steps} passaggi con gli strumenti "
-            "e mi fermo qui senza una risposta completa.")]}
+        testo = (f"Ho raggiunto il limite di {max_steps} passaggi con gli strumenti "
+                 "e mi fermo qui senza una risposta completa.")
+        emetti(testo)
+        return {"messages": chiuse + [AIMessage(testo)]}
 
     g = StateGraph(State)
     g.add_node("modello", modello)
