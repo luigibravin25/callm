@@ -1,6 +1,8 @@
 import logging
+import sys
+import threading
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from openai import APIConnectionError, APIStatusError
 
 from app.graph import build_graph
@@ -43,51 +45,125 @@ def _scrivi_token(testo: str) -> None:
     print(testo, end="", flush=True)
 
 
+class Attesa:
+    """Riga animata 'Assistente: Sto pensando...' finche' il modello non risponde.
+    Attiva solo su un terminale: in pipe (es. docker compose run -T) resta muta."""
+
+    FRASE = "Sto pensando"
+
+    def __init__(self, scrivi=_scrivi_token, intervallo: float = 0.4, attiva=None):
+        self._scrivi = scrivi
+        self._intervallo = intervallo
+        self._attiva = sys.stdout.isatty() if attiva is None else attiva
+        self._stop = None
+        self._thread = None
+
+    def _ciclo(self, stop: threading.Event) -> None:
+        n = 0
+        while not stop.is_set():
+            n = n % 3 + 1
+            self._scrivi(f"\r{ETICHETTA_ASSISTENTE}{self.FRASE}{'.' * n}{' ' * (3 - n)}")
+            stop.wait(self._intervallo)
+
+    def avvia(self) -> None:
+        if not self._attiva or self._thread is not None:
+            return
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._ciclo, args=(self._stop,), daemon=True)
+        self._thread.start()
+
+    def ferma(self) -> None:
+        """Ferma l'animazione e cancella la riga; innocuo se non e' avviata."""
+        if self._thread is None:
+            return
+        self._stop.set()
+        self._thread.join()
+        self._thread = None
+        larghezza = len(ETICHETTA_ASSISTENTE) + len(self.FRASE) + 3
+        self._scrivi("\r" + " " * larghezza + "\r")
+
+
+class _FermaAttesa(logging.Filter):
+    """Ferma l'animazione prima che un log del grafo scriva sul terminale."""
+
+    def __init__(self, attesa: Attesa):
+        super().__init__()
+        self._attesa = attesa
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        self._attesa.ferma()
+        return True
+
+
 def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
-         stream: bool = STREAM, token_fn=_scrivi_token, history: bool = HISTORY) -> None:
+         stream: bool = STREAM, token_fn=_scrivi_token, history: bool = HISTORY,
+         attesa: Attesa | None = None) -> None:
     nuova_risposta = [True]
+    if attesa is None:
+        attesa = Attesa(scrivi=token_fn)
 
     def scrivi_token(testo: str) -> None:
         # l'etichetta esce col primo token, cosi' i log degli strumenti non la spezzano
         if nuova_risposta[0]:
             nuova_risposta[0] = False
+            attesa.ferma()
             token_fn(ETICHETTA_ASSISTENTE)
         token_fn(testo)
 
+    def invoca(messaggi: list) -> dict:
+        """Esegue il grafo passo per passo: dopo uno strumento l'attesa riparte."""
+        stato = None
+        attesa.avvia()
+        try:
+            for stato in grafo.stream({"messages": messaggi, "steps": 0},
+                                      stream_mode="values"):
+                ultimo = stato["messages"][-1]
+                if (nuova_risposta[0] and isinstance(ultimo, ToolMessage)
+                        and ultimo.status != "error"):
+                    attesa.avvia()
+        finally:
+            attesa.ferma()  # anche con errori o Ctrl+C: la riga animata sparisce
+        return stato
+
     grafo = build_graph(llm, max_steps, on_token=scrivi_token if stream else None)
+    filtro = _FermaAttesa(attesa)
+    logging.getLogger("app.graph").addFilter(filtro)
     cronologia = []  # solo in memoria, mai su disco
     output_fn("Scrivi un messaggio ('exit' per uscire).")
-    while True:
-        try:
-            testo = _testo_valido(input_fn(PROMPT_UTENTE)).strip()
-        except (EOFError, KeyboardInterrupt):
-            break
-        if testo.lower() == "exit":
-            break
-        if not testo:
-            continue
-        nuova_risposta[0] = True
-        try:
-            out = grafo.invoke(
-                {"messages": cronologia + [HumanMessage(testo)], "steps": 0})
-        except KeyboardInterrupt:
-            break
-        except APIStatusError as errore:
-            # la domanda fallita non entra nella cronologia
-            output_fn(_messaggio_errore_http(errore))
-            continue
-        except APIConnectionError:
-            # la domanda fallita non entra nella cronologia
-            output_fn(MSG_CONNESSIONE)
-            continue
-        risposta = out["messages"][-1].content
-        if history:
-            cronologia = out["messages"]
-        if stream:
-            if not nuova_risposta[0]:
-                token_fn("\n")  # il testo e' gia' stato scritto token per token
-        else:
-            output_fn(ETICHETTA_ASSISTENTE + risposta)
+    try:
+        while True:
+            try:
+                testo = _testo_valido(input_fn(PROMPT_UTENTE)).strip()
+            except (EOFError, KeyboardInterrupt):
+                break
+            if testo.lower() == "exit":
+                break
+            if not testo:
+                continue
+            nuova_risposta[0] = True
+            try:
+                out = invoca(cronologia + [HumanMessage(testo)])
+            except KeyboardInterrupt:
+                break
+            except APIStatusError as errore:
+                # la domanda fallita non entra nella cronologia
+                output_fn(_messaggio_errore_http(errore))
+                continue
+            except APIConnectionError:
+                # la domanda fallita non entra nella cronologia
+                output_fn(MSG_CONNESSIONE)
+                continue
+            risposta = out["messages"][-1].content
+            if history:
+                cronologia = out["messages"]
+            if stream:
+                if not nuova_risposta[0]:
+                    token_fn("\n")  # il testo e' gia' stato scritto token per token
+            else:
+                output_fn(ETICHETTA_ASSISTENTE + risposta)
+    finally:
+        logging.getLogger("app.graph").removeFilter(filtro)
+        attesa.ferma()
 
 
 def imposta_log(log_http: bool = LOG_HTTP, log_grafo: bool = LOG_GRAFO) -> None:
