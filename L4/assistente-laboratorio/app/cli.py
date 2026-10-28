@@ -46,10 +46,8 @@ def _scrivi_token(testo: str) -> None:
 
 
 class Attesa:
-    """Riga animata 'Assistente: Sto pensando...' finche' il modello non risponde.
+    """Riga animata 'Assistente: ...' (puntini in movimento) finche' il modello non risponde.
     Attiva solo su un terminale: in pipe (es. docker compose run -T) resta muta."""
-
-    FRASE = "Sto pensando"
 
     def __init__(self, scrivi=_scrivi_token, intervallo: float = 0.4, attiva=None):
         self._scrivi = scrivi
@@ -62,7 +60,7 @@ class Attesa:
         n = 0
         while not stop.is_set():
             n = n % 3 + 1
-            self._scrivi(f"\r{ETICHETTA_ASSISTENTE}{self.FRASE}{'.' * n}{' ' * (3 - n)}")
+            self._scrivi(f"\r{ETICHETTA_ASSISTENTE}{'.' * n}{' ' * (3 - n)}")
             stop.wait(self._intervallo)
 
     def avvia(self) -> None:
@@ -79,7 +77,7 @@ class Attesa:
         self._stop.set()
         self._thread.join()
         self._thread = None
-        larghezza = len(ETICHETTA_ASSISTENTE) + len(self.FRASE) + 3
+        larghezza = len(ETICHETTA_ASSISTENTE) + 3
         self._scrivi("\r" + " " * larghezza + "\r")
 
 
