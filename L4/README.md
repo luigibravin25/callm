@@ -45,6 +45,11 @@ $env:MAX_STEPS = "5"   # facoltativa
 Il terminale mostra la chat con `Tu:` per i tuoi messaggi e `Assistente:` per le risposte.
 `exit`, Ctrl+C o Ctrl+Z (EOF) per uscire.
 
+Dopo l'invio compare subito `Assistente: .` con i puntini in movimento (`.`, `..`, `...`)
+finche' il modello non risponde; la riga si cancella al primo token, prima di un log del grafo e
+in caso di errore, e riparte dopo l'esecuzione di uno strumento. L'animazione e' attiva solo
+su un terminale: con input da pipe (`docker compose run -T`) resta muta.
+
 ## Costanti in `assistente-laboratorio/app/llm.py`
 
 | Costante | Valore | Effetto |
@@ -58,8 +63,11 @@ Il terminale mostra la chat con `Tu:` per i tuoi messaggi e `Assistente:` per le
 ## Strumenti e limite
 
 - Il modello richiama lo strumento con il nome `tooltime`. L'argomento `fuso` e' un nome IANA; `parte` e' `"ora"`, `"data"` o `"entrambe"` (predefinito) e il modello lo sceglie in base alla domanda. Se lo chiede, il grafo lo esegue e rimanda il risultato al modello.
-- Raggiunto `MAX_STEPS`, quella domanda si chiude con un messaggio di limite; la sessione
-  continua e puoi scrivere la domanda successiva.
+- `MAX_STEPS` e' il massimo di esecuzioni degli strumenti per ogni domanda (il contatore riparte
+  a ogni domanda). Raggiunto il limite, quella domanda si chiude con il messaggio «Ho raggiunto
+  il limite di N passaggi...»; la sessione continua e puoi scrivere la domanda successiva.
+  Con Docker il valore si cambia in `.env` (riga `MAX_STEPS=...`) senza rifare il build.
+  Provato con il modello reale e `MAX_STEPS=1`.
 - Con `LOG_GRAFO = True` ogni chiamata agli strumenti (nome, argomenti, risultato) e' scritta
   nel terminale dal logger `app.graph` (livello INFO, su stderr).
 
@@ -109,6 +117,7 @@ Prova rapida con input da pipe (`-T` perche' la pipe non ha un terminale):
 
 Dopo ogni modifica al codice o a `assistente-laboratorio/app/llm.py` (`STREAM`, `LOG_GRAFO`,
 `LOG_HTTP`, `SYSTEM_PROMPT`) rifai `docker compose build`: l'immagine contiene una copia di `app/`.
+Per cambiare solo `LM_MODEL` o `MAX_STEPS` basta modificare `.env` e rilanciare, senza build.
 
 Pulizia: `docker compose down` ferma e rimuove container e rete del progetto;
 `docker rmi assistente-laboratorio-app` rimuove l'immagine.
