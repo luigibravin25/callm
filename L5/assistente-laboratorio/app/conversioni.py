@@ -95,7 +95,8 @@ UNITA: tuple[Unita, ...] = (
     # temperatura (K)
     Unita("K", "temperatura", "kelvin", "kelvin", 1.0),
     Unita("°C", "temperatura", "grado Celsius", "gradi Celsius", 1.0, 273.15,
-          simboli=("ºC", "degC"), nomi=("celsius",)),
+          simboli=("ºC", "°c", "degC"),
+          nomi=("celsius", "centigrado", "centigradi", "grado centigrado", "gradi centigradi")),
     Unita("°F", "temperatura", "grado Fahrenheit", "gradi Fahrenheit", 5 / 9, 459.67 * 5 / 9,
           simboli=("ºF", "degF"), nomi=("fahrenheit",)),
     Unita("°R", "temperatura", "grado Rankine", "gradi Rankine", 5 / 9,
@@ -291,6 +292,11 @@ def formatta_numero(x: float) -> str:
     return testo.replace(".", ",") + suffisso
 
 
+# soglia relativa per azzerare il residuo in virgola mobile degli offset di temperatura:
+# il residuo reale e' ~2e-16 del valore, la soglia lascia ~50 volte di margine
+_RESIDUO = 1e-14
+
+
 def _nome(unita: Unita, numero: str) -> str:
     return unita.singolare if numero in ("1", "-1") else unita.plurale
 
@@ -308,7 +314,7 @@ def converti(valore: float, da: str, a: str) -> str:
     testo_valore = formatta_numero(valore)
     base = valore * u_da.fattore + u_da.offset
     # residuo in virgola mobile dovuto all'offset di partenza (es. -459,67 °F -> 0 K)
-    if abs(base) < 1e-12 * abs(u_da.offset):
+    if abs(base) < _RESIDUO * abs(u_da.offset):
         base = 0.0
     if u_da.grandezza == "temperatura" and base < -1e-9:
         raise ErroreConversione(
@@ -320,7 +326,7 @@ def converti(valore: float, da: str, a: str) -> str:
         raise ErroreConversione(
             "Valore non valido: risultato fuori dall'intervallo rappresentabile.")
     # residuo in virgola mobile dovuto all'offset (es. 32 °F -> 5,7e-14 °C)
-    if abs(risultato) < 1e-12 * (abs(base) + abs(u_a.offset)) / u_a.fattore:
+    if abs(risultato) < _RESIDUO * (abs(base) + abs(u_a.offset)) / u_a.fattore:
         risultato = 0.0
     testo_risultato = formatta_numero(risultato)
     return (f"{testo_valore} {_nome(u_da, testo_valore)} = "
