@@ -272,3 +272,50 @@ def riconosci(testo: str) -> Unita:
     raise ErroreConversione(
         f"Unità non ammessa: {testo!r}. Grandezze disponibili: {', '.join(GRANDEZZE)}."
     )
+
+
+def formatta_numero(x: float) -> str:
+    """6 cifre significative, virgola decimale, notazione m × 10^e fuori da [1e-4, 1e12)."""
+    if x == 0:
+        return "0"
+    mantissa, esponente = f"{x:.5e}".split("e")
+    esponente = int(esponente)
+    if -4 <= esponente < 12:
+        testo = f"{float(f'{x:.5e}'):.{max(0, 5 - esponente)}f}"
+        suffisso = ""
+    else:
+        testo = mantissa
+        suffisso = f" × 10^{esponente}"
+    if "." in testo:
+        testo = testo.rstrip("0").rstrip(".")
+    return testo.replace(".", ",") + suffisso
+
+
+def _nome(unita: Unita, numero: str) -> str:
+    return unita.singolare if numero in ("1", "-1") else unita.plurale
+
+
+def converti(valore: float, da: str, a: str) -> str:
+    """Frase con il risultato della conversione; solleva ErroreConversione."""
+    if not math.isfinite(valore):
+        raise ErroreConversione("Valore non valido: serve un numero finito.")
+    u_da, u_a = riconosci(da), riconosci(a)
+    if u_da.grandezza != u_a.grandezza:
+        raise ErroreConversione(
+            f"Conversione incompatibile: {u_da.plurale} ({u_da.grandezza}) → "
+            f"{u_a.plurale} ({u_a.grandezza})."
+        )
+    testo_valore = formatta_numero(valore)
+    base = valore * u_da.fattore + u_da.offset
+    if u_da.grandezza == "temperatura" and base < -1e-9:
+        raise ErroreConversione(
+            f"Valore impossibile: {testo_valore} {_nome(u_da, testo_valore)} "
+            "è sotto lo zero assoluto."
+        )
+    risultato = (base - u_a.offset) / u_a.fattore
+    # residuo in virgola mobile dovuto all'offset (es. 32 °F -> 5,7e-14 °C)
+    if abs(risultato) < 1e-12 * (abs(base) + abs(u_a.offset)) / u_a.fattore:
+        risultato = 0.0
+    testo_risultato = formatta_numero(risultato)
+    return (f"{testo_valore} {_nome(u_da, testo_valore)} = "
+            f"{testo_risultato} {_nome(u_a, testo_risultato)}")
