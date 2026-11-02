@@ -1,0 +1,5 @@
+# Python 3.14 (provato in locale con 3.14.5; l'immagine Docker usa python:3.14-slim)
+langgraph==1.2.17
+langchain-openai==1.7.2
+tzdata==2026.5
+pytest==9.1.1
