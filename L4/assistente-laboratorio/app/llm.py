@@ -3,7 +3,8 @@ from langchain_openai import ChatOpenAI
 from app.config import Settings
 from app.tools import STRUMENTI
 
-SYSTEM_PROMPT = "Sei un assistente utile"
+SYSTEM_PROMPT = ("Sei un assistente utile. Se l'utente chiede l'ora o la data senza indicare "
+                 "un luogo, chiama tooltime senza l'argomento fuso.")
 STREAM = True  # True = token per token, False = risposta in blocco
 HISTORY = True  # True = il modello ricorda i messaggi precedenti, False = ogni domanda parte da zero
 LOG_HTTP = True  # True = mostra nel terminale le richieste HTTP verso LM Studio

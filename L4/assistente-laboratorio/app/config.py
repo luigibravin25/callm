@@ -1,5 +1,8 @@
 import os
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from app.tools import fuso_predefinito
 
 
 @dataclass(frozen=True)
@@ -7,6 +10,7 @@ class Settings:
     base_url: str
     model: str
     max_steps: int
+    fuso_predefinito: str
 
 
 def _obbligatoria(nome: str) -> str:
@@ -27,4 +31,10 @@ def load_settings() -> Settings:
         max_steps = 0
     if max_steps < 1:
         raise ValueError(f"MAX_STEPS deve essere un intero positivo, trovato: {grezzo!r}")
-    return Settings(base_url=base_url, model=model, max_steps=max_steps)
+    fuso = fuso_predefinito()
+    try:
+        ZoneInfo(fuso)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        raise ValueError(f"FUSO_PREDEFINITO non e' un fuso IANA valido: {fuso!r}") from None
+    return Settings(base_url=base_url, model=model, max_steps=max_steps,
+                    fuso_predefinito=fuso)

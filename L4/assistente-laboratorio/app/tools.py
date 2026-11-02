@@ -1,9 +1,12 @@
+import os
 from datetime import datetime, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_core.tools import tool
 
+
+FUSO_DI_RISERVA = "Europe/Rome"  # usato se FUSO_PREDEFINITO non e' impostata
 
 MESI = ("gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio",
         "agosto", "settembre", "ottobre", "novembre", "dicembre")
@@ -38,13 +41,20 @@ def _adesso() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def fuso_predefinito() -> str:
+    """Fuso usato quando il modello non indica `fuso`: variabile FUSO_PREDEFINITO o Europe/Rome."""
+    return os.environ.get("FUSO_PREDEFINITO", "").strip() or FUSO_DI_RISERVA
+
+
 @tool("tooltime")
-def ora_corrente(fuso: str, parte: Literal["ora", "data", "entrambe"] = "entrambe") -> str:
+def ora_corrente(fuso: str = "", parte: Literal["ora", "data", "entrambe"] = "entrambe") -> str:
     """Restituisce data e/o ora attuali in un fuso orario.
 
     Usala ogni volta che serve sapere che ora e' o che giorno e' in una citta' o
     in un paese. L'argomento `fuso` e' il nome IANA del fuso orario, ad esempio
     "Europe/Rome", "Asia/Tokyo" o "America/New_York" (non il nome della citta' da sola).
+    Se l'utente non indica una citta' o un paese, ometti `fuso`: lo strumento usa il fuso
+    predefinito. Non usare "UTC" o "GMT" se l'utente non li chiede.
     Il risultato inizia con il nome del luogo: nella risposta usa quel nome (per esempio
     "a New York"), mai il nome IANA con la barra (come "America/New_York").
     Riporta l'ora esattamente come scritta nel risultato, a parole ("sono le ore 10 e 32 minuti"):
@@ -52,8 +62,9 @@ def ora_corrente(fuso: str, parte: Literal["ora", "data", "entrambe"] = "entramb
     L'argomento `parte` dice cosa restituire: "ora" se l'utente chiede solo l'ora,
     "data" se chiede solo il giorno o la data, "entrambe" negli altri casi.
     """
+    fuso = fuso.strip() or fuso_predefinito()
     try:
-        zona = ZoneInfo(fuso.strip())
+        zona = ZoneInfo(fuso)
     except (ZoneInfoNotFoundError, ValueError, OSError):
         return (f"Fuso orario non valido: {fuso!r}. Usa un nome IANA, "
                 "ad esempio 'Europe/Rome' o 'Asia/Tokyo'.")

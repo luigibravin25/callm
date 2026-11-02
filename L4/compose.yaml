@@ -8,6 +8,7 @@ services:
       LM_BASE_URL: ${DOCKER_LM_BASE_URL:-http://host.docker.internal:1234/v1}
       LM_MODEL: ${LM_MODEL:-google/gemma-4-e2b}
       MAX_STEPS: ${MAX_STEPS:-5}
+      FUSO_PREDEFINITO: ${FUSO_PREDEFINITO:-Europe/Rome}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     stdin_open: true
