@@ -307,12 +307,18 @@ def converti(valore: float, da: str, a: str) -> str:
         )
     testo_valore = formatta_numero(valore)
     base = valore * u_da.fattore + u_da.offset
+    # residuo in virgola mobile dovuto all'offset di partenza (es. -459,67 °F -> 0 K)
+    if abs(base) < 1e-12 * abs(u_da.offset):
+        base = 0.0
     if u_da.grandezza == "temperatura" and base < -1e-9:
         raise ErroreConversione(
             f"Valore impossibile: {testo_valore} {_nome(u_da, testo_valore)} "
             "è sotto lo zero assoluto."
         )
     risultato = (base - u_a.offset) / u_a.fattore
+    if not (math.isfinite(base) and math.isfinite(risultato)):
+        raise ErroreConversione(
+            "Valore non valido: risultato fuori dall'intervallo rappresentabile.")
     # residuo in virgola mobile dovuto all'offset (es. 32 °F -> 5,7e-14 °C)
     if abs(risultato) < 1e-12 * (abs(base) + abs(u_a.offset)) / u_a.fattore:
         risultato = 0.0
