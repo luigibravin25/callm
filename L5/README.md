@@ -76,7 +76,7 @@ tutti i comandi si lanciano da qui. La configurazione predefinita punta a
 
 ```powershell
 docker compose config                 # 1. validazione (nessun container)
-docker compose build                  # 2. costruisce l'immagine assistente-laboratorio-app (python:3.14-slim, utente non root)
+docker compose build                  # 2. costruisce l'immagine assistente-laboratorio-l5 (python:3.14-slim, utente non root)
 docker compose run --rm app           # 3. sessione interattiva (serve un terminale)
 ```
 
@@ -90,5 +90,5 @@ Dopo ogni modifica al codice o a `assistente-laboratorio/app/llm.py` (`STREAM`, 
 `LOG_HTTP`, `SYSTEM_PROMPT`) rifai `docker compose build`: l'immagine contiene una copia di `app/`.
 
 Pulizia: `docker compose down` ferma e rimuove container e rete del progetto;
-`docker rmi assistente-laboratorio-app` rimuove l'immagine.
+`docker rmi assistente-laboratorio-l5` rimuove l'immagine.
 
