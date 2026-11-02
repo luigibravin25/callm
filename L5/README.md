@@ -3,7 +3,8 @@
 App da terminale basata su un grafo LangGraph che parla con un modello locale in
 LM Studio (API compatibile OpenAI). La cronologia resta solo in memoria. Il modello
 riceve a ogni richiesta il prompt di sistema `SYSTEM_PROMPT` e dispone dello strumento
-`tooltime(fuso, parte)` (data e/o ora attuali per un fuso IANA, es. `Asia/Tokyo`). La risposta compare
+`tooltime(fuso, parte)` (data e/o ora attuali per un fuso IANA, es. `Asia/Tokyo`) e dello
+strumento `toolconvert(valore, da, a)` (convertitore di unita'). La risposta compare
 token per token (`STREAM = True`) oppure in blocco (`STREAM = False`). LM Studio resta
 sul computer host e non e' containerizzato.
 
@@ -65,6 +66,27 @@ Il terminale mostra la chat con `Tu:` per i tuoi messaggi e `Assistente:` per le
   continua e puoi scrivere la domanda successiva.
 - Con `LOG_GRAFO = True` ogni chiamata agli strumenti (nome, argomenti, risultato) e' scritta
   nel terminale dal logger `app.graph` (livello INFO, su stderr).
+
+## Convertitore di unita'
+
+Lo strumento `toolconvert` converte un valore tra due unita' della stessa grandezza
+(codice in `assistente-laboratorio/app/conversioni.py`). Il modello lo richiama come
+`tooltime`, con lo stesso limite `MAX_STEPS`. Esempi di domanda: "quanti chilometri sono
+10 miglia?", "converti 100 gradi Celsius in Fahrenheit".
+
+- Argomenti: `valore` (numero finito), `da` e `a` (unita' di partenza e di arrivo).
+- Grandezze (elenco chiuso): lunghezza, massa, tempo, temperatura, area, volume, velocita',
+  accelerazione, forza, pressione, energia, potenza, frequenza, angolo, densita', portata,
+  dati digitali.
+- I simboli vanno scritti esatti, maiuscole comprese (`mbar` e' il millibar, `MB` il megabyte,
+  `Gal` il galileo); i nomi in parole sono liberi (`chilometri`, `GRADI CELSIUS`, `metri quadrati`).
+  Sono accettate anche varianti ASCII come `m/s^2`, `m2`, `um`, `degC`.
+- Risultato in italiano: `10 miglia = 16,0934 chilometri` (virgola decimale, 6 cifre
+  significative, notazione `1,5 × 10^-9` per valori molto grandi o molto piccoli).
+- Errori restituiti al modello come testo: unita' non ammessa (`parsec`), conversione
+  incompatibile (`km` in `kg`), unita' ambigua (`gallone`: va indicato `gal US` o `gal UK`),
+  valore impossibile (temperatura sotto lo zero assoluto, valore non finito). Argomenti di
+  tipo sbagliato (es. `valore` non numerico) sono respinti dallo schema e il grafo continua.
 
 ## Docker
 

@@ -4,6 +4,9 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
+
+from app.conversioni import ErroreConversione, converti
 
 
 FUSO_DI_RISERVA = "Europe/Rome"  # usato se FUSO_PREDEFINITO non e' impostata
@@ -76,4 +79,31 @@ def ora_corrente(fuso: str = "", parte: Literal["ora", "data", "entrambe"] = "en
     return f"{_luogo(zona)}: {_data(locale)}, {_ora(locale)}"
 
 
-STRUMENTI = [ora_corrente]
+class ArgomentiConversione(BaseModel):
+    valore: float = Field(allow_inf_nan=False,
+                          description="Numero da convertire, ad esempio 10 o 36.6.")
+    da: str = Field(min_length=1, description=(
+        'Unità di partenza: simbolo o nome italiano, ad esempio "km", "miglia", '
+        '"gradi Celsius".'))
+    a: str = Field(min_length=1, description=(
+        'Unità di arrivo: simbolo o nome italiano, ad esempio "m", "chilometri", '
+        '"gradi Fahrenheit".'))
+
+
+@tool("toolconvert", args_schema=ArgomentiConversione)
+def converti_unita(valore: float, da: str, a: str) -> str:
+    """Converte un valore tra due unità di misura della stessa grandezza.
+
+    Usalo per ogni conversione di unità di misura (lunghezze, masse, temperature,
+    volumi, velocità, pressioni, energie, dati digitali e altre).
+    `da` e `a` accettano il simbolo o il nome italiano, ad esempio "km", "miglia",
+    "gradi Celsius". Riporta il risultato esattamente come scritto.
+    Se il risultato è un errore, spiegalo all'utente senza inventare un valore.
+    """
+    try:
+        return converti(valore, da, a)
+    except ErroreConversione as errore:
+        return str(errore)
+
+
+STRUMENTI = [ora_corrente, converti_unita]
