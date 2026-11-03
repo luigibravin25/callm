@@ -1,12 +1,14 @@
+import math
 import os
 from datetime import datetime, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import httpx
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from app.conversioni import ErroreConversione, converti
+from app.conversioni import ErroreConversione, converti, formatta_numero
 
 
 FUSO_DI_RISERVA = "Europe/Rome"  # usato se FUSO_PREDEFINITO non e' impostata
@@ -106,4 +108,73 @@ def converti_unita(valore: float, da: str, a: str) -> str:
         return str(errore)
 
 
-STRUMENTI = [ora_corrente, converti_unita]
+# --- calcolatrice sicura: la logica sta nel servizio HTTP (servizio/), qui solo il wrapper ---
+# nome, descrizione e schema sono scritti a mano: se l'endpoint cambia, va aggiornato qui
+
+CALC_URL_PREDEFINITO = "http://127.0.0.1:8001"
+TIMEOUT_CALC = 5.0  # secondi: oltre, l'agente non resta bloccato
+
+MSG_CALC_422 = ("Richiesta non accettata dal servizio calcolatrice (HTTP 422): "
+                "il contratto dell'endpoint potrebbe essere cambiato.")
+MSG_CALC_TIMEOUT = "Il servizio calcolatrice non ha risposto entro 5 secondi."
+MSG_CALC_NON_VALIDA = "Risposta non valida dal servizio calcolatrice."
+
+
+def calc_base_url() -> str:
+    """Indirizzo del servizio: variabile CALC_BASE_URL (letta a ogni chiamata) o il predefinito."""
+    return os.environ.get("CALC_BASE_URL", "").strip().rstrip("/") or CALC_URL_PREDEFINITO
+
+
+def _client() -> httpx.Client:
+    """Client HTTP del wrapper (funzione separata per poterla sostituire nei test)."""
+    return httpx.Client(timeout=TIMEOUT_CALC)
+
+
+def _numero(valore) -> bool:
+    return (isinstance(valore, (int, float)) and not isinstance(valore, bool)
+            and math.isfinite(valore))
+
+
+class ArgomentiCalcolo(BaseModel):
+    espressione: str = Field(min_length=1, description=(
+        'Espressione aritmetica con numeri in cifre e punto decimale, '
+        'ad esempio "(3+4)^2/7" o "2.5*4".'))
+
+
+@tool("toolcalc", args_schema=ArgomentiCalcolo)
+def calcola_espressione(espressione: str) -> str:
+    """Calcola un'espressione aritmetica.
+
+    Usalo per ogni calcolo aritmetico. Sono ammesse solo + - * /, le parentesi e le
+    potenze con ^ (ad esempio "2^10"). Scrivi i numeri in cifre con il punto decimale.
+    Riporta il risultato esattamente come scritto.
+    Se il risultato è un errore, spiegalo all'utente senza inventare un valore.
+    """
+    url = calc_base_url()
+    try:
+        with _client() as client:
+            risposta = client.post(f"{url}/calcola", json={"espressione": espressione})
+    except httpx.TimeoutException:
+        return MSG_CALC_TIMEOUT
+    except httpx.TransportError:
+        return f"Servizio calcolatrice non raggiungibile a {url}: avvialo e riprova."
+    if risposta.status_code == 422:
+        return MSG_CALC_422
+    if risposta.status_code not in (200, 400):
+        return f"Il servizio calcolatrice ha risposto con l'errore HTTP {risposta.status_code}."
+    try:
+        corpo = risposta.json()
+    except ValueError:
+        return MSG_CALC_NON_VALIDA
+    if not isinstance(corpo, dict):
+        return MSG_CALC_NON_VALIDA
+    if risposta.status_code == 400:
+        errore = corpo.get("errore")
+        return f"Espressione rifiutata: {errore}" if isinstance(errore, str) else MSG_CALC_NON_VALIDA
+    risultato = corpo.get("risultato")
+    if not _numero(risultato):
+        return MSG_CALC_NON_VALIDA
+    return f"{espressione} = {formatta_numero(risultato)}"
+
+
+STRUMENTI = [ora_corrente, converti_unita, calcola_espressione]
