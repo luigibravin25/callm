@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 
 from app.conversioni import ErroreConversione, converti, formatta_numero
 
@@ -213,7 +214,9 @@ class ArgomentiDate(BaseModel):
         '"natale", "pasqua 2027", "oggi". Per "giorni" e "giorno".'))
     da: str = Field(default="", description=(
         'Data di partenza come la scrive l\'utente; vuota = oggi. Per "giorni" e "scadenza".'))
-    giorni: int | None = Field(default=None, description=(
+    # SkipJsonSchema: lo schema resta {"type": "integer"} (niente anyOf con null), altrimenti il
+    # template jinja di gemma in LM Studio fallisce e la richiesta riceve HTTP 400
+    giorni: int | SkipJsonSchema[None] = Field(default=None, description=(
         'Numero di giorni della scadenza, ad esempio 30. Solo per "scadenza".'))
     tipo: Literal["lavorativi", "calendario"] = Field(default="lavorativi", description=(
         'Per "scadenza": "lavorativi" (predefinito) oppure "calendario".'))
@@ -262,7 +265,8 @@ def date_e_scadenze(operazione: str, data: str = "", da: str = "", giorni: int |
     è una data e se è lavorativo o festivo (Natale, Pasqua, Liberazione e le altre feste).
     Passa le date come le scrive l'utente (anche "Natale" o "25 dicembre"): non calcolarle tu.
     Riporta date e numeri esattamente come scritti, in testo semplice, senza LaTeX e senza il
-    simbolo $. Riporta sempre l'avviso finale (il calcolo è indicativo).
+    simbolo $. OBBLIGATORIO: la tua risposta all'utente termina sempre con la frase
+    "Calcolo indicativo, non ha valore legale." (anche se la risposta è breve).
     Se il risultato è un errore, spiegalo all'utente senza inventare un valore.
     """
     corpo = {"operazione": operazione, "tipo": tipo}
