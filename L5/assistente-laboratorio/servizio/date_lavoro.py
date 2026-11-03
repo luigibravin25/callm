@@ -256,3 +256,103 @@ def leggi_data(testo: str | None, riferimento: date | None = None) -> date:
         raise ErroreData(f"formato non riconosciuto o festività sconosciuta: "
                          f"{_mostra(testo.strip())!r}; scrivi la data, " + _FORMATI)
     raise ErroreData(f"formato non riconosciuto: {_mostra(testo.strip())!r}; " + _FORMATI)
+
+
+# --- le tre operazioni (ogni risultato porta l'avviso non normativo) ---
+
+def _giorno(d: date) -> str:
+    return GIORNI_SETTIMANA[d.weekday()]
+
+
+def _vuoto(testo: str | None) -> bool:
+    return testo is None or not testo.strip()
+
+
+def _successivo(d: date) -> date:
+    d += timedelta(days=1)
+    if d.year > ANNO_MAX:
+        raise ErroreData(f"il risultato cade oltre il {ANNO_MAX} (anni ammessi dal {ANNO_MIN} "
+                         f"al {ANNO_MAX})")
+    return d
+
+
+def conta_giorni(data: str | None, da: str | None = None) -> dict:
+    """Giorni di calendario e lavorativi fino a `data`.
+    `da` vuota o "oggi": (oggi, data], oggi escluso; altrimenti [da, data], estremi compresi."""
+    if _vuoto(data):
+        raise ErroreData("manca la data di arrivo")
+    da_oggi = _vuoto(da) or normalizza(da) == "oggi"
+    partenza = _oggi() if da_oggi else leggi_data(da)
+    arrivo = leggi_data(data, partenza)
+    if arrivo < partenza:
+        raise ErroreData(f"la data {arrivo.isoformat()} è già passata rispetto alla partenza "
+                         f"{partenza.isoformat()}")
+    primo = partenza + timedelta(days=1) if da_oggi else partenza
+    giorni = [primo + timedelta(days=n) for n in range((arrivo - primo).days + 1)]
+    festivita = [{"data": d.isoformat(), "nome": nome}
+                 for d in giorni if d.weekday() < 5 for nome in festivita_del_giorno(d)]
+    return {
+        "operazione": "giorni",
+        "da": partenza.isoformat(), "da_giorno": _giorno(partenza),
+        "a": arrivo.isoformat(), "a_giorno": _giorno(arrivo),
+        "conteggio": "oggi escluso" if da_oggi else "estremi compresi",
+        "giorni_calendario": len(giorni),
+        "giorni_lavorativi": sum(1 for d in giorni if e_lavorativo(d)),
+        "festivita": festivita,
+        "avviso": AVVISO,
+    }
+
+
+def calcola_scadenza(giorni: int | None, da: str | None = None,
+                     tipo: str = "lavorativi") -> dict:
+    """Data dopo `giorni` giorni lavorativi o di calendario da `da` (predefinita oggi).
+    Di calendario: se cade in un giorno non lavorativo slitta al primo lavorativo."""
+    if giorni is None:
+        raise ErroreData("manca il numero di giorni della scadenza")
+    if giorni < 0:
+        raise ErroreData(f"numero di giorni negativo: {giorni}")
+    if giorni > MAX_GIORNI:
+        raise ErroreData(f"troppi giorni: {giorni} (massimo {MAX_GIORNI}, circa 10 anni)")
+    if tipo not in ("lavorativi", "calendario"):
+        raise ErroreData(f"tipo non valido: {tipo!r} (ammessi: lavorativi, calendario)")
+    partenza = _oggi() if _vuoto(da) else leggi_data(da)
+    slittata_da, motivo = None, None
+    if tipo == "lavorativi":
+        scadenza, contati = partenza, 0
+        while contati < giorni:
+            scadenza = _successivo(scadenza)
+            contati += e_lavorativo(scadenza)
+    else:
+        originale = partenza + timedelta(days=giorni)
+        if originale.year > ANNO_MAX:
+            raise ErroreData(f"il risultato cade oltre il {ANNO_MAX} (anni ammessi dal "
+                             f"{ANNO_MIN} al {ANNO_MAX})")
+        scadenza = originale
+        while not e_lavorativo(scadenza):
+            scadenza = _successivo(scadenza)
+        if scadenza != originale:
+            slittata_da = originale.isoformat()
+            motivo = " e ".join(festivita_del_giorno(originale)) or _giorno(originale)
+    return {
+        "operazione": "scadenza",
+        "da": partenza.isoformat(), "da_giorno": _giorno(partenza),
+        "giorni": giorni, "tipo": tipo,
+        "scadenza": scadenza.isoformat(), "scadenza_giorno": _giorno(scadenza),
+        "slittata_da": slittata_da, "motivo_slittamento": motivo,
+        "avviso": AVVISO,
+    }
+
+
+def info_giorno(data: str | None) -> dict:
+    """Giorno della settimana, lavorativo, festivo (con i nomi), fine settimana."""
+    if _vuoto(data):
+        raise ErroreData("manca la data")
+    giorno = leggi_data(data)
+    return {
+        "operazione": "giorno",
+        "data": giorno.isoformat(), "giorno_settimana": _giorno(giorno),
+        "lavorativo": e_lavorativo(giorno),
+        "fine_settimana": giorno.weekday() >= 5,
+        "festivita": festivita_del_giorno(giorno),
+        "avviso": AVVISO,
+    }
