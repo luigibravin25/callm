@@ -52,7 +52,10 @@ def _tokenizza(espressione: str) -> list[_Token]:
             token.append(_Token(c, c, i + 1))
             i += 1
         else:
-            messaggio = f"carattere non ammesso '{c}' in posizione {i + 1}"
+            # caratteri non stampabili (a capo, surrogati) come codice: il messaggio resta leggibile
+            # e codificabile in UTF-8 nella risposta JSON
+            mostrato = f"'{c}'" if c.isprintable() else f"U+{ord(c):04X}"
+            messaggio = f"carattere non ammesso {mostrato} in posizione {i + 1}"
             if c == ",":
                 messaggio += ": usa il punto decimale (2.5, non 2,5)"
             raise ErroreCalcolo(messaggio)

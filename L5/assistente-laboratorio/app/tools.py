@@ -131,8 +131,12 @@ def _client() -> httpx.Client:
 
 
 def _numero(valore) -> bool:
-    return (isinstance(valore, (int, float)) and not isinstance(valore, bool)
-            and math.isfinite(valore))
+    if not isinstance(valore, (int, float)) or isinstance(valore, bool):
+        return False
+    try:
+        return math.isfinite(valore)
+    except OverflowError:  # intero JSON troppo grande per un float (es. 10**400)
+        return False
 
 
 class ArgomentiCalcolo(BaseModel):
@@ -158,6 +162,11 @@ def calcola_espressione(espressione: str) -> str:
         return MSG_CALC_TIMEOUT
     except httpx.TransportError:
         return f"Servizio calcolatrice non raggiungibile a {url}: avvialo e riprova."
+    except httpx.InvalidURL:
+        return (f"CALC_BASE_URL non valida: {url!r}. "
+                "Usa un indirizzo come http://127.0.0.1:8001.")
+    except httpx.RequestError:  # es. DecodingError: corpo compresso illeggibile
+        return MSG_CALC_NON_VALIDA
     if risposta.status_code == 422:
         return MSG_CALC_422
     if risposta.status_code not in (200, 400):
