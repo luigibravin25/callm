@@ -5,8 +5,9 @@ LM Studio (API compatibile OpenAI). La cronologia resta solo in memoria. Il mode
 riceve a ogni richiesta il prompt di sistema `SYSTEM_PROMPT` e dispone dello strumento
 `tooltime(fuso, parte)` (data e/o ora attuali per un fuso IANA, es. `Asia/Tokyo`) e dello
 strumento `toolconvert(valore, da, a)` (convertitore di unita'), entrambi locali, e dello
-strumento `toolcalc(espressione)` (calcolatrice sicura), che chiama via HTTP un servizio
-FastAPI separato. La risposta compare
+strumento `toolcalc(espressione)` (calcolatrice sicura) e dello strumento
+`tooldate(operazione, data, da, giorni, tipo)` (giorni e scadenze), che chiamano via HTTP lo
+stesso servizio FastAPI separato. La risposta compare
 token per token (`STREAM = True`) oppure in blocco (`STREAM = False`). LM Studio resta
 sul computer host e non e' containerizzato.
 
@@ -28,7 +29,7 @@ Git) fornisce `LM_MODEL`, `MAX_STEPS` e `FUSO_PREDEFINITO`.
 | `LM_MODEL` | identificativo del modello (da `GET /v1/models`) |
 | `MAX_STEPS` | massimo di passaggi per strumenti a ogni domanda, predefinito 5 |
 | `FUSO_PREDEFINITO` | fuso IANA usato da `tooltime` quando l'utente non indica un luogo, predefinito `Europe/Rome` |
-| `CALC_BASE_URL` | indirizzo del servizio calcolatrice usato da `toolcalc`, predefinito `http://127.0.0.1:8001` (in Compose `http://calcolatrice:8001`) |
+| `CALC_BASE_URL` | indirizzo del servizio usato da `toolcalc` e `tooldate`, predefinito `http://127.0.0.1:8001` (in Compose `http://calcolatrice:8001`) |
 
 Senza `LM_BASE_URL` o `LM_MODEL`, o con un `FUSO_PREDEFINITO` non valido, l'app si ferma con un
 errore che nomina la variabile.
@@ -137,6 +138,52 @@ Diagnosi: il wrapper non fa mai cadere l'app e restituisce al modello un testo c
 `CALC_BASE_URL` e' sbagliata; dopo 5 secondi senza risposta il messaggio e' "non ha risposto
 entro 5 secondi"; anche errori HTTP e risposte malformate hanno un messaggio proprio.
 
+## Giorni e scadenze (servizio FastAPI)
+
+Lo strumento `tooldate` chiama l'endpoint `POST /giorni` dello stesso servizio della
+calcolatrice (logica in `assistente-laboratorio/servizio/date_lavoro.py`). Come `toolcalc` e'
+un wrapper `@tool` scritto a mano, con gli stessi messaggi per servizio spento, timeout ed errori.
+Il modello passa le date come le scrive l'utente: le calcola il servizio.
+**Risultato non normativo**: ogni risposta termina con "Calcolo indicativo, non ha valore legale."
+
+Operazioni (`operazione`):
+- `giorni`: giorni lavorativi e di calendario fino a `data`. Senza `da` (o con `da` = `oggi`)
+  conta "quanto manca", oggi escluso; con una partenza scritta conta "dal ... al ...", estremi
+  compresi. Esempio: dal 1 al 31 dicembre 2026 = 21 lavorativi, 31 di calendario.
+- `scadenza`: data dopo `giorni` giorni `lavorativi` (predefinito) o di `calendario` da `da`
+  (predefinita oggi); una scadenza di calendario che cade di sabato, domenica o in una festivita'
+  slitta al primo giorno lavorativo.
+- `giorno`: giorno della settimana, lavorativo o festivo (con il nome della festivita').
+
+Giorni lavorativi: da lunedi' a venerdi', escluse le festivita'.
+
+Formati di data accettati (uscita sempre ISO `AAAA-MM-GG` con il giorno della settimana):
+`2026-12-25`; `25/12/2026`, `25-12-2026`, `25.12.2026` (sempre giorno/mese/anno); `25 dicembre 2026`,
+`1° maggio 2027`; `oggi`, `domani`; il nome di una festivita' (`natale`, `pasqua 2027`,
+`la liberazione`). Senza anno vale la prossima ricorrenza (da `da`, se indicata, altrimenti da oggi).
+Anni ammessi dal 1900 al 2100; anni bisestili con la regola gregoriana (2000 e 2024 si', 1900,
+2100 e 2027 no).
+
+Rifiuti con il motivo: date impossibili (`31/02/2026`, `29/02/2027`), anni a 2 cifre (`25/12/26`),
+separatori misti, formato sconosciuto, festivita' sconosciuta, data di arrivo gia' passata,
+scadenze negative o oltre 3660 giorni.
+
+Festivita' (file `assistente-laboratorio/servizio/festivita.json`, modificabile a mano e letto
+all'avvio del servizio; se non e' valido il servizio non parte e il messaggio indica la voce):
+Capodanno, Epifania, Pasqua e Lunedi' dell'Angelo (calcolate nel codice), Liberazione, Festa del
+Lavoro, Festa della Repubblica, Ferragosto, San Francesco d'Assisi (4 ottobre, dal 2026),
+Ognissanti, Immacolata, Natale, Santo Stefano. Le feste patronali non sono comprese.
+
+Prova a mano con il servizio avviato:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8001/giorni -ContentType 'application/json' -Body '{"operazione":"giorno","data":"pasqua 2027"}'
+```
+
+Risposta: `data` `2027-03-28`, `giorno_settimana` `domenica`, `festivita` `["Pasqua"]` e
+`avviso`. Una data rifiutata risponde `400` con `errore` (es. `29/02/2027`: "il 2027 non è
+bisestile: febbraio ha 28 giorni"); un corpo non valido risponde `422`.
+
 ## Docker
 
 Prerequisiti: Docker Desktop avviato; LM Studio avviato sull'host con il modello caricato e il
@@ -170,6 +217,7 @@ Prova rapida con input da pipe (`-T` perche' la pipe non ha un terminale):
 ```powershell
 "Che ore sono a Tokyo?`nexit" | docker compose run --rm -T app
 "quanto fa (3+4)^2 / 7?" | docker compose run --rm -T app
+"quanti giorni lavorativi ci sono dal 1 dicembre 2026 al 31 dicembre 2026?" | docker compose run --rm -T app
 ```
 
 Dopo ogni modifica al codice o a `assistente-laboratorio/app/llm.py` (`STREAM`, `LOG_GRAFO`,
