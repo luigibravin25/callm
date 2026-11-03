@@ -153,7 +153,8 @@ def calcola_espressione(espressione: str) -> str:
     Usalo per ogni calcolo aritmetico. Sono ammesse solo + - * /, le parentesi e le
     potenze con ^ (ad esempio "2^10"). Scrivi i numeri in cifre con il punto decimale.
     Riporta il risultato esattamente come scritto.
-    Rispondi in testo semplice, senza LaTeX e senza il simbolo $ (scrivi "5 alla seconda fa 25").
+    OBBLIGATORIO: rispondi in testo semplice, senza LaTeX e senza il simbolo $, né intorno ai
+    numeri né intorno all'espressione (scrivi "(3+4)^2 / 7 fa 7", "5 alla seconda fa 25").
     Se il risultato è un errore, spiegalo all'utente senza inventare un valore.
     """
     risposta = _chiedi_al_servizio("/calcola", {"espressione": espressione})
