@@ -2,11 +2,14 @@
 
 Risultato non normativo: ogni risposta porta AVVISO.
 """
+import calendar
 import json
+import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ANNO_MIN = 1900
 ANNO_MAX = 2100
@@ -130,3 +133,126 @@ def festivita_del_giorno(giorno: date) -> list[str]:
 def e_lavorativo(giorno: date) -> bool:
     """Da lunedi' a venerdi', escluse le festivita' del file."""
     return giorno.weekday() < 5 and not festivita_del_giorno(giorno)
+
+
+# --- lettura delle date ---
+
+MESI = ("gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
+        "settembre", "ottobre", "novembre", "dicembre")
+_FORMATI = ("formati ammessi: 2026-12-25, 25/12/2026 (giorno/mese/anno), 25 dicembre 2026, "
+            "oggi, domani o il nome di una festività (es. natale, pasqua 2027)")
+_ISO = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+_NUMERICA = re.compile(r"(\d{1,2})([/.-])(\d{1,2})\2(\d+)")
+_SEPARATORI_MISTI = re.compile(r"\d{1,2}[/.-]\d{1,2}[/.-]\d+")
+_A_PAROLE = re.compile(r"(\d{1,2}) ([a-z]+)(?: (\d{4}))?")
+_FESTA = re.compile(r"(?:(?:il|lo|la) |l')?(.+?)(?: (\d{4}))?")
+_ALIAS = {a: f for f in FESTIVITA for a in f.alias}
+
+
+def _oggi() -> date:
+    """Data corrente in Italia (funzione separata per poterla sostituire nei test)."""
+    return datetime.now(ZoneInfo(FUSO)).date()
+
+
+def _mostra(testo: str) -> str:
+    """Testo per i messaggi: i caratteri non stampabili diventano U+XXXX."""
+    return "".join(c if c.isprintable() else f"U+{ord(c):04X}" for c in testo)
+
+
+def _controlla_anno(anno: int) -> None:
+    if not ANNO_MIN <= anno <= ANNO_MAX:
+        raise ErroreData(f"anno fuori intervallo: {anno} (ammessi dal {ANNO_MIN} al {ANNO_MAX})")
+
+
+def _controlla_giorno_mese(giorno: int, mese: int, anno: int | None) -> None:
+    """Giorno e mese possibili; con anno=None vale il massimo del mese (29 per febbraio)."""
+    if not 1 <= mese <= 12:
+        raise ErroreData(f"mese non valido: {mese} (da 1 a 12)")
+    if giorno < 1:
+        raise ErroreData(f"giorno non valido: {giorno}")
+    nome = MESI[mese - 1]
+    massimo = 29 if mese == 2 and anno is None else calendar.monthrange(anno or 2000, mese)[1]
+    if giorno <= massimo:
+        return
+    if mese == 2 and giorno == 29:
+        raise ErroreData(f"il {anno} non è bisestile: febbraio ha 28 giorni")
+    if mese == 2:
+        raise ErroreData(f"febbraio ha al massimo {massimo} giorni"
+                         + (f" nel {anno}" if anno else ""))
+    raise ErroreData(f"{nome} ha {massimo} giorni")
+
+
+def _data_esatta(giorno: int, mese: int, anno: int) -> date:
+    _controlla_anno(anno)
+    _controlla_giorno_mese(giorno, mese, anno)
+    return date(anno, mese, giorno)
+
+
+def _prossima_fissa(giorno: int, mese: int, riferimento: date) -> date:
+    """Prima data con quel giorno e mese da riferimento in poi (per il 29/02: anno bisestile)."""
+    _controlla_giorno_mese(giorno, mese, None)
+    for anno in range(riferimento.year, ANNO_MAX + 1):
+        if mese == 2 and giorno == 29 and not calendar.isleap(anno):
+            continue
+        candidata = date(anno, mese, giorno)
+        if candidata >= riferimento:
+            return candidata
+    raise ErroreData(f"la prossima ricorrenza cade oltre il {ANNO_MAX} (anni ammessi dal "
+                     f"{ANNO_MIN} al {ANNO_MAX})")
+
+
+def _data_festivita(festivita: Festivita, anno: int | None, riferimento: date) -> date:
+    if anno is not None:
+        _controlla_anno(anno)
+        if festivita.dal is not None and anno < festivita.dal:
+            raise ErroreData(f"{festivita.nome} è festività nazionale solo dal {festivita.dal}")
+        trovata = data_festivita(festivita, anno)
+        if trovata is None:
+            raise ErroreData(f"{festivita.nome} non cade nel {anno}")
+        return trovata
+    for anno in range(max(riferimento.year, festivita.dal or ANNO_MIN), ANNO_MAX + 1):
+        trovata = data_festivita(festivita, anno)
+        if trovata is not None and trovata >= riferimento:
+            return trovata
+    raise ErroreData(f"la prossima ricorrenza di {festivita.nome} cade oltre il {ANNO_MAX} "
+                     f"(anni ammessi dal {ANNO_MIN} al {ANNO_MAX})")
+
+
+def leggi_data(testo: str | None, riferimento: date | None = None) -> date:
+    """Legge una data in uno dei formati ammessi; senza anno vale la prossima ricorrenza
+    da `riferimento` (compreso; predefinito oggi)."""
+    if testo is None or not testo.strip():
+        raise ErroreData("data vuota: " + _FORMATI)
+    oggi = _oggi()
+    riferimento = riferimento or oggi
+    norma = normalizza(testo)
+    if norma in ("oggi", "domani"):
+        risultato = oggi if norma == "oggi" else oggi + timedelta(days=1)
+        _controlla_anno(risultato.year)
+        return risultato
+    if trovato := _ISO.fullmatch(norma):
+        anno, mese, giorno = map(int, trovato.groups())
+        return _data_esatta(giorno, mese, anno)
+    if trovato := _NUMERICA.fullmatch(norma):
+        giorno, mese, cifre = int(trovato[1]), int(trovato[3]), trovato[4]
+        if len(cifre) == 2:
+            raise ErroreData(f"anno a 2 cifre in {_mostra(testo.strip())!r}: è ambiguo, "
+                             "scrivilo per intero (es. 2026)")
+        if len(cifre) != 4:
+            raise ErroreData(f"formato non riconosciuto: {_mostra(testo.strip())!r}; " + _FORMATI)
+        return _data_esatta(giorno, mese, int(cifre))
+    if _SEPARATORI_MISTI.fullmatch(norma):
+        raise ErroreData(f"separatori misti in {_mostra(testo.strip())!r}: usa sempre lo stesso "
+                         "(/ oppure - oppure .)")
+    if (trovato := _A_PAROLE.fullmatch(norma)) and trovato[2] in MESI:
+        giorno, mese = int(trovato[1]), MESI.index(trovato[2]) + 1
+        if trovato[3]:
+            return _data_esatta(giorno, mese, int(trovato[3]))
+        return _prossima_fissa(giorno, mese, riferimento)
+    if (trovato := _FESTA.fullmatch(norma)) and trovato[1] in _ALIAS:
+        anno = int(trovato[2]) if trovato[2] else None
+        return _data_festivita(_ALIAS[trovato[1]], anno, riferimento)
+    if re.fullmatch(r"[a-z' ]+(?: \d{4})?", norma):
+        raise ErroreData(f"formato non riconosciuto o festività sconosciuta: "
+                         f"{_mostra(testo.strip())!r}; scrivi la data, " + _FORMATI)
+    raise ErroreData(f"formato non riconosciuto: {_mostra(testo.strip())!r}; " + _FORMATI)
