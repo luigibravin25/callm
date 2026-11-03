@@ -4,7 +4,9 @@ App da terminale basata su un grafo LangGraph che parla con un modello locale in
 LM Studio (API compatibile OpenAI). La cronologia resta solo in memoria. Il modello
 riceve a ogni richiesta il prompt di sistema `SYSTEM_PROMPT` e dispone dello strumento
 `tooltime(fuso, parte)` (data e/o ora attuali per un fuso IANA, es. `Asia/Tokyo`) e dello
-strumento `toolconvert(valore, da, a)` (convertitore di unita'). La risposta compare
+strumento `toolconvert(valore, da, a)` (convertitore di unita'), entrambi locali, e dello
+strumento `toolcalc(espressione)` (calcolatrice sicura), che chiama via HTTP un servizio
+FastAPI separato. La risposta compare
 token per token (`STREAM = True`) oppure in blocco (`STREAM = False`). LM Studio resta
 sul computer host e non e' containerizzato.
 
@@ -26,6 +28,7 @@ Git) fornisce `LM_MODEL`, `MAX_STEPS` e `FUSO_PREDEFINITO`.
 | `LM_MODEL` | identificativo del modello (da `GET /v1/models`) |
 | `MAX_STEPS` | massimo di passaggi per strumenti a ogni domanda, predefinito 5 |
 | `FUSO_PREDEFINITO` | fuso IANA usato da `tooltime` quando l'utente non indica un luogo, predefinito `Europe/Rome` |
+| `CALC_BASE_URL` | indirizzo del servizio calcolatrice usato da `toolcalc`, predefinito `http://127.0.0.1:8001` (in Compose `http://calcolatrice:8001`) |
 
 Senza `LM_BASE_URL` o `LM_MODEL`, o con un `FUSO_PREDEFINITO` non valido, l'app si ferma con un
 errore che nomina la variabile.
@@ -56,8 +59,8 @@ Il terminale mostra la chat con `Tu:` per i tuoi messaggi e `Assistente:` per le
 | `SYSTEM_PROMPT` | `"Sei un assistente utile. Se l'utente chiede l'ora o la data senza indicare un luogo, chiama tooltime senza l'argomento fuso."` | anteposto a ogni richiesta al modello; non entra nella cronologia |
 | `STREAM` | `True` | `True` = token per token, `False` = risposta in blocco |
 | `HISTORY` | `True` | `True` = il modello ricorda i messaggi precedenti della sessione, `False` = ogni domanda parte da zero |
-| `LOG_GRAFO` | `False` | `True` = mostra nel terminale i log del grafo (`app.graph`: chiamate agli strumenti, risultati, limite) |
-| `LOG_HTTP` | `False` | `True` = mostra nel terminale le righe `HTTP Request: POST ...` verso LM Studio |
+| `LOG_GRAFO` | `True` | `True` = mostra nel terminale i log del grafo (`app.graph`: chiamate agli strumenti, risultati, limite) |
+| `LOG_HTTP` | `True` | `True` = mostra nel terminale le righe `HTTP Request: POST ...` verso LM Studio e verso il servizio calcolatrice (`/calcola`) |
 
 ## Strumenti e limite
 
@@ -88,6 +91,52 @@ Lo strumento `toolconvert` converte un valore tra due unita' della stessa grande
   valore impossibile (temperatura sotto lo zero assoluto, valore non finito). Argomenti di
   tipo sbagliato (es. `valore` non numerico) sono respinti dallo schema e il grafo continua.
 
+## Calcolatrice sicura (servizio FastAPI)
+
+La logica della calcolatrice sta in un servizio HTTP separato
+(`assistente-laboratorio/servizio/`: `calcolatrice.py` per il calcolo, `main.py` per FastAPI).
+Nell'agente, lo strumento `toolcalc` in `app/tools.py` e' un wrapper `@tool` che chiama
+l'endpoint con `httpx`; nome, descrizione e schema sono scritti a mano (nessuna discovery):
+se l'endpoint cambia, il wrapper va aggiornato. Il grafo lo tratta come gli altri strumenti.
+Esempio di domanda: "quanto fa (3+4)^2 / 7?".
+
+- Ammessi: numeri con il punto decimale (`2.5`), `+ - * /`, potenza con `^` o `**`
+  (associativa a destra: `2^3^2 = 512`), segno unario (`-2^2 = -4`), parentesi.
+  Nessun uso di `eval`: l'espressione e' letta da un analizzatore scritto a mano.
+- Rifiutati con il motivo: espressione vuota o oltre 200 caratteri, caratteri non ammessi
+  (lettere, funzioni come `sqrt`, `%`, `=`, la virgola decimale `2,5`, `×`), `//`,
+  sintassi non valida (`2+`, `2(3)`, parentesi non bilanciate), numeri malformati (`.5`),
+  oltre 50 livelli di annidamento, divisione per zero, base negativa con esponente non
+  intero, risultati oltre `1e100` in valore assoluto (`9^9^9`).
+- Risultato in italiano come per `toolconvert`: `2^0.5 = 1,41421`.
+
+Avvio del servizio in un secondo terminale, da `assistente-laboratorio/`:
+
+```powershell
+cd assistente-laboratorio
+& ..\venv\Scripts\python.exe -m uvicorn servizio.main:app --port 8001
+```
+
+Endpoint:
+
+| Richiesta | Risposta |
+|---|---|
+| `POST /calcola` con `{"espressione": "2^10"}` | `200` `{"espressione": "2^10", "risultato": 1024.0}` |
+| `POST /calcola` con un'espressione rifiutata (`"2+x"`) | `400` `{"errore": "carattere non ammesso 'x' in posizione 3"}` |
+| `POST /calcola` con un corpo non valido | `422` (FastAPI) |
+| `GET /salute` | `200` `{"stato": "ok"}` |
+
+Prova a mano con il servizio avviato:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8001/calcola -ContentType 'application/json' -Body '{"espressione":"2^10"}'
+```
+
+Diagnosi: il wrapper non fa mai cadere l'app e restituisce al modello un testo chiaro.
+"Servizio calcolatrice non raggiungibile a ..." significa che il servizio non e' avviato o che
+`CALC_BASE_URL` e' sbagliata; dopo 5 secondi senza risposta il messaggio e' "non ha risposto
+entro 5 secondi"; anche errori HTTP e risposte malformate hanno un messaggio proprio.
+
 ## Docker
 
 Prerequisiti: Docker Desktop avviato; LM Studio avviato sull'host con il modello caricato e il
@@ -102,15 +151,23 @@ docker compose build                  # 2. costruisce l'immagine assistente-labo
 docker compose run --rm app           # 3. sessione interattiva (serve un terminale)
 ```
 
+Compose ha due servizi con la stessa immagine: `app` (la chat) e `calcolatrice` (il servizio
+FastAPI, comando `uvicorn`). `docker compose run --rm app` avvia prima `calcolatrice` e aspetta
+che risponda a `/salute` (healthcheck); l'app lo raggiunge a `http://calcolatrice:8001` sulla
+rete interna. La porta 8001 non e' pubblicata sull'host.
+
 Prova rapida con input da pipe (`-T` perche' la pipe non ha un terminale):
 
 ```powershell
 "Che ore sono a Tokyo?`nexit" | docker compose run --rm -T app
+"quanto fa (3+4)^2 / 7?" | docker compose run --rm -T app
 ```
 
 Dopo ogni modifica al codice o a `assistente-laboratorio/app/llm.py` (`STREAM`, `LOG_GRAFO`,
-`LOG_HTTP`, `SYSTEM_PROMPT`) rifai `docker compose build`: l'immagine contiene una copia di `app/`.
+`LOG_HTTP`, `SYSTEM_PROMPT`) rifai `docker compose build`: l'immagine contiene una copia di
+`app/` e di `servizio/`.
 
-Pulizia: `docker compose down` ferma e rimuove container e rete del progetto;
+Pulizia: `docker compose down` ferma e rimuove container (anche `calcolatrice`, che resta
+attivo dopo `run`) e rete del progetto;
 `docker rmi assistente-laboratorio-l5` rimuove l'immagine.
 
