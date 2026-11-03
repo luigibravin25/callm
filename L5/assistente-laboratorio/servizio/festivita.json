@@ -1,0 +1,18 @@
+{
+  "_nota": "Festività nazionali italiane usate da /giorni. 'data' = MM-GG fissa; 'mobile' = pasqua o pasquetta (calcolate nel codice); 'dal' = primo anno in cui vale. Risultato non normativo.",
+  "festivita": [
+    {"nome": "Capodanno", "alias": ["capodanno", "primo dell'anno"], "data": "01-01"},
+    {"nome": "Epifania", "alias": ["epifania", "befana"], "data": "01-06"},
+    {"nome": "Pasqua", "alias": ["pasqua"], "mobile": "pasqua"},
+    {"nome": "Lunedì dell'Angelo", "alias": ["pasquetta", "lunedì dell'angelo"], "mobile": "pasquetta"},
+    {"nome": "Festa della Liberazione", "alias": ["liberazione", "festa della liberazione"], "data": "04-25"},
+    {"nome": "Festa del Lavoro", "alias": ["festa del lavoro", "primo maggio"], "data": "05-01"},
+    {"nome": "Festa della Repubblica", "alias": ["festa della repubblica", "repubblica"], "data": "06-02"},
+    {"nome": "Ferragosto", "alias": ["ferragosto", "assunzione"], "data": "08-15"},
+    {"nome": "San Francesco d'Assisi", "alias": ["san francesco", "festa di san francesco"], "data": "10-04", "dal": 2026},
+    {"nome": "Ognissanti", "alias": ["ognissanti", "tutti i santi"], "data": "11-01"},
+    {"nome": "Immacolata Concezione", "alias": ["immacolata", "immacolata concezione"], "data": "12-08"},
+    {"nome": "Natale", "alias": ["natale"], "data": "12-25"},
+    {"nome": "Santo Stefano", "alias": ["santo stefano"], "data": "12-26"}
+  ]
+}
