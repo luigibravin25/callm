@@ -59,8 +59,8 @@ Il terminale mostra la chat con `Tu:` per i tuoi messaggi e `Assistente:` per le
 | `SYSTEM_PROMPT` | `"Sei un assistente utile. Se l'utente chiede l'ora o la data senza indicare un luogo, chiama tooltime senza l'argomento fuso."` | anteposto a ogni richiesta al modello; non entra nella cronologia |
 | `STREAM` | `True` | `True` = token per token, `False` = risposta in blocco |
 | `HISTORY` | `True` | `True` = il modello ricorda i messaggi precedenti della sessione, `False` = ogni domanda parte da zero |
-| `LOG_GRAFO` | `False` | `True` = mostra nel terminale i log del grafo (`app.graph`: chiamate agli strumenti, risultati, limite) |
-| `LOG_HTTP` | `False` | `True` = mostra nel terminale le righe `HTTP Request: POST ...` verso LM Studio |
+| `LOG_GRAFO` | `True` | `True` = mostra nel terminale i log del grafo (`app.graph`: chiamate agli strumenti, risultati, limite) |
+| `LOG_HTTP` | `True` | `True` = mostra nel terminale le righe `HTTP Request: POST ...` verso LM Studio e verso il servizio calcolatrice (`/calcola`) |
 
 ## Strumenti e limite
 
