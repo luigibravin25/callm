@@ -156,6 +156,15 @@ FastAPI, comando `uvicorn`). `docker compose run --rm app` avvia prima `calcolat
 che risponda a `/salute` (healthcheck); l'app lo raggiunge a `http://calcolatrice:8001` sulla
 rete interna. La porta 8001 non e' pubblicata sull'host.
 
+Nella chat, con `LOG_HTTP = True`, ogni calcolo mostra la riga
+`[httpx] HTTP Request: POST http://calcolatrice:8001/calcola`. Il log del servizio (righe di
+uvicorn come `"POST /calcola HTTP/1.1" 200`) sta nel container `calcolatrice`: si vede da un
+secondo terminale, sempre da questa cartella, con
+
+```powershell
+docker compose logs -f calcolatrice
+```
+
 Prova rapida con input da pipe (`-T` perche' la pipe non ha un terminale):
 
 ```powershell
