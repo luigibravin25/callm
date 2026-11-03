@@ -155,10 +155,28 @@ def calcola_espressione(espressione: str) -> str:
     Rispondi in testo semplice, senza LaTeX e senza il simbolo $ (scrivi "5 alla seconda fa 25").
     Se il risultato è un errore, spiegalo all'utente senza inventare un valore.
     """
+    risposta = _chiedi_al_servizio("/calcola", {"espressione": espressione})
+    if isinstance(risposta, str):
+        return risposta
+    stato, corpo = risposta
+    if stato == 400:
+        return f"Espressione rifiutata: {corpo['errore']}"
+    risultato = corpo.get("risultato")
+    if not _numero(risultato):
+        return MSG_CALC_NON_VALIDA
+    return f"{espressione} = {formatta_numero(risultato)}"
+
+
+def _chiedi_al_servizio(percorso: str, corpo: dict) -> tuple[int, dict] | str:
+    """POST al servizio (CALC_BASE_URL + percorso), comune a toolcalc e tooldate.
+
+    Restituisce (200 | 400, corpo JSON) oppure il testo del guasto gia' tradotto
+    (timeout, servizio non raggiungibile, URL non valida, 422, altri codici, risposta
+    non JSON, 400 senza 'errore' testuale): il wrapper non solleva mai."""
     url = calc_base_url()
     try:
         with _client() as client:
-            risposta = client.post(f"{url}/calcola", json={"espressione": espressione})
+            risposta = client.post(f"{url}{percorso}", json=corpo)
     except httpx.TimeoutException:
         return MSG_CALC_TIMEOUT
     except httpx.TransportError:
@@ -173,18 +191,96 @@ def calcola_espressione(espressione: str) -> str:
     if risposta.status_code not in (200, 400):
         return f"Il servizio calcolatrice ha risposto con l'errore HTTP {risposta.status_code}."
     try:
-        corpo = risposta.json()
+        dati = risposta.json()
     except ValueError:
         return MSG_CALC_NON_VALIDA
-    if not isinstance(corpo, dict):
+    if not isinstance(dati, dict):
         return MSG_CALC_NON_VALIDA
-    if risposta.status_code == 400:
-        errore = corpo.get("errore")
-        return f"Espressione rifiutata: {errore}" if isinstance(errore, str) else MSG_CALC_NON_VALIDA
-    risultato = corpo.get("risultato")
-    if not _numero(risultato):
+    if risposta.status_code == 400 and not isinstance(dati.get("errore"), str):
         return MSG_CALC_NON_VALIDA
-    return f"{espressione} = {formatta_numero(risultato)}"
+    return risposta.status_code, dati
 
 
-STRUMENTI = [ora_corrente, converti_unita, calcola_espressione]
+# --- giorni e scadenze: stesso servizio HTTP (endpoint /giorni), wrapper scritto a mano ---
+
+class ArgomentiDate(BaseModel):
+    operazione: Literal["giorni", "scadenza", "giorno"] = Field(description=(
+        '"giorni" = quanti giorni (lavorativi e di calendario) fino a `data`; '
+        '"scadenza" = che data e\' dopo `giorni` giorni da `da`; '
+        '"giorno" = che giorno e\' `data` e se e\' lavorativo o festivo.'))
+    data: str = Field(default="", description=(
+        'Data come la scrive l\'utente, senza calcolarla: "25/12/2026", "25 dicembre", '
+        '"natale", "pasqua 2027", "oggi". Per "giorni" e "giorno".'))
+    da: str = Field(default="", description=(
+        'Data di partenza come la scrive l\'utente; vuota = oggi. Per "giorni" e "scadenza".'))
+    giorni: int | None = Field(default=None, description=(
+        'Numero di giorni della scadenza, ad esempio 30. Solo per "scadenza".'))
+    tipo: Literal["lavorativi", "calendario"] = Field(default="lavorativi", description=(
+        'Per "scadenza": "lavorativi" (predefinito) oppure "calendario".'))
+
+
+def _testo_giorni(r: dict) -> str:
+    festivita = ", ".join(f"{f['data']} {f['nome']}" for f in r["festivita"]) or "nessuna"
+    return (f"Dal {r['da']} ({r['da_giorno']}) al {r['a']} ({r['a_giorno']}), "
+            f"{r['conteggio']}: giorni lavorativi {r['giorni_lavorativi']}, "
+            f"giorni di calendario {r['giorni_calendario']}. "
+            f"Festività in giorni feriali: {festivita}. {r['avviso']}")
+
+
+def _testo_scadenza(r: dict) -> str:
+    tipo = "lavorativi" if r["tipo"] == "lavorativi" else "di calendario"
+    testo = (f"Scadenza: {r['scadenza']} ({r['scadenza_giorno']}), {r['giorni']} giorni "
+             f"{tipo} da {r['da']} ({r['da_giorno']}).")
+    if r["slittata_da"]:
+        testo += (f" La data calcolata {r['slittata_da']} cade di {r['motivo_slittamento']}: "
+                  "slitta al primo giorno lavorativo.")
+    return f"{testo} {r['avviso']}"
+
+
+def _testo_giorno(r: dict) -> str:
+    if not isinstance(r["festivita"], list):
+        raise TypeError("festivita non e' un elenco")
+    if r["festivita"]:
+        stato = f"festivo ({', '.join(r['festivita'])})."
+    elif r["fine_settimana"]:
+        stato = "fine settimana, non lavorativo."
+    else:
+        stato = "giorno lavorativo."
+    return f"{r['data']} ({r['giorno_settimana']}): {stato} {r['avviso']}"
+
+
+_TESTI_DATE = {"giorni": _testo_giorni, "scadenza": _testo_scadenza, "giorno": _testo_giorno}
+
+
+@tool("tooldate", args_schema=ArgomentiDate)
+def date_e_scadenze(operazione: str, data: str = "", da: str = "", giorni: int | None = None,
+                    tipo: str = "lavorativi") -> str:
+    """Giorni lavorativi, scadenze e festività italiane.
+
+    Usalo per sapere quanti giorni (lavorativi o di calendario) mancano a una data o ci sono
+    tra due date, per calcolare una scadenza dopo un numero di giorni, e per sapere che giorno
+    è una data e se è lavorativo o festivo (Natale, Pasqua, Liberazione e le altre feste).
+    Passa le date come le scrive l'utente (anche "Natale" o "25 dicembre"): non calcolarle tu.
+    Riporta date e numeri esattamente come scritti, in testo semplice, senza LaTeX e senza il
+    simbolo $. Riporta sempre l'avviso finale (il calcolo è indicativo).
+    Se il risultato è un errore, spiegalo all'utente senza inventare un valore.
+    """
+    corpo = {"operazione": operazione, "tipo": tipo}
+    for chiave, valore in (("data", data), ("da", da)):
+        if valore and valore.strip():
+            corpo[chiave] = valore
+    if giorni is not None:
+        corpo["giorni"] = giorni
+    risposta = _chiedi_al_servizio("/giorni", corpo)
+    if isinstance(risposta, str):
+        return risposta
+    stato, dati = risposta
+    if stato == 400:
+        return f"Data rifiutata: {dati['errore']}"
+    try:
+        return _TESTI_DATE[operazione](dati)
+    except (KeyError, TypeError, AttributeError):
+        return MSG_CALC_NON_VALIDA
+
+
+STRUMENTI = [ora_corrente, converti_unita, calcola_espressione, date_e_scadenze]
