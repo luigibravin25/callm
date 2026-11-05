@@ -95,9 +95,10 @@ def elenca(limit: int = LIMIT_PREDEFINITO, percorso: Path | None = None) -> tupl
 
     def operazione(con):
         totale = con.execute("SELECT COUNT(*) FROM note").fetchone()[0]  # per «Mostrate N di M»
-        # piu' recenti prima; a parita' di secondo decide l'ID (piu' alto = piu' recente)
-        righe = con.execute("SELECT id, testo, creata FROM note ORDER BY creata DESC, id DESC "
-                            "LIMIT ?", (limit,)).fetchall()
+        # piu' recenti prima, per ID: gli ID crescono sempre (AUTOINCREMENT), mentre la data
+        # locale puo' tornare indietro nell'ora ripetuta del cambio dell'ora legale
+        righe = con.execute("SELECT id, testo, creata FROM note ORDER BY id DESC LIMIT ?",
+                            (limit,)).fetchall()
         return [_nota(r) for r in righe], totale
 
     return _esegui(percorso, operazione)

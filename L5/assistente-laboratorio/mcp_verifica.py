@@ -29,6 +29,7 @@ class Verifica:
         self.errori = 0
 
     def passo(self, nome: str, riuscito: bool, dettaglio: str = "") -> None:
+        """Stampa "OK <passo>" oppure "ERRORE <passo>: <dettaglio>" e conta gli errori."""
         if riuscito:
             print(f"OK      {nome}")
         else:

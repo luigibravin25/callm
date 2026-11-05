@@ -34,10 +34,16 @@ class ErroreMCP(Exception):
 def configurazione_server(modulo: str = MODULO_SERVER, cartella: Path = CARTELLA_PROGETTO,
                           env: dict | None = None) -> dict:
     """Voce di MultiServerMCPClient: il server e' un processo figlio con lo stesso interprete."""
-    # il server riparte a ogni chiamata e scrive su stderr (il terminale della chat): solo
-    # avvisi ed errori, niente righe INFO; mcp unisce env alle variabili predefinite
+    # il server riparte a ogni chiamata e scrive su stderr (il terminale della chat):
+    # - FASTMCP_LOG_LEVEL=CRITICAL: niente righe di FastMCP ("Starting...", "Error calling
+    #   tool ..."): gli errori arrivano gia' al modello come risultato del tool, e il log delle
+    #   modifiche delle note e' scritto dal server con print, non dal logger di FastMCP;
+    # - PYTHONIOENCODING=utf-8: accenti ed emoji leggibili nel log anche con stderr rediretto
+    #   (su Windows altrimenti cp1252).
+    # mcp unisce env alle variabili predefinite
     return {"command": sys.executable, "args": ["-m", modulo], "transport": "stdio",
-            "cwd": str(cartella), "env": {"FASTMCP_LOG_LEVEL": "WARNING", **(env or {})}}
+            "cwd": str(cartella),
+            "env": {"FASTMCP_LOG_LEVEL": "CRITICAL", "PYTHONIOENCODING": "utf-8", **(env or {})}}
 
 
 def è_distruttivo(tool: BaseTool) -> bool:

@@ -108,6 +108,22 @@ class FiltroMarkdown:
     def __init__(self):
         self._sospeso = ""  # asterischi finali non ancora scritti
         self._inizio_riga = True  # il prossimo carattere e' a inizio riga?
+        self._ultimo = ""  # ultimo carattere gia' scritto (per riconoscere le potenze 2**10)
+
+    def _togli_grassetto(self, testo: str) -> str:
+        """Toglie i "**" del grassetto ma non quelli delle potenze: un "**" tra un operando
+        (cifra o ")") e un altro operando (cifra o "(") resta, es. 2**10, (1+2)**2."""
+        pezzi, inizio = [], 0
+        for trovato in re.finditer(r"\*\*", testo):
+            i, j = trovato.start(), trovato.end()
+            prima = testo[i - 1] if i > 0 else self._ultimo
+            dopo = testo[j] if j < len(testo) else ""
+            pezzi.append(testo[inizio:i])
+            if (prima.isdigit() or prima == ")") and (dopo.isdigit() or dopo == "("):
+                pezzi.append("**")  # potenza: si lascia
+            inizio = j
+        pezzi.append(testo[inizio:])
+        return "".join(pezzi)
 
     def aggiungi(self, testo: str) -> str:
         """Riceve un pezzo di testo e restituisce la parte gia' ripulita da scrivere."""
@@ -118,17 +134,21 @@ class FiltroMarkdown:
         if not testo:
             return ""
         # elenchi: "* " a inizio riga (anche all'inizio del pezzo, se la riga e' appena iniziata)
-        if self._inizio_riga and re.match(r"\* +", testo):
-            testo = re.sub(r"^\* +", "- ", testo)
-        testo = re.sub(r"\n\* +", "\n- ", testo)
-        testo = testo.replace("**", "")  # grassetto
+        # (anche annidati: "  * voce" diventa "  - voce", il rientro resta)
+        if self._inizio_riga and re.match(r"[ \t]*\* +", testo):
+            testo = re.sub(r"^([ \t]*)\* +", r"\1- ", testo)
+        testo = re.sub(r"\n([ \t]*)\* +", r"\n\1- ", testo)
+        testo = self._togli_grassetto(testo)  # grassetto (le potenze restano)
         self._inizio_riga = testo.endswith("\n")
+        if testo:
+            self._ultimo = testo[-1]
         return testo
 
     def fine(self) -> str:
         """Fine della risposta: gli asterischi rimasti in sospeso (un "**" isolato sparisce)."""
         resto, self._sospeso = self._sospeso.replace("**", ""), ""
         self._inizio_riga = True
+        self._ultimo = ""
         return resto
 
 
@@ -212,8 +232,9 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
             for stato in grafo.stream({"messages": messaggi, "steps": 0},
                                       stream_mode="values"):
                 ultimo = stato["messages"][-1]
-                if (nuova_risposta[0] and isinstance(ultimo, ToolMessage)
-                        and ultimo.status != "error"):
+                # dopo il risultato di uno strumento (anche un errore o un'eliminazione
+                # annullata) il modello ragiona di nuovo: l'animazione riparte
+                if nuova_risposta[0] and isinstance(ultimo, ToolMessage):
                     attesa.avvia()
         finally:
             attesa.ferma()  # anche con errori o Ctrl+C: la riga animata sparisce

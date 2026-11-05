@@ -8,6 +8,8 @@ from app.tools import STRUMENTI
 SYSTEM_PROMPT = (
     "Sei un assistente utile. Se l'utente chiede l'ora o la data senza indicare "
     "un luogo, chiama tooltime senza l'argomento fuso. "
+    # con 9 strumenti il modello a volte rispondeva "non ho accesso a un catalogo"
+    "Hai accesso al catalogo prodotti del negozio: non dire mai che non puoi consultarlo. "
     "Per il catalogo prodotti: quando l'utente nomina un prodotto o un tipo "
     "di prodotto, cercalo subito con search_catalog, senza chiedere chiarimenti prima; "
     "per prezzo, disponibilità, quantità o sede usa poi get_item con il codice trovato. "

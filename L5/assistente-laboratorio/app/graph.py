@@ -28,6 +28,8 @@ MSG_VUOTO = (
 
 MSG_ANNULLATA = "Eliminazione annullata dall'utente: nessuna nota eliminata."
 MSG_DOPPIONE = "Nota già salvata in questa richiesta: non la salvo di nuovo."
+MSG_RIPETUTA = "Chiamata ripetuta nella stessa risposta: add_note eseguita una sola volta."
+SEMPRE_DA_CONFERMARE = {"delete_note"}  # confermati anche senza l'annotazione MCP
 
 
 def _normalizza(testo) -> str:
@@ -66,7 +68,9 @@ def build_graph(llm=None, max_steps: int = 5, on_token=None, strumenti=STRUMENTI
     (annotazione MCP destructiveHint); senza conferma il tool distruttivo non viene eseguito."""
     # il modello va gia' associato agli stessi strumenti da build_llm
     nodo_strumenti = ToolNode(strumenti)
-    distruttivi = {t.name for t in strumenti if è_distruttivo(t)}
+    # tool che richiedono conferma: annotazione MCP destructiveHint, e delete_note comunque
+    # (difesa in profondita': se l'annotazione andasse persa, niente eliminazioni senza si')
+    distruttivi = {t.name for t in strumenti if è_distruttivo(t) or t.name in SEMPRE_DA_CONFERMARE}
 
     def emetti(testo: str) -> None:
         if on_token and testo:
@@ -103,15 +107,21 @@ def build_graph(llm=None, max_steps: int = 5, on_token=None, strumenti=STRUMENTI
         ultimo = state["messages"][-1]
         # note gia' salvate nella domanda in corso (risposte precedenti del modello)
         salvati = _note_salvate_nella_domanda(state["messages"][:-1])
+        in_questa_risposta = set()  # testi di add_note gia' ammessi in questa risposta
         ammesse, risposte = [], {}  # risposte: tool_call_id -> ToolMessage gia' deciso
         for c in ultimo.tool_calls:
             logger.info("Chiamata strumento %s con argomenti %s", c["name"], c["args"])
             if c["name"] == "add_note":
                 testo = _normalizza(c["args"].get("text", ""))
-                if testo and testo in salvati:
+                if testo and testo in salvati:  # gia' salvata con successo in questa domanda
                     risposte[c["id"]] = bloccata(c, MSG_DOPPIONE)
                     continue
-                salvati.add(testo)  # un doppione nella stessa risposta viene bloccato
+                if testo in in_questa_risposta:
+                    # stessa nota due volte nella stessa risposta: la prima non e' ancora stata
+                    # eseguita, quindi non si puo' dire "gia' salvata" (potrebbe fallire)
+                    risposte[c["id"]] = bloccata(c, MSG_RIPETUTA)
+                    continue
+                in_questa_risposta.add(testo)
             if c["name"] in distruttivi:
                 # tool distruttivo: si esegue solo con il si' esplicito dell'utente
                 if conferma is not None and conferma(c["name"], c["args"]):
