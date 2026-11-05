@@ -283,10 +283,15 @@ MCP Inspector (serve Node.js, scarica il pacchetto alla prima esecuzione) mostra
 annotazioni e chiamate fatte a mano. Da `assistente-laboratorio/`:
 
 ```powershell
-$env:NOTE_DB = "$env:TEMP\note-inspector\note.sqlite"   # per non toccare le note vere
-npx -y @modelcontextprotocol/inspector ..\venv\Scripts\python.exe -m mcp_note.server
-npx -y @modelcontextprotocol/inspector --cli ..\venv\Scripts\python.exe -m mcp_note.server --method tools/list
+npx -y @modelcontextprotocol/inspector ..\venv\Scripts\python.exe -m mcp_catalogo.server
+# -e passa NOTE_DB al server (l'Inspector non eredita tutto l'ambiente): le note vere non si toccano
+npx -y @modelcontextprotocol/inspector -e NOTE_DB="$env:TEMP\note-inspector\note.sqlite" ..\venv\Scripts\python.exe -m mcp_note.server
+npx -y @modelcontextprotocol/inspector --cli -e NOTE_DB="$env:TEMP\note-inspector\note.sqlite" ..\venv\Scripts\python.exe -m mcp_note.server --method tools/list
 ```
+
+Nel browser (`http://localhost:6274`, URL con il token stampato nel terminale): Transport `STDIO`,
+**Connect**, poi **Tools** -> **List Tools**. La cartella di `NOTE_DB` la crea il server al primo uso.
+`delete_note` dall'Inspector non chiede conferma: la conferma `(s/n)` sta nel grafo della CLI.
 
 ## Docker
 
