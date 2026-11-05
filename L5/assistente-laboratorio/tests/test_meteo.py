@@ -259,6 +259,14 @@ def test_latitudine_mancante_nel_geocoding(contatore):
         _meteo(contatore, "Roma", geo=geo_con(roma))
 
 
+def test_temperatura_nulla(contatore):
+    """Temperatura nulla in un giorno (capita nell'ultimo giorno) -> "n.d.", non un errore."""
+    dati = meteo_copia()
+    dati["daily"]["temperature_2m_max"][1] = None
+    testo = _meteo(contatore, "Roma", days=2, meteo=dati)
+    assert "minima 10,3 °C, massima n.d., pioggia 80 %" in testo
+
+
 def test_pioggia_nulla(contatore):
     """Probabilita' di pioggia nulla in un giorno -> "pioggia n.d.", non un errore."""
     dati = meteo_copia()

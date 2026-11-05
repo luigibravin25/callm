@@ -43,7 +43,14 @@ def _api(richieste):
     ("Sabato prossimo", date(2026, 11, 7)), ("mercoledi", date(2026, 11, 11)),
     ("il 15 novembre", date(2026, 11, 15)), ("15 novembre", date(2026, 11, 15)),
     ("2026-11-09", date(2026, 11, 9)), ("09/11/2026", date(2026, 11, 9)),
-    ("natale", date(2026, 12, 25)), ("per domani", date(2026, 11, 6))])
+    ("natale", date(2026, 12, 25)), ("per domani", date(2026, 11, 6)),
+    # forme naturali trovate dalla revisione finale (il modello passa la data come la scrive l'utente)
+    ("a Natale", date(2026, 12, 25)), ("il prossimo sabato", date(2026, 11, 7)),
+    ("sabato 7 novembre", date(2026, 11, 7)), ("dopo domani", date(2026, 11, 7)),
+    ("venerdi'", date(2026, 11, 6)), ("tra un giorno", date(2026, 11, 6)),
+    ("tra due giorni", date(2026, 11, 7)), ("fra sette giorni", date(2026, 11, 12)),
+    # "prossimo" detto nello stesso giorno della settimana: la settimana dopo, non oggi
+    ("giovedì prossimo", date(2026, 11, 12)), ("il prossimo giovedì", date(2026, 11, 12))])
 def test_leggi_giorno(testo, atteso):
     """Date relative, giorni della settimana, formati dell'esercizio 3 e parole di contorno."""
     assert leggi_giorno(testo, OGGI) == atteso
@@ -96,6 +103,13 @@ def test_date_prevale_su_days(monkeypatch, contatore):
     testo = _meteo(monkeypatch, contatore, "domani", days=5)
     righe = [r for r in testo.split("Previsioni:\n")[1].split("\n") if r.startswith("- ")]
     assert len(righe) == 1 and righe[0].startswith("- domani, venerdì 6 novembre 2026: ")
+
+
+def test_date_con_days_fuori_intervallo(monkeypatch, contatore):
+    """Con date presente days e' ignorato, anche se fuori intervallo (il modello riempie entrambi)."""
+    testo = _meteo(monkeypatch, contatore, "domani", days=10)
+    righe = [r for r in testo.split("Previsioni:\n")[1].split("\n") if r.startswith("- ")]
+    assert len(righe) == 1 and righe[0].startswith("- domani, ")
 
 
 def test_date_non_testo(monkeypatch, contatore):

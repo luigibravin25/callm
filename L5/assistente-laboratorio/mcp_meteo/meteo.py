@@ -58,9 +58,18 @@ FORMATI_DATA = ("formati ammessi: oggi, domani, dopodomani, tra N giorni, un gio
                 "una festività (natale)")
 # parole di contorno che il modello puo' lasciare intorno alla data ("il 15 novembre",
 # "sabato prossimo", "per domani"): si tolgono prima di leggerla
-_PAROLE_INIZIALI = ("il ", "lo ", "la ", "l'", "per ", "di ")
-_PAROLE_FINALI = (" prossimo", " prossima")
-_TRA_N_GIORNI = re.compile(r"(?:tra|fra) (\d{1,4}) giorn[oi]")  # "tra 3 giorni", "fra 1 giorno"
+_PAROLE_INIZIALI = ("il ", "lo ", "la ", "l'", "per ", "di ", "a ")
+# "prossimo" cambia il significato quando il giorno della settimana e' oggi: si ricorda a parte
+_PROSSIMO_INIZIALE = ("prossimo ", "prossima ")
+_PROSSIMO_FINALE = (" prossimo", " prossima")
+# "tra 3 giorni", "fra 1 giorno", "tra due giorni": il numero in cifre o in lettere
+_TRA_N_GIORNI = re.compile(r"(?:tra|fra) (\w+) giorn[oi]")
+_NUMERI_IN_LETTERE = {"un": 1, "uno": 1, "una": 1, "due": 2, "tre": 3, "quattro": 4,
+                      "cinque": 5, "sei": 6, "sette": 7, "otto": 8, "nove": 9, "dieci": 10,
+                      "quindici": 15, "venti": 20, "trenta": 30}
+_MAX_GIORNI_AVANTI = 3660  # "tra 99999 giorni": oltre circa 10 anni e' un errore di argomento
+# accento scritto con l'apostrofo ("venerdi'", "lunedi'"): si toglie l'apostrofo
+_ACCENTO_APOSTROFO = re.compile(r"([aeiou])'(?=\s|$)")
 _SETTIMANA = tuple(normalizza(g) for g in GIORNI_SETTIMANA)  # "lunedi", "martedi"...
 
 
@@ -245,19 +254,25 @@ def _oggi_locale(dati: dict) -> date:
         raise RispostaNonValida(f"fuso orario sconosciuto: {fuso!r}.") from None
 
 
-def _pulisci_data(testo: str) -> str:
-    """Testo della data normalizzato, senza articoli e parole di contorno."""
-    norma = normalizza(testo)
+def _pulisci_data(testo: str) -> tuple[str, bool]:
+    """(testo normalizzato senza articoli e parole di contorno, c'era "prossimo"?)."""
+    # minuscole, senza accenti; "venerdi'" (accento con l'apostrofo) -> "venerdi"
+    norma = _ACCENTO_APOSTROFO.sub(r"\1", normalizza(testo))
+    norma = norma.replace("dopo domani", "dopodomani")  # scritto in due parole
+    prossimo = False
     cambiato = True
-    while cambiato:  # piu' parole insieme: "per il 15 novembre"
+    while cambiato:  # piu' parole insieme: "per il prossimo sabato", "a natale"
         cambiato = False
         for parola in _PAROLE_INIZIALI:
             if norma.startswith(parola):
                 norma, cambiato = norma[len(parola):].strip(), True
-        for parola in _PAROLE_FINALI:
+        for parola in _PROSSIMO_INIZIALE:
+            if norma.startswith(parola):
+                norma, cambiato, prossimo = norma[len(parola):].strip(), True, True
+        for parola in _PROSSIMO_FINALE:
             if norma.endswith(parola):
-                norma, cambiato = norma[:-len(parola)].strip(), True
-    return norma
+                norma, cambiato, prossimo = norma[:-len(parola)].strip(), True, True
+    return norma, prossimo
 
 
 def leggi_giorno(testo: str, oggi: date) -> date:
@@ -269,18 +284,30 @@ def leggi_giorno(testo: str, oggi: date) -> date:
     """
     if not isinstance(testo, str):
         raise ArgomentoNonValido(f"date deve essere un testo; {FORMATI_DATA}.")
-    norma = _pulisci_data(testo)
+    norma, prossimo = _pulisci_data(testo)
     if not norma:
         raise ArgomentoNonValido(f"data vuota; {FORMATI_DATA}.")
     relativi = {"oggi": 0, "domani": 1, "dopodomani": 2}  # giorni da aggiungere a oggi
     if norma in relativi:
         return oggi + timedelta(days=relativi[norma])
     if trovato := _TRA_N_GIORNI.fullmatch(norma):
-        # "tra 3 giorni": oggi + 3 (anche oltre i 7 giorni: lo segnala testo_meteo)
-        return oggi + timedelta(days=int(trovato[1]))
-    if norma in _SETTIMANA:
+        # "tra 3 giorni" o "tra tre giorni": oggi + 3 (oltre i 7 giorni lo segnala testo_meteo)
+        quanti = (int(trovato[1]) if trovato[1].isdigit()
+                  else _NUMERI_IN_LETTERE.get(trovato[1]))
+        if quanti is None or quanti > _MAX_GIORNI_AVANTI:
+            raise ArgomentoNonValido(f"numero di giorni non leggibile in «{testo.strip()}»; "
+                                     f"{FORMATI_DATA}.")
+        return oggi + timedelta(days=quanti)
+    primo, _, resto = norma.partition(" ")
+    if primo in _SETTIMANA and resto:
+        # "sabato 7 novembre": conta la data, il nome del giorno e' solo di contorno
+        norma = resto
+    elif norma in _SETTIMANA:
         # giorni da aggiungere per arrivare al prossimo giorno con quel nome (0 = oggi)
-        return oggi + timedelta(days=(_SETTIMANA.index(norma) - oggi.weekday()) % 7)
+        avanti = (_SETTIMANA.index(norma) - oggi.weekday()) % 7
+        if avanti == 0 and prossimo:
+            avanti = 7  # "giovedi' prossimo" detto di giovedi': la settimana dopo, non oggi
+        return oggi + timedelta(days=avanti)
     try:
         # senza anno ("15 novembre") vale la prossima ricorrenza a partire da oggi
         return leggi_data(norma, riferimento=oggi)
@@ -346,10 +373,23 @@ def _giorni_previsti(dati: dict) -> list[dict]:
             _misura(pioggia, "daily.precipitation_probability_max")
         giorni.append({"giorno": giorno,
                        "codice": _codice(liste["weather_code"][i], "daily.weather_code"),
-                       "massima": _misura(liste["temperature_2m_max"][i], "daily.temperature_2m_max"),
-                       "minima": _misura(liste["temperature_2m_min"][i], "daily.temperature_2m_min"),
+                       # temperature nulle (capita nell'ultimo giorno): "n.d.", come la pioggia
+                       "massima": _misura_o_nulla(liste["temperature_2m_max"][i],
+                                                  "daily.temperature_2m_max"),
+                       "minima": _misura_o_nulla(liste["temperature_2m_min"][i],
+                                                 "daily.temperature_2m_min"),
                        "pioggia": pioggia})
     return giorni
+
+
+def _misura_o_nulla(valore, nome: str):
+    """Un numero oppure None (dato non disponibile); qualsiasi altro valore non e' valido."""
+    return None if valore is None else _misura(valore, nome)
+
+
+def _temperatura(valore, unita: str) -> str:
+    """"9,1 °C", oppure "n.d." se il valore non e' disponibile."""
+    return "n.d." if valore is None else f"{_decimale(valore)} {unita}"
 
 
 def _riga_giorno(previsto: dict, oggi: date, unita_t: str, unita_p: str) -> str:
@@ -360,8 +400,9 @@ def _riga_giorno(previsto: dict, oggi: date, unita_t: str, unita_p: str) -> str:
     pioggia = ("n.d." if previsto["pioggia"] is None
                else f"{round(previsto['pioggia'])} {unita_p}")
     return (f"- {prefisso}{data_in_italiano(previsto['giorno'])}: "
-            f"{condizione(previsto['codice'])}, minima {_decimale(previsto['minima'])} {unita_t}, "
-            f"massima {_decimale(previsto['massima'])} {unita_t}, pioggia {pioggia}")
+            f"{condizione(previsto['codice'])}, "
+            f"minima {_temperatura(previsto['minima'], unita_t)}, "
+            f"massima {_temperatura(previsto['massima'], unita_t)}, pioggia {pioggia}")
 
 
 def _previsioni(dati: dict, giorni_previsti: list[dict]) -> list[str]:
@@ -411,13 +452,15 @@ def testo_meteo(city: str, days: int, data: str, client: httpx.Client, contatore
     """
     # 1. argomenti: citta' (o predefinita), giorni, data
     nome, precisazione, predefinita = _leggi_citta(city)
-    _controlla_days(days)
+    if not isinstance(data, str):
+        raise ArgomentoNonValido(f"date deve essere un testo; {FORMATI_DATA}.")
+    if not data.strip():
+        # con una data days e' ignorato: il modello piccolo puo' riempire entrambi
+        _controlla_days(days)
     righe = []  # righe del risultato, unite alla fine con un a capo
     if predefinita:
         # nessuna scelta silenziosa: si dichiara che si usa la citta' predefinita
         righe.append(f"Nessuna città indicata: uso la città predefinita, {nome}.")
-    if not isinstance(data, str):
-        raise ArgomentoNonValido(f"date deve essere un testo; {FORMATI_DATA}.")
     # 2. geocoding (solo Italia) e scelta della citta' tra gli omonimi
     scelto, alternative = scegli_citta(cerca_citta(client, contatore, nome), nome, precisazione)
     if predefinita:
