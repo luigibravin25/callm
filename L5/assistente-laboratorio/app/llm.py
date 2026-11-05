@@ -16,7 +16,14 @@ SYSTEM_PROMPT = (
     "con la stessa query e l'argomento max_results=M, poi rispondi con tutti i prodotti. "
     "Per \"ricordami di…\" chiama add_note una sola volta con il testo da ricordare. "
     "Per eliminare una nota usa delete_note con il suo ID: il programma chiede conferma "
-    "all'utente. Se l'ID non è chiaro, chiama prima list_notes.")
+    "all'utente. Se l'ID non è chiaro, chiama prima list_notes. "
+    # l'utente non deve leggere i nomi interni degli strumenti (es. "usa list_notes")
+    "Non nominare mai all'utente i nomi degli strumenti (come list_notes o delete_note): "
+    "parla in modo naturale. Se l'utente vuole eliminare una nota ma non dice quale, leggi tu "
+    "l'elenco, mostragli le note con il loro numero e chiedigli quale eliminare. "
+    # il terminale non interpreta il Markdown: gli asterischi resterebbero visibili
+    "Rispondi in testo semplice, senza asterischi e senza grassetto: per gli elenchi scrivi "
+    "una voce per riga che inizia con un trattino.")
 STREAM = True  # True = token per token, False = risposta in blocco
 HISTORY = True  # True = il modello ricorda i messaggi precedenti, False = ogni domanda parte da zero
 LOG_HTTP = True  # True = mostra nel terminale le richieste HTTP verso LM Studio

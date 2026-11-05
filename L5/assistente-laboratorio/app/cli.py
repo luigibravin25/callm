@@ -1,5 +1,6 @@
 import json  # per leggere l'elenco delle note restituito da list_notes
 import logging
+import re  # per riconoscere gli elenchi Markdown nelle risposte
 import sys
 import threading
 
@@ -95,6 +96,42 @@ class Attesa:
         self._scrivi("\r" + " " * larghezza + "\r")
 
 
+class FiltroMarkdown:
+    """Toglie il Markdown che il terminale mostrerebbe cosi' com'e': il grassetto (**testo**)
+    e gli elenchi con l'asterisco a inizio riga ("*   voce" diventa "- voce").
+
+    Funziona anche in streaming, dove "**" puo' arrivare spezzato in due pezzi: gli asterischi
+    in fondo a un pezzo restano in sospeso finche' non arriva il pezzo dopo. Un asterisco
+    singolo dentro la riga (es. 2*3) resta com'e'.
+    """
+
+    def __init__(self):
+        self._sospeso = ""  # asterischi finali non ancora scritti
+        self._inizio_riga = True  # il prossimo carattere e' a inizio riga?
+
+    def aggiungi(self, testo: str) -> str:
+        """Riceve un pezzo di testo e restituisce la parte gia' ripulita da scrivere."""
+        testo = self._sospeso + testo
+        senza_finali = testo.rstrip("*")
+        self._sospeso = testo[len(senza_finali):]  # es. "*" o "**" in fondo al pezzo
+        testo = senza_finali
+        if not testo:
+            return ""
+        # elenchi: "* " a inizio riga (anche all'inizio del pezzo, se la riga e' appena iniziata)
+        if self._inizio_riga and re.match(r"\* +", testo):
+            testo = re.sub(r"^\* +", "- ", testo)
+        testo = re.sub(r"\n\* +", "\n- ", testo)
+        testo = testo.replace("**", "")  # grassetto
+        self._inizio_riga = testo.endswith("\n")
+        return testo
+
+    def fine(self) -> str:
+        """Fine della risposta: gli asterischi rimasti in sospeso (un "**" isolato sparisce)."""
+        resto, self._sospeso = self._sospeso.replace("**", ""), ""
+        self._inizio_riga = True
+        return resto
+
+
 RISPOSTE_SI = {"s", "si", "sì"}  # uniche risposte che confermano un'eliminazione
 
 
@@ -155,13 +192,17 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
     if attesa is None:
         attesa = Attesa(scrivi=token_fn)
 
+    markdown = FiltroMarkdown()  # niente asterischi del Markdown nel terminale
+
     def scrivi_token(testo: str) -> None:
         # l'etichetta esce col primo token, cosi' i log degli strumenti non la spezzano
         if nuova_risposta[0]:
             nuova_risposta[0] = False
             attesa.ferma()
             token_fn(ETICHETTA_ASSISTENTE)
-        token_fn(testo)
+        pulito = markdown.aggiungi(testo)
+        if pulito:
+            token_fn(pulito)
 
     def invoca(messaggi: list) -> dict:
         """Esegue il grafo passo per passo: dopo uno strumento l'attesa riparte."""
@@ -206,6 +247,7 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
             if not testo:
                 continue
             nuova_risposta[0] = True
+            markdown.fine()  # nuova domanda: niente asterischi in sospeso da una risposta interrotta
             try:
                 out = invoca(cronologia + [HumanMessage(testo)])
             except KeyboardInterrupt:
@@ -230,9 +272,13 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
                 cronologia = out["messages"]
             if stream:
                 if not nuova_risposta[0]:
+                    resto = markdown.fine()  # asterischi rimasti in sospeso
+                    if resto:
+                        token_fn(resto)
                     token_fn("\n")  # il testo e' gia' stato scritto token per token
             else:
-                output_fn(ETICHETTA_ASSISTENTE + risposta)
+                # risposta in blocco: stesso filtro, in una volta sola
+                output_fn(ETICHETTA_ASSISTENTE + markdown.aggiungi(risposta) + markdown.fine())
     finally:
         logging.getLogger("app.graph").removeFilter(filtro)
         attesa.ferma()
