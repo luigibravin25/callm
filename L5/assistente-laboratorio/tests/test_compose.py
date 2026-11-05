@@ -75,3 +75,24 @@ def test_dockerignore_lascia_lo_script_di_verifica():
     assert "!assistente-laboratorio/tests/mcp_verifica.py" in righe
     assert righe.index("!assistente-laboratorio/tests/mcp_verifica.py") > \
         righe.index("assistente-laboratorio/tests/")
+
+
+@pytest.mark.skipif(shutil.which("docker") is None,
+                    reason="eseguibile 'docker' non trovato nel PATH")
+def test_compose_meteo(monkeypatch):
+    """Meteo (esercizio 6): citta' predefinita e limite dall'ambiente o da .env, con i valori
+    predefiniti Roma e 1000; il contatore nel volume note-dati, come le note."""
+    monkeypatch.delenv("CITTA_PREDEFINITA", raising=False)
+    monkeypatch.delenv("METEO_LIMITE_GIORNALIERO", raising=False)
+    ambiente = _config()["services"]["app"]["environment"]
+    assert ambiente["CITTA_PREDEFINITA"] == "Roma"
+    assert ambiente["METEO_LIMITE_GIORNALIERO"] == "1000"
+    assert ambiente["METEO_CONTATORE"] == "/app/dati/meteo_richieste.sqlite"
+
+
+def test_dockerfile_meteo():
+    """Il server meteo e' nell'immagine (riusa servizio/date_lavoro.py, gia' copiato)."""
+    testo = (PROGETTO / "Dockerfile").read_text(encoding="utf-8")
+    assert "COPY assistente-laboratorio/mcp_meteo/ mcp_meteo/" in testo
+    assert "COPY assistente-laboratorio/servizio/ servizio/" in testo
+    assert testo.index("COPY assistente-laboratorio/mcp_meteo/") < testo.index("USER utente")

@@ -15,6 +15,8 @@ COPY assistente-laboratorio/mcp_catalogo/ mcp_catalogo/
 # server MCP delle note e script di verifica dei server MCP (python -m tests.mcp_verifica)
 COPY assistente-laboratorio/mcp_note/ mcp_note/
 COPY assistente-laboratorio/tests/mcp_verifica.py tests/
+# server MCP del meteo (Open-Meteo, serve la rete); legge le date con servizio/date_lavoro.py
+COPY assistente-laboratorio/mcp_meteo/ mcp_meteo/
 # cartella dell'archivio delle note, dell'utente non root: il volume note-dati ne eredita i permessi
 RUN mkdir -p /app/dati && chown utente:utente /app/dati
 USER utente
