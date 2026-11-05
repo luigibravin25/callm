@@ -130,12 +130,13 @@ def carica_strumenti_mcp(modulo: str = MODULO_SERVER, cartella: Path = CARTELLA_
 def carica_tutti_mcp() -> list[BaseTool]:
     """Tutti i server di SERVER_MCP, uno alla volta: se uno non parte, gli altri restano."""
     strumenti = []
-    for nome, server in SERVER_MCP.items():
+    for nome, server in SERVER_MCP.items():  # un server alla volta, nell'ordine di SERVER_MCP
+        # variabili da passare al processo del server (es. NOTE_DB), solo se impostate
         env = {v: os.environ[v] for v in server["variabili"] if os.environ.get(v)}
         try:
             strumenti += carica_strumenti_mcp(server["modulo"], CARTELLA_PROGETTO,
                                               server["etichetta"], env)
-        except ErroreMCP as errore:
+        except ErroreMCP as errore:  # questo server non parte: avviso e si passa al prossimo
             print(f"Avviso: server MCP {nome} non disponibile ({errore}): i suoi tool non ci "
                   "sono.", file=sys.stderr)
     return strumenti

@@ -31,6 +31,7 @@ MSG_DOPPIONE = "Nota già salvata in questa richiesta: non la salvo di nuovo."
 
 
 def _normalizza(testo) -> str:
+    """Testo di una nota per il confronto dei doppioni: senza spazi esterni e maiuscole."""
     return str(testo).strip().lower()
 
 
@@ -93,10 +94,14 @@ def build_graph(llm=None, max_steps: int = 5, on_token=None, strumenti=STRUMENTI
         return {"messages": [risposta]}
 
     def bloccata(c, testo: str) -> ToolMessage:
+        """Risposta per una tool_call NON eseguita (annullata o doppione)."""
         return ToolMessage(testo, tool_call_id=c["id"], name=c["name"], status="error")
 
     def strumenti(state: State, config) -> dict:
+        """Esegue le tool_call dell'ultimo messaggio del modello, con due controlli:
+        doppioni di add_note nella stessa domanda e conferma per i tool distruttivi."""
         ultimo = state["messages"][-1]
+        # note gia' salvate nella domanda in corso (risposte precedenti del modello)
         salvati = _note_salvate_nella_domanda(state["messages"][:-1])
         ammesse, risposte = [], {}  # risposte: tool_call_id -> ToolMessage gia' deciso
         for c in ultimo.tool_calls:
@@ -108,6 +113,7 @@ def build_graph(llm=None, max_steps: int = 5, on_token=None, strumenti=STRUMENTI
                     continue
                 salvati.add(testo)  # un doppione nella stessa risposta viene bloccato
             if c["name"] in distruttivi:
+                # tool distruttivo: si esegue solo con il si' esplicito dell'utente
                 if conferma is not None and conferma(c["name"], c["args"]):
                     logger.info("Eliminazione confermata dall'utente per %s %s",
                                 c["name"], c["args"])

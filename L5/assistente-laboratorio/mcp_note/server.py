@@ -4,22 +4,24 @@ Avvio: python -m mcp_note.server  (di solito lo avvia l'adattatore, all'avvio di
 Archivio: variabile NOTE_DB, altrimenti assistente-laboratorio/dati/note.sqlite.
 Su stdout passa solo il protocollo MCP; il log di ogni modifica va su stderr.
 """
-import json
-import sys
-from typing import Annotated
+import json  # l'elenco delle note si restituisce come JSON
+import sys  # stderr per i log
+from typing import Annotated  # tipo con validatore aggiunto
 
-from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
-from mcp.types import ToolAnnotations
-from pydantic import BeforeValidator
+from fastmcp import FastMCP  # libreria per scrivere server MCP con decoratori
+from fastmcp.exceptions import ToolError  # errore restituito al client come isError
+from mcp.types import ToolAnnotations  # annotazioni MCP: sola lettura, distruttivo...
+from pydantic import BeforeValidator  # controllo eseguito prima della conversione del tipo
 
 from mcp_note.archivio import (LIMIT_PREDEFINITO, MAX_LIMIT, ErroreNote, aggiungi, elenca,
                                elimina)
 
+# il server: nome "note", pubblica i tool con tools/list
 mcp = FastMCP("note")
 
 
 def _niente_booleani(nome: str):
+    """Validatore che rifiuta true/false al posto di un numero."""
     def controlla(valore):
         # la validazione di FastMCP convertirebbe True in 1
         if isinstance(valore, bool):
@@ -34,6 +36,7 @@ IdNota = Annotated[int, _niente_booleani("note_id")]
 
 
 def _log(testo: str) -> None:
+    """Una riga di log su stderr per ogni modifica dell'archivio."""
     # log di ogni modifica, sempre visibile (non dipende da FASTMCP_LOG_LEVEL)
     print(f"[note] {testo}", file=sys.stderr, flush=True)
 
@@ -49,9 +52,9 @@ def add_note(text: str) -> str:
     Come verificarlo: list_notes mostra la nota con lo stesso ID.
     """
     try:
-        nota = aggiungi(text)
+        nota = aggiungi(text)  # salva nell'archivio SQLite
     except ErroreNote as e:
-        raise ToolError(str(e)) from None
+        raise ToolError(str(e)) from None  # errore di contratto: isError con il motivo
     _log(f"creata nota {nota['id']}: {nota['testo']}")
     return f"Nota {nota['id']} creata il {nota['creata']}: {nota['testo']}"
 
@@ -66,14 +69,14 @@ def list_notes(limit: Limite = LIMIT_PREDEFINITO) -> str:
     Rispondi all'utente con una frase, non ripetere il JSON.
     """
     try:
-        note, totale = elenca(limit)
+        note, totale = elenca(limit)  # sola lettura, nessun log
     except ErroreNote as e:
         raise ToolError(str(e)) from None
     if not note:
         return "Nessuna nota salvata."
     # testo davanti alla lista: con una lista JSON pura gemma ripeteva il risultato grezzo
     testo = "Note: " + json.dumps(note, ensure_ascii=False)
-    if totale > len(note):
+    if totale > len(note):  # elenco tagliato: il modello deve saperlo
         if totale <= MAX_LIMIT:
             testo += (f"\nMostrate {len(note)} di {totale} note: richiama list_notes con "
                       f"limit={totale} per vederle tutte.")
@@ -94,12 +97,13 @@ def delete_note(note_id: IdNota) -> str:
     Come verificarlo: dopo l'eliminazione list_notes non mostra piu' la nota.
     """
     try:
-        nota = elimina(note_id)
+        nota = elimina(note_id)  # la conferma dell'utente e' gia' avvenuta nel grafo
     except ErroreNote as e:
         raise ToolError(str(e)) from None
     _log(f"eliminata nota {nota['id']}: {nota['testo']}")
     return f"Nota {nota['id']} eliminata: {nota['testo']} (creata il {nota['creata']})."
 
 
+# avviato da solo (python -m mcp_note.server): parla MCP su stdin/stdout
 if __name__ == "__main__":
     mcp.run(transport="stdio", show_banner=False)
