@@ -7,6 +7,8 @@ __pycache__/
 # non servono per eseguire l'app: restano fuori dal contesto di build
 assistente-laboratorio/docs/
 assistente-laboratorio/tests/
+# eccezione: lo script di verifica dei server MCP serve nell'immagine (python -m tests.mcp_verifica)
+!assistente-laboratorio/tests/mcp_verifica.py
 CLAUDE.md
 handoff.md
 .vscode/

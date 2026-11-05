@@ -268,13 +268,13 @@ add_note, list_notes, delete_note`.
 
 ## Verifica dei server MCP (senza l'assistente)
 
-Un processo acceso non dimostra che il server MCP funzioni: lo script `mcp_verifica.py` e' un
+Un processo acceso non dimostra che il server MCP funzioni: lo script `tests/mcp_verifica.py` e' un
 client MCP che usa il protocollo vero (`tools/list`, `tools/call`), senza modello ne' grafo. Da
 `assistente-laboratorio/`:
 
 ```powershell
-& ..\venv\Scripts\python.exe -m mcp_verifica catalogo
-& ..\venv\Scripts\python.exe -m mcp_verifica note     # archivio temporaneo: le note vere non si toccano
+& ..\venv\Scripts\python.exe -m tests.mcp_verifica catalogo
+& ..\venv\Scripts\python.exe -m tests.mcp_verifica note     # archivio temporaneo: le note vere non si toccano
 ```
 
 Ogni passo stampa `OK` o `ERRORE`; il codice d'uscita e' 0 solo se tutto e' OK.
@@ -337,12 +337,12 @@ Note persistenti: l'archivio sta nel volume con nome `note-dati` (montato su `/a
 il successivo. Verifica del server MCP delle note dentro il container:
 
 ```powershell
-docker compose run --rm --no-deps app python -m mcp_verifica note
+docker compose run --rm --no-deps app python -m tests.mcp_verifica note
 ```
 
 Dopo ogni modifica al codice o a `assistente-laboratorio/app/llm.py` (`STREAM`, `LOG_GRAFO`,
 `LOG_HTTP`, `SYSTEM_PROMPT`) rifai `docker compose build`: l'immagine contiene una copia di
-`app/`, `servizio/`, `mcp_catalogo/`, `mcp_note/` e `mcp_verifica.py`.
+`app/`, `servizio/`, `mcp_catalogo/`, `mcp_note/` e `tests/mcp_verifica.py`.
 
 Pulizia: `docker compose down` ferma e rimuove container (anche `servizio`, che resta
 attivo dopo `run`) e rete del progetto, ma **non** il volume delle note.

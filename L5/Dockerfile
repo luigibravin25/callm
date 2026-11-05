@@ -12,9 +12,9 @@ COPY assistente-laboratorio/app/ app/
 COPY assistente-laboratorio/servizio/ servizio/
 # server MCP del catalogo: avviato da app.cli come sottoprocesso stdio
 COPY assistente-laboratorio/mcp_catalogo/ mcp_catalogo/
-# server MCP delle note e script di verifica dei server MCP (python -m mcp_verifica)
+# server MCP delle note e script di verifica dei server MCP (python -m tests.mcp_verifica)
 COPY assistente-laboratorio/mcp_note/ mcp_note/
-COPY assistente-laboratorio/mcp_verifica.py .
+COPY assistente-laboratorio/tests/mcp_verifica.py tests/
 # cartella dell'archivio delle note, dell'utente non root: il volume note-dati ne eredita i permessi
 RUN mkdir -p /app/dati && chown utente:utente /app/dati
 USER utente

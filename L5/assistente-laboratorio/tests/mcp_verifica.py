@@ -5,8 +5,8 @@ farebbe un client (trasporto stdio), chiede l'elenco dei tool (tools/list) e li 
 (tools/call), controllando le risposte. Nessun modello, nessun grafo.
 
 Uso (da assistente-laboratorio/):
-    python -m mcp_verifica catalogo
-    python -m mcp_verifica note      # usa SEMPRE un archivio temporaneo: le note vere restano
+    python -m tests.mcp_verifica catalogo
+    python -m tests.mcp_verifica note      # usa SEMPRE un archivio temporaneo: le note vere restano
 Codice d'uscita 0 solo se tutti i passi sono OK.
 """
 import asyncio  # il client di FastMCP e' asincrono
@@ -18,7 +18,8 @@ from pathlib import Path
 from fastmcp import Client  # client MCP
 from fastmcp.client.transports import StdioTransport  # avvia il server come processo figlio
 
-CARTELLA = Path(__file__).resolve().parent  # assistente-laboratorio/
+# assistente-laboratorio/ (lo script sta in tests/): da qui si avviano i server
+CARTELLA = Path(__file__).resolve().parent.parent
 MODULI = {"catalogo": "mcp_catalogo.server", "note": "mcp_note.server"}  # server verificabili
 
 
@@ -100,7 +101,8 @@ async def _verifica_note(client: Client, v: Verifica) -> None:
 
 async def _verifica(server: str) -> bool:
     """Avvia il server via stdio, esegue i passi e restituisce True se tutti sono OK."""
-    ambiente = dict(os.environ, FASTMCP_LOG_LEVEL="WARNING")
+    # come l'adattatore: niente righe di FastMCP ("Error calling tool ..."), log in UTF-8
+    ambiente = dict(os.environ, FASTMCP_LOG_LEVEL="CRITICAL", PYTHONIOENCODING="utf-8")
     temporanea = None
     if server == "note":
         # archivio temporaneo: la verifica crea ed elimina note, quelle vere non si toccano
@@ -134,7 +136,7 @@ def verifica(server: str) -> bool:
 def main(argomenti: list[str]) -> int:
     """Legge il nome del server dalla riga di comando e restituisce il codice d'uscita."""
     if len(argomenti) != 1 or argomenti[0] not in MODULI:
-        print(f"Uso: python -m mcp_verifica <{'|'.join(MODULI)}>", file=sys.stderr)
+        print(f"Uso: python -m tests.mcp_verifica <{'|'.join(MODULI)}>", file=sys.stderr)
         return 2
     return 0 if verifica(argomenti[0]) else 1
 
