@@ -5,7 +5,7 @@ import threading
 from langchain_core.messages import HumanMessage, ToolMessage
 from openai import APIConnectionError, APIError, APIStatusError
 
-from app.adattatore_mcp import ErroreMCP, carica_strumenti_mcp
+from app.adattatore_mcp import carica_tutti_mcp
 from app.graph import build_graph
 from app.llm import HISTORY, LOG_GRAFO, LOG_HTTP, STREAM, SYSTEM_PROMPT
 from app.tools import STRUMENTI
@@ -196,15 +196,9 @@ def imposta_log(log_http: bool = LOG_HTTP, log_grafo: bool = LOG_GRAFO) -> None:
 
 
 def carica_strumenti() -> list:
-    """I 4 strumenti locali e HTTP piu' i tool scoperti dal server MCP del catalogo.
-    Se il server MCP non parte, l'agente continua con i soli strumenti locali."""
-    try:
-        catalogo = carica_strumenti_mcp()
-    except ErroreMCP as errore:
-        print(f"Avviso: catalogo MCP non disponibile ({errore}): solo gli strumenti locali.",
-              file=sys.stderr)
-        return list(STRUMENTI)
-    return list(STRUMENTI) + catalogo
+    """I 4 strumenti locali e HTTP piu' i tool scoperti dai server MCP (catalogo e note).
+    Un server MCP che non parte stampa un avviso; l'agente continua con gli altri strumenti."""
+    return list(STRUMENTI) + carica_tutti_mcp()
 
 
 def avvia() -> None:
