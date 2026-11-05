@@ -9,18 +9,24 @@ services:
       LM_MODEL: ${LM_MODEL:-google/gemma-4-e2b}
       MAX_STEPS: ${MAX_STEPS:-5}
       FUSO_PREDEFINITO: ${FUSO_PREDEFINITO:-Europe/Rome}
-      # il servizio calcolatrice si raggiunge per nome sulla rete interna di Compose
-      CALC_BASE_URL: http://calcolatrice:8001
+      # il servizio HTTP (calcolatrice e date) si raggiunge per nome sulla rete interna di Compose
+      CALC_BASE_URL: http://servizio:8001
+      # archivio delle note (server MCP mcp_note) nel volume note-dati: sopravvive a "run --rm"
+      NOTE_DB: /app/dati/note.sqlite
+    volumes:
+      # volume con nome: eredita i permessi di /app/dati dell'immagine (utente non root)
+      - note-dati:/app/dati
     depends_on:
       # l'app parte solo quando il servizio risponde a /salute
-      calcolatrice:
+      servizio:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     stdin_open: true
     tty: true
 
-  calcolatrice:
+  # servizio HTTP FastAPI con /calcola e /giorni (prima si chiamava "calcolatrice")
+  servizio:
     build: .
     image: assistente-laboratorio-l5
     command: ["python", "-m", "uvicorn", "servizio.main:app", "--host", "0.0.0.0", "--port", "8001"]
@@ -31,3 +37,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+volumes:
+  # le note restano qui finche' non si usa "docker compose down -v" (che cancella il volume)
+  note-dati:
