@@ -7,6 +7,7 @@ farebbe un client (trasporto stdio), chiede l'elenco dei tool (tools/list) e li 
 Uso (da assistente-laboratorio/):
     python -m tests.mcp_verifica catalogo
     python -m tests.mcp_verifica note      # usa SEMPRE un archivio temporaneo: le note vere restano
+    python -m tests.mcp_verifica meteo     # serve la rete (Open-Meteo); contatore temporaneo
 Codice d'uscita 0 solo se tutti i passi sono OK.
 """
 import asyncio  # il client di FastMCP e' asincrono
@@ -20,13 +21,15 @@ from fastmcp.client.transports import StdioTransport  # avvia il server come pro
 
 # assistente-laboratorio/ (lo script sta in tests/): da qui si avviano i server
 CARTELLA = Path(__file__).resolve().parent.parent
-MODULI = {"catalogo": "mcp_catalogo.server", "note": "mcp_note.server"}  # server verificabili
+MODULI = {"catalogo": "mcp_catalogo.server", "note": "mcp_note.server",
+          "meteo": "mcp_meteo.server"}  # server verificabili
 
 
 class Verifica:
     """Raccoglie l'esito dei passi e li stampa uno per riga."""
 
     def __init__(self):
+        """Nessun errore all'inizio."""
         self.errori = 0
 
     def passo(self, nome: str, riuscito: bool, dettaglio: str = "") -> None:
@@ -99,6 +102,32 @@ async def _verifica_note(client: Client, v: Verifica) -> None:
     v.passo("add_note con testo vuoto e' un errore", r.is_error, _testo(r))
 
 
+async def _verifica_meteo(client: Client, v: Verifica) -> None:
+    """tools/list con annotazioni e chiamate vere a Open-Meteo (serve la rete)."""
+    tools = await client.list_tools()
+    nomi = {t.name for t in tools}
+    v.passo("tools/list: get_weather", nomi == {"get_weather"}, str(nomi))
+    if "get_weather" not in nomi:
+        return  # senza il tool i passi successivi non hanno senso
+    tool = next(t for t in tools if t.name == "get_weather")
+    v.passo("annotazioni: sola lettura, mondo aperto",
+            tool.annotations.readOnlyHint is True and tool.annotations.openWorldHint is True)
+    v.passo("schemi senza anyOf", _schemi_senza_anyof(tools))
+    # chiamata vera: dimostra anche che da qui (o dal container) Open-Meteo e' raggiungibile
+    r = await client.call_tool("get_weather", {"city": "Roma", "days": 1}, raise_on_error=False)
+    v.passo("tools/call get_weather(Roma) con temperatura in °C e fonte",
+            not r.is_error and "°C" in _testo(r) and "Open-Meteo" in _testo(r), _testo(r))
+    r = await client.call_tool("get_weather", {"city": "Xyzqwk"}, raise_on_error=False)
+    v.passo("tools/call get_weather(Xyzqwk) e' un errore \"Città non trovata\"",
+            r.is_error and _testo(r).startswith("Città non trovata"), _testo(r))
+    # solo citta' italiane: una citta' estera non deve diventare una frazione dal nome simile
+    r = await client.call_tool("get_weather", {"city": "Paris"}, raise_on_error=False)
+    v.passo("tools/call get_weather(Paris) e' un errore: solo città italiane",
+            r.is_error and "solo per le città italiane" in _testo(r), _testo(r))
+    r = await client.call_tool("get_weather", {"days": 8}, raise_on_error=False)
+    v.passo("tools/call get_weather(days=8) e' un errore (isError)", r.is_error, _testo(r))
+
+
 async def _verifica(server: str) -> bool:
     """Avvia il server via stdio, esegue i passi e restituisce True se tutti sono OK."""
     # come l'adattatore: niente righe di FastMCP ("Error calling tool ..."), log in UTF-8
@@ -108,6 +137,10 @@ async def _verifica(server: str) -> bool:
         # archivio temporaneo: la verifica crea ed elimina note, quelle vere non si toccano
         temporanea = tempfile.TemporaryDirectory(prefix="verifica-note-")
         ambiente["NOTE_DB"] = str(Path(temporanea.name) / "note.sqlite")
+    elif server == "meteo":
+        # contatore temporaneo: la verifica non consuma il limite giornaliero vero
+        temporanea = tempfile.TemporaryDirectory(prefix="verifica-meteo-")
+        ambiente["METEO_CONTATORE"] = str(Path(temporanea.name) / "meteo_richieste.sqlite")
     trasporto = StdioTransport(command=sys.executable, args=["-m", MODULI[server]],
                                env=ambiente, cwd=str(CARTELLA))
     v = Verifica()
@@ -117,8 +150,10 @@ async def _verifica(server: str) -> bool:
             v.passo("connessione e handshake MCP", True)
             if server == "catalogo":
                 await _verifica_catalogo(client, v)
-            else:
+            elif server == "note":
                 await _verifica_note(client, v)
+            else:
+                await _verifica_meteo(client, v)
     except Exception as errore:  # server che non parte o protocollo rotto
         v.passo("connessione e handshake MCP", False, str(errore) or type(errore).__name__)
     finally:
