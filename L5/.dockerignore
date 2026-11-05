@@ -10,3 +10,5 @@ assistente-laboratorio/tests/
 CLAUDE.md
 handoff.md
 .vscode/
+# archivio locale delle note: in Docker le note stanno nel volume note-dati
+assistente-laboratorio/dati/
