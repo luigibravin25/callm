@@ -266,8 +266,10 @@ def date_e_scadenze(operazione: str, data: str = "", da: str = "", giorni: int |
     è una data e se è lavorativo o festivo (Natale, Pasqua, Liberazione e le altre feste).
     Passa le date come le scrive l'utente (anche "Natale" o "25 dicembre"): non calcolarle tu.
     Riporta date e numeri esattamente come scritti, in testo semplice, senza LaTeX e senza il
-    simbolo $. OBBLIGATORIO: la tua risposta all'utente termina sempre con la frase
-    "Calcolo indicativo, non ha valore legale." (anche se la risposta è breve).
+    simbolo $. OBBLIGATORIO: la tua risposta all'utente che usa il risultato di tooldate
+    termina sempre con la frase "Calcolo indicativo, non ha valore legale." (anche se la
+    risposta è breve). La frase vale solo per le risposte su date e scadenze calcolate con
+    tooldate: non aggiungerla alle risposte che non usano tooldate.
     Se il risultato è un errore, spiegalo all'utente senza inventare un valore.
     """
     corpo = {"operazione": operazione, "tipo": tipo}

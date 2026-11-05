@@ -10,4 +10,8 @@ uvicorn==0.54.0
 httpx==0.28.1
 # usato dal TestClient di starlette 1.10 (lo importa prima di httpx); gia' richiesto da openai
 httpx2==2.16.0
+# server MCP del catalogo prodotti (mcp_catalogo/server.py); 4.x richiede mcp>=2.3, incompatibile con l'adattatore
+fastmcp==3.4.11
+# adattatore MCP -> tool LangChain con discovery automatica (app/adattatore_mcp.py)
+langchain-mcp-adapters==0.3.2
 pytest==9.1.1
