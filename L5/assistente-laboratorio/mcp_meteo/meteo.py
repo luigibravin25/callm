@@ -167,8 +167,10 @@ def scegli_citta(risultati: list[dict], nome: str,
        popoloso; le frazioni minuscole non rendono "ambigua" una citta' grande.
     """
     if not risultati:
-        raise CittaNonTrovata(f"nessuna località chiamata «{nome}»: il servizio meteo è "
-                              "disponibile solo per le città italiane.")
+        # geocoding vuoto: nome sbagliato o citta' estera (la ricerca e' solo in Italia).
+        # Prima il "non trovata": il modello non deve ridurlo a "copre solo l'Italia"
+        raise CittaNonTrovata(f"nessuna città italiana chiamata «{nome}»: controlla il nome; "
+                              "il servizio meteo copre solo l'Italia.")
     for luogo in risultati:
         _controlla_luogo(luogo)  # nome e coordinate presenti, altrimenti RispostaNonValida
     cercato = normalizza(nome)

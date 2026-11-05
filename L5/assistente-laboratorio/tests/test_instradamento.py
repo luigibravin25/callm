@@ -572,3 +572,105 @@ def test_prova_reale_note_senza_id_risposta_naturale(monkeypatch, tmp_path, doma
     assert _chiamate_a(out, "list_notes"), out["messages"]  # l'elenco lo legge l'assistente
     assert not [n for n in NOMI_STRUMENTI if n in finale], finale  # nessun nome di tool
     assert elenca(10, archivio)[1] == 2  # niente eliminato senza ID e conferma
+
+
+# --- prove reali del meteo (esercizio 6): servono LM Studio E la rete (Open-Meteo) ---
+# I dati meteo cambiano: si controllano forma e contenuti, non i valori.
+
+NOMI_STRUMENTI_METEO = NOMI_STRUMENTI + ("get_weather",)
+
+
+def _agente_meteo(monkeypatch, tmp_path, domanda):
+    """Agente vero (10 strumenti) con un contatore del meteo temporaneo; risposta non vuota,
+    senza asterischi, senza LaTeX e senza nomi dei tool."""
+    from app.cli import FiltroMarkdown, carica_strumenti
+    from app.llm import build_llm
+    monkeypatch.setenv("METEO_CONTATORE", str(tmp_path / "meteo.sqlite"))  # limite vero intatto
+    monkeypatch.delenv("CITTA_PREDEFINITA", raising=False)  # citta' predefinita: Roma
+    impostazioni = load_settings()
+    strumenti = carica_strumenti()
+    grafo = build_graph(build_llm(impostazioni, strumenti), impostazioni.max_steps,
+                        strumenti=strumenti)
+    out = grafo.invoke(_stato(domanda))
+    finale = out["messages"][-1].content
+    assert finale.strip(), f"risposta vuota: {out['messages']}"
+    filtro = FiltroMarkdown()  # come la CLI: l'utente vede il testo dopo il filtro
+    visto = filtro.aggiungi(finale) + filtro.fine()
+    assert "*" not in visto and "$" not in visto, visto
+    assert not [n for n in NOMI_STRUMENTI_METEO if n in visto], visto
+    return out, visto
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LM_STUDIO") != "1",
+                    reason="serve LM Studio attivo, la rete e RUN_LM_STUDIO=1")
+def test_prova_reale_meteo_citta(monkeypatch, tmp_path):
+    """Meteo attuale di una citta': get_weather chiamato, temperatura con unita'."""
+    out, finale = _agente_meteo(monkeypatch, tmp_path, "Che tempo fa a Milano?")
+    chiamate = _chiamate_a(out, "get_weather")
+    assert chiamate and "milano" in chiamate[0].get("city", "").lower(), out["messages"]
+    assert "°C" in finale or "gradi" in finale.lower(), finale
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LM_STUDIO") != "1",
+                    reason="serve LM Studio attivo, la rete e RUN_LM_STUDIO=1")
+def test_prova_reale_meteo_oggi_predefinita(monkeypatch, tmp_path):
+    """"Che meteo è oggi?" senza citta': citta' predefinita (Roma) e days=1."""
+    out, finale = _agente_meteo(monkeypatch, tmp_path, "Che meteo è oggi?")
+    chiamate = _chiamate_a(out, "get_weather")
+    assert chiamate, out["messages"]
+    assert chiamate[0].get("city", "") in ("", "Roma"), chiamate
+    assert chiamate[0].get("days") == 1 or chiamate[0].get("date", "").lower() == "oggi", chiamate
+    assert "roma" in finale.lower(), finale
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LM_STUDIO") != "1",
+                    reason="serve LM Studio attivo, la rete e RUN_LM_STUDIO=1")
+def test_prova_reale_meteo_prossimi_giorni(monkeypatch, tmp_path):
+    """"Prossimi 3 giorni": days 3 o 4 (oggi compreso o no), previsioni nella risposta."""
+    out, finale = _agente_meteo(monkeypatch, tmp_path,
+                                "Quali sono le previsioni dei prossimi 3 giorni a Torino?")
+    chiamate = _chiamate_a(out, "get_weather")
+    assert chiamate and chiamate[0].get("days") in (3, 4), chiamate
+    assert "torino" in finale.lower(), finale
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LM_STUDIO") != "1",
+                    reason="serve LM Studio attivo, la rete e RUN_LM_STUDIO=1")
+def test_prova_reale_meteo_oltre_sette_giorni(monkeypatch, tmp_path):
+    """Oltre 7 giorni: lo dice (con o senza chiamare il tool) e non inventa temperature."""
+    out, finale = _agente_meteo(monkeypatch, tmp_path,
+                                "Che tempo farà a Napoli tra 30 giorni?")
+    _, risultati = _richieste_e_risultati(out)
+    # il modello puo' rispondere da solo grazie alla regola dei 7 giorni nel prompt
+    assert (any("Nessuna previsione affidabile" in r for r in risultati)
+            or "7 giorni" in finale), out["messages"]
+    assert "°C" not in finale, finale  # nessun valore inventato
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LM_STUDIO") != "1",
+                    reason="serve LM Studio attivo, la rete e RUN_LM_STUDIO=1")
+def test_prova_reale_meteo_citta_ambigua(monkeypatch, tmp_path):
+    """San Giovanni e' ambigua: la risposta dichiara le alternative o chiede quale."""
+    out, finale = _agente_meteo(monkeypatch, tmp_path, "Che tempo fa a San Giovanni?")
+    assert _chiamate_a(out, "get_weather"), out["messages"]
+    assert any(p in finale.lower() for p in ("pordenone", "quale", "altre")), finale
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LM_STUDIO") != "1",
+                    reason="serve LM Studio attivo, la rete e RUN_LM_STUDIO=1")
+def test_prova_reale_meteo_citta_estera(monkeypatch, tmp_path):
+    """Londra: il meteo copre solo l'Italia, nessuna temperatura inventata."""
+    out, finale = _agente_meteo(monkeypatch, tmp_path, "Che tempo fa a Londra?")
+    # con o senza chiamata al tool: conta che dica che il meteo copre solo l'Italia
+    assert "ital" in finale.lower(), finale  # "solo l'Italia", "città italiane"
+    assert "°C" not in finale, finale
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LM_STUDIO") != "1",
+                    reason="serve LM Studio attivo, la rete e RUN_LM_STUDIO=1")
+def test_prova_reale_meteo_citta_inesistente(monkeypatch, tmp_path):
+    """Citta' inesistente: la risposta dice che non e' stata trovata."""
+    out, finale = _agente_meteo(monkeypatch, tmp_path, "Che tempo fa a Xyzqwk?")
+    _, risultati = _richieste_e_risultati(out)
+    assert any("Città non trovata" in r for r in risultati), out["messages"]
+    assert any(p in finale.lower() for p in ("trov", "esiste", "conosc")), finale

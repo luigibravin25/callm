@@ -54,11 +54,32 @@ def test_system_prompt_unico():
         assert parte in SYSTEM_PROMPT, parte
 
 
+def test_system_prompt_conferma_del_programma():
+    """Il modello non chiede lui la conferma: chiama delete_note e la chiede il programma
+    (ritocco 2, autorizzato dall'utente il 2026-11-05)."""
+    assert "Non chiedere tu la conferma: chiama subito delete_note" in SYSTEM_PROMPT
+
+
+def test_system_prompt_ricerca_generica():
+    """Domanda generica sul catalogo: cercare subito la parola principale, senza chiarimenti
+    (ritocco 3, autorizzato dall'utente il 2026-11-05)."""
+    assert "cerca subito con search_catalog la parola principale" in SYSTEM_PROMPT
+
+
+def test_system_prompt_meteo():
+    """Regole del meteo (esercizio 6, autorizzate dall'utente il 2026-11-05)."""
+    for parte in ("get_weather", "senza city", "days=1", "days=2", "presentatore",
+                  "regione o provincia", "solo l'Italia", "non è raggiungibile",
+                  "riprova domani", "7 giorni", "Città non trovata", "controllare il nome",
+                  "chiama sempre get_weather"):
+        assert parte in SYSTEM_PROMPT, parte
+
+
 def test_build_llm_8192_token(tutti):
     llm = build_llm(IMPOSTAZIONI, tutti)
     assert llm.bound.max_tokens == 8192
     assert [t["function"]["name"] for t in llm.kwargs["tools"]] == NOMI_LOCALI + [
-        "search_catalog", "get_item", "add_note", "list_notes", "delete_note"]
+        "search_catalog", "get_item", "add_note", "list_notes", "delete_note", "get_weather"]
 
 
 def test_carica_strumenti_unisce_locali_e_mcp(tutti):

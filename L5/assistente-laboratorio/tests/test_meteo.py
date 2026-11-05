@@ -153,7 +153,9 @@ def test_citta_non_trovata(contatore):
     richieste = []
     with pytest.raises(errori.CittaNonTrovata) as info:
         _meteo(contatore, "Xyzqwk", geo=GEO_VUOTO, richieste=richieste)
-    assert "Xyzqwk" in str(info.value)
+    # prima il "non trovata", poi il controllo del nome: il modello non deve ridurlo a "solo Italia"
+    assert str(info.value).startswith(
+        "Città non trovata: nessuna città italiana chiamata «Xyzqwk»: controlla il nome")
     assert _host(richieste, "api") == []
 
 

@@ -148,7 +148,7 @@ def test_errore_avvio_senza_prefisso_ripetuto():
 
 from app.adattatore_mcp import SERVER_MCP, carica_tutti_mcp, è_distruttivo  # noqa: E402
 
-NOMI_MCP = ["search_catalog", "get_item", "add_note", "list_notes", "delete_note"]
+NOMI_MCP = ["search_catalog", "get_item", "add_note", "list_notes", "delete_note", "get_weather"]
 
 
 @pytest.fixture
@@ -180,9 +180,48 @@ def test_note_db_passato_al_server(note_db):
 def test_un_server_giu_non_toglie_l_altro(note_db, monkeypatch, capsys):
     rotti = dict(SERVER_MCP, note=dict(SERVER_MCP["note"], modulo="modulo_che_non_esiste"))
     monkeypatch.setattr("app.adattatore_mcp.SERVER_MCP", rotti)
-    assert [t.name for t in carica_tutti_mcp()] == ["search_catalog", "get_item"]
+    assert [t.name for t in carica_tutti_mcp()] == ["search_catalog", "get_item", "get_weather"]
     err = capsys.readouterr().err
     assert "server MCP note non disponibile" in err
+
+
+# --- server MCP del meteo (esercizio 6) ---
+
+def test_server_meteo_in_server_mcp():
+    """Il meteo e' il terzo server; riceve citta' predefinita, limite e file del contatore."""
+    meteo = SERVER_MCP["meteo"]
+    assert meteo["modulo"] == "mcp_meteo.server" and meteo["etichetta"] == "del meteo"
+    assert meteo["variabili"] == ["CITTA_PREDEFINITA", "METEO_LIMITE_GIORNALIERO",
+                                  "METEO_CONTATORE"]
+
+
+def test_meteo_annotazioni_non_distruttivo(note_db):
+    """get_weather e' di sola lettura: nessuna conferma nel grafo."""
+    tools = {t.name: t for t in carica_tutti_mcp()}
+    assert tools["get_weather"].metadata.get("readOnlyHint") is True
+    assert not è_distruttivo(tools["get_weather"])
+
+
+def test_variabili_del_meteo_passate_al_server(note_db, monkeypatch, tmp_path):
+    """Limite e contatore arrivano al processo del server: con il limite gia' raggiunto la
+    chiamata si ferma prima di usare la rete ("riprova domani")."""
+    from datetime import datetime, timezone
+    from mcp_meteo.contatore import Contatore
+    contatore = tmp_path / "meteo.sqlite"
+    Contatore(contatore, 1, lambda: datetime.now(timezone.utc)).registra()  # 1 richiesta oggi
+    monkeypatch.setenv("METEO_CONTATORE", str(contatore))
+    monkeypatch.setenv("METEO_LIMITE_GIORNALIERO", "1")
+    tools = {t.name: t for t in carica_tutti_mcp()}
+    m = _esegui_con_toolnode(tools.values(), "get_weather", {"city": "Roma"})
+    assert m.status == "error" and "riprova domani" in m.content
+
+
+def test_server_meteo_giu_restano_gli_altri(note_db, monkeypatch, capsys):
+    """Se il server meteo non parte restano i 5 tool di catalogo e note, con un avviso."""
+    rotti = dict(SERVER_MCP, meteo=dict(SERVER_MCP["meteo"], modulo="modulo_che_non_esiste"))
+    monkeypatch.setattr("app.adattatore_mcp.SERVER_MCP", rotti)
+    assert [t.name for t in carica_tutti_mcp()] == NOMI_MCP[:5]
+    assert "server MCP meteo non disponibile" in capsys.readouterr().err
 
 
 def test_messaggio_server_note_caduto(tmp_path):

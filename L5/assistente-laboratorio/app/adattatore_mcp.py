@@ -1,7 +1,7 @@
 """Adattatore MCP: scopre i tool dei server MCP e li rende tool LangChain sincroni.
 
-Server (SERVER_MCP): catalogo prodotti (mcp_catalogo/) e note (mcp_note/), ognuno avviato come
-sottoprocesso (trasporto stdio). La discovery (tools/list) avviene una volta, all'avvio, un
+Server (SERVER_MCP): catalogo prodotti (mcp_catalogo/), note (mcp_note/) e meteo (mcp_meteo/),
+ognuno avviato come sottoprocesso (trasporto stdio). La discovery (tools/list) avviene una volta, all'avvio, un
 server alla volta; ogni chiamata (tools/call) apre una sessione nuova. Il grafo resta
 sincrono: ogni tool asincrono dell'adattatore e' eseguito con asyncio.run. Le annotazioni MCP
 (es. destructiveHint) restano nei metadata del tool.
@@ -24,6 +24,9 @@ TIMEOUT_S = 30  # discovery o chiamata bloccata: meglio un errore che un'attesa 
 SERVER_MCP = {
     "catalogo": {"modulo": "mcp_catalogo.server", "etichetta": "del catalogo", "variabili": []},
     "note": {"modulo": "mcp_note.server", "etichetta": "delle note", "variabili": ["NOTE_DB"]},
+    # meteo (esercizio 6): citta' predefinita, limite giornaliero e file del contatore
+    "meteo": {"modulo": "mcp_meteo.server", "etichetta": "del meteo",
+              "variabili": ["CITTA_PREDEFINITA", "METEO_LIMITE_GIORNALIERO", "METEO_CONTATORE"]},
 }
 
 

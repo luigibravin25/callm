@@ -315,7 +315,7 @@ def imposta_log(log_http: bool = LOG_HTTP, log_grafo: bool = LOG_GRAFO) -> None:
 
 
 def carica_strumenti() -> list:
-    """I 4 strumenti locali e HTTP piu' i tool scoperti dai server MCP (catalogo e note).
+    """I 4 strumenti locali e HTTP piu' i tool scoperti dai server MCP (catalogo, note, meteo).
     Un server MCP che non parte stampa un avviso; l'agente continua con gli altri strumenti."""
     return list(STRUMENTI) + carica_tutti_mcp()
 
