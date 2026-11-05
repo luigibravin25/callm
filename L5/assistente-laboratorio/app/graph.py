@@ -33,10 +33,12 @@ def instrada(state: State, max_steps: int = 5) -> Literal["strumenti", "limite",
     return END
 
 
-def build_graph(llm=None, max_steps: int = 5, on_token=None):
-    """Con `on_token` il testo arriva token per token (llm.stream), altrimenti in blocco."""
-    # il modello va gia' associato agli strumenti da build_llm
-    nodo_strumenti = ToolNode(STRUMENTI)
+def build_graph(llm=None, max_steps: int = 5, on_token=None, strumenti=STRUMENTI,
+                system_prompt: str = SYSTEM_PROMPT):
+    """Con `on_token` il testo arriva token per token (llm.stream), altrimenti in blocco.
+    `strumenti`: app.cli passa i 4 strumenti locali e HTTP piu' i tool del server MCP."""
+    # il modello va gia' associato agli stessi strumenti da build_llm
+    nodo_strumenti = ToolNode(strumenti)
 
     def emetti(testo: str) -> None:
         if on_token and testo:
@@ -57,7 +59,7 @@ def build_graph(llm=None, max_steps: int = 5, on_token=None):
             emetti(RISPOSTA_FISSA)
             return {"messages": [AIMessage(RISPOSTA_FISSA)]}
         # il prompt di sistema viene anteposto a ogni richiesta, non entra nella cronologia
-        risposta = chiedi_al_modello([SystemMessage(SYSTEM_PROMPT)] + state["messages"])
+        risposta = chiedi_al_modello([SystemMessage(system_prompt)] + state["messages"])
         if not risposta.tool_calls and not str(risposta.content).strip():
             emetti(MSG_VUOTO)
             return {"messages": [AIMessage(MSG_VUOTO)]}

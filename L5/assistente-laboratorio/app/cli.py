@@ -3,10 +3,12 @@ import sys
 import threading
 
 from langchain_core.messages import HumanMessage, ToolMessage
-from openai import APIConnectionError, APIStatusError
+from openai import APIConnectionError, APIError, APIStatusError
 
+from app.adattatore_mcp import ErroreMCP, carica_strumenti_mcp
 from app.graph import build_graph
-from app.llm import HISTORY, LOG_GRAFO, LOG_HTTP, STREAM
+from app.llm import HISTORY, LOG_GRAFO, LOG_HTTP, STREAM, SYSTEM_PROMPT
+from app.tools import STRUMENTI
 
 MSG_CONNESSIONE = (
     "Impossibile raggiungere LM Studio. Controlla che il server sia avviato "
@@ -31,6 +33,17 @@ def _messaggio_errore_http(errore: APIStatusError) -> str:
                   "gestione degli strumenti in LM Studio (vedi docs/DIAGNOSI.md).")
     elif errore.status_code == 404:
         testo += " Controlla che il modello sia caricato e che LM_MODEL sia corretto."
+    return testo
+
+
+def _messaggio_errore_generico(errore: APIError) -> str:
+    """Errore di LM Studio senza codice HTTP; per il contesto pieno, cosa fare."""
+    dettaglio = " ".join(str(errore.message).split())[:MAX_DETTAGLIO]
+    testo = f"Errore da LM Studio: {dettaglio}"
+    if "context" in dettaglio.lower():
+        testo += (" La conversazione ha superato il contesto del modello: aumenta la Context "
+                  "Length del modello in LM Studio, oppure scrivi 'exit' e riparti con una "
+                  "cronologia vuota.")
     return testo
 
 
@@ -95,7 +108,8 @@ class _FermaAttesa(logging.Filter):
 
 def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
          stream: bool = STREAM, token_fn=_scrivi_token, history: bool = HISTORY,
-         attesa: Attesa | None = None) -> None:
+         attesa: Attesa | None = None, strumenti=STRUMENTI,
+         system_prompt: str = SYSTEM_PROMPT) -> None:
     nuova_risposta = [True]
     if attesa is None:
         attesa = Attesa(scrivi=token_fn)
@@ -123,7 +137,8 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
             attesa.ferma()  # anche con errori o Ctrl+C: la riga animata sparisce
         return stato
 
-    grafo = build_graph(llm, max_steps, on_token=scrivi_token if stream else None)
+    grafo = build_graph(llm, max_steps, on_token=scrivi_token if stream else None,
+                        strumenti=strumenti, system_prompt=system_prompt)
     filtro = _FermaAttesa(attesa)
     logging.getLogger("app.graph").addFilter(filtro)
     cronologia = []  # solo in memoria, mai su disco
@@ -151,6 +166,13 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
                 # la domanda fallita non entra nella cronologia
                 output_fn(MSG_CONNESSIONE)
                 continue
+            except APIError as errore:
+                # errore senza codice HTTP, es. arrivato durante lo streaming
+                # ("Context size has been exceeded."): la sessione continua
+                if stream and not nuova_risposta[0]:
+                    token_fn("\n")  # chiude la riga del testo parziale
+                output_fn(_messaggio_errore_generico(errore))
+                continue
             risposta = out["messages"][-1].content
             if history:
                 cronologia = out["messages"]
@@ -173,17 +195,32 @@ def imposta_log(log_http: bool = LOG_HTTP, log_grafo: bool = LOG_GRAFO) -> None:
     logging.getLogger("app.graph").setLevel(logging.INFO if log_grafo else logging.CRITICAL)
 
 
+def carica_strumenti() -> list:
+    """I 4 strumenti locali e HTTP piu' i tool scoperti dal server MCP del catalogo.
+    Se il server MCP non parte, l'agente continua con i soli strumenti locali."""
+    try:
+        catalogo = carica_strumenti_mcp()
+    except ErroreMCP as errore:
+        print(f"Avviso: catalogo MCP non disponibile ({errore}): solo gli strumenti locali.",
+              file=sys.stderr)
+        return list(STRUMENTI)
+    return list(STRUMENTI) + catalogo
+
+
 def avvia() -> None:
     """Punto d'ingresso: legge la configurazione dall'ambiente e avvia il ciclo."""
     from app.config import load_settings
-    from app.llm import build_llm
+    from app import llm
 
     imposta_log()
     try:
         impostazioni = load_settings()
     except ValueError as errore:
         raise SystemExit(f"Configurazione non valida: {errore}")
-    main(llm=build_llm(impostazioni), max_steps=impostazioni.max_steps)
+    strumenti = carica_strumenti()
+    print("Strumenti: " + ", ".join(t.name for t in strumenti))
+    main(llm=llm.build_llm(impostazioni, strumenti), max_steps=impostazioni.max_steps,
+         strumenti=strumenti)
 
 
 if __name__ == "__main__":
