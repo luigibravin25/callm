@@ -38,6 +38,10 @@ def crea_contatore() -> Contatore:
     return Contatore(percorso_contatore(), limite_giornaliero(), _adesso)
 
 
+# @mcp.tool registra la funzione come tool MCP: nome, schema degli argomenti (dai tipi) e
+# descrizione (dalla docstring) arrivano al client con tools/list. Annotazioni MCP:
+# - readOnlyHint=True: il tool legge soltanto, non modifica nulla (niente conferma nel grafo);
+# - openWorldHint=True: interroga un servizio esterno (Open-Meteo), i dati cambiano nel tempo.
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 def get_weather(city: str = "", days: GiorniPrevisione = 0, date: str = "") -> str:
     """Meteo di una città italiana dal servizio pubblico Open-Meteo: temperatura, condizioni e
