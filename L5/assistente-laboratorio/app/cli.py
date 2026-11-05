@@ -1,11 +1,13 @@
+import json  # per leggere l'elenco delle note restituito da list_notes
 import logging
+import re  # per riconoscere gli elenchi Markdown nelle risposte
 import sys
 import threading
 
 from langchain_core.messages import HumanMessage, ToolMessage
 from openai import APIConnectionError, APIError, APIStatusError
 
-from app.adattatore_mcp import ErroreMCP, carica_strumenti_mcp
+from app.adattatore_mcp import carica_tutti_mcp
 from app.graph import build_graph
 from app.llm import HISTORY, LOG_GRAFO, LOG_HTTP, STREAM, SYSTEM_PROMPT
 from app.tools import STRUMENTI
@@ -94,6 +96,102 @@ class Attesa:
         self._scrivi("\r" + " " * larghezza + "\r")
 
 
+class FiltroMarkdown:
+    """Toglie il Markdown che il terminale mostrerebbe cosi' com'e': il grassetto (**testo**)
+    e gli elenchi con l'asterisco a inizio riga ("*   voce" diventa "- voce").
+
+    Funziona anche in streaming, dove "**" puo' arrivare spezzato in due pezzi: gli asterischi
+    in fondo a un pezzo restano in sospeso finche' non arriva il pezzo dopo. Un asterisco
+    singolo dentro la riga (es. 2*3) resta com'e'.
+    """
+
+    def __init__(self):
+        self._sospeso = ""  # asterischi finali non ancora scritti
+        self._inizio_riga = True  # il prossimo carattere e' a inizio riga?
+        self._ultimo = ""  # ultimo carattere gia' scritto (per riconoscere le potenze 2**10)
+
+    def _togli_grassetto(self, testo: str) -> str:
+        """Toglie i "**" del grassetto ma non quelli delle potenze: un "**" tra un operando
+        (cifra o ")") e un altro operando (cifra o "(") resta, es. 2**10, (1+2)**2."""
+        pezzi, inizio = [], 0
+        for trovato in re.finditer(r"\*\*", testo):
+            i, j = trovato.start(), trovato.end()
+            prima = testo[i - 1] if i > 0 else self._ultimo
+            dopo = testo[j] if j < len(testo) else ""
+            pezzi.append(testo[inizio:i])
+            if (prima.isdigit() or prima == ")") and (dopo.isdigit() or dopo == "("):
+                pezzi.append("**")  # potenza: si lascia
+            inizio = j
+        pezzi.append(testo[inizio:])
+        return "".join(pezzi)
+
+    def aggiungi(self, testo: str) -> str:
+        """Riceve un pezzo di testo e restituisce la parte gia' ripulita da scrivere."""
+        testo = self._sospeso + testo
+        senza_finali = testo.rstrip("*")
+        self._sospeso = testo[len(senza_finali):]  # es. "*" o "**" in fondo al pezzo
+        testo = senza_finali
+        if not testo:
+            return ""
+        # elenchi: "* " a inizio riga (anche all'inizio del pezzo, se la riga e' appena iniziata)
+        # (anche annidati: "  * voce" diventa "  - voce", il rientro resta)
+        if self._inizio_riga and re.match(r"[ \t]*\* +", testo):
+            testo = re.sub(r"^([ \t]*)\* +", r"\1- ", testo)
+        testo = re.sub(r"\n([ \t]*)\* +", r"\n\1- ", testo)
+        testo = self._togli_grassetto(testo)  # grassetto (le potenze restano)
+        self._inizio_riga = testo.endswith("\n")
+        if testo:
+            self._ultimo = testo[-1]
+        return testo
+
+    def fine(self) -> str:
+        """Fine della risposta: gli asterischi rimasti in sospeso (un "**" isolato sparisce)."""
+        resto, self._sospeso = self._sospeso.replace("**", ""), ""
+        self._inizio_riga = True
+        self._ultimo = ""
+        return resto
+
+
+RISPOSTE_SI = {"s", "si", "sì"}  # uniche risposte che confermano un'eliminazione
+
+
+def risposta_affermativa(testo: str) -> bool:
+    """Vero solo per "s", "si" o "sì" (senza spazi esterni e maiuscole): tutto il resto e' no."""
+    return testo.strip().lower() in RISPOSTE_SI
+
+
+def _testo_della_nota(note_id, strumenti: list) -> str | None:
+    """Testo della nota `note_id` letto con il tool list_notes (le 50 piu' recenti).
+
+    La CLI non importa mcp_note/: usa lo stesso tool del modello. Nota non trovata o errore
+    -> None (la domanda mostrera' solo l'ID)."""
+    elenco = next((t for t in strumenti if t.name == "list_notes"), None)
+    if elenco is None:
+        return None
+    try:
+        testo = str(elenco.invoke({"limit": 50}))
+        prima_riga = testo.split("\n")[0]  # la riga "Mostrate N di M" non serve
+        if not prima_riga.startswith("Note: "):  # "Nessuna nota salvata." o un errore
+            return None
+        note = json.loads(prima_riga.removeprefix("Note: "))
+        cercato = int(str(note_id).strip())  # il modello puo' passare "3" come stringa
+    except Exception:  # elenco non disponibile o non leggibile: si chiede solo con l'ID
+        return None
+    return next((n["testo"] for n in note if n.get("id") == cercato), None)
+
+
+def domanda_conferma(nome: str, argomenti: dict, strumenti: list) -> str:
+    """Testo della domanda (s/n) prima di un tool distruttivo."""
+    if nome == "delete_note":
+        note_id = str(argomenti.get("note_id", "?")).strip()
+        testo = _testo_della_nota(note_id, strumenti)
+        if testo is not None:
+            return f'Eliminare la nota {note_id} "{testo}"? (s/n) '
+        return f"Eliminare la nota {note_id}? (s/n) "
+    # altri tool distruttivi futuri: nome e argomenti cosi' come li ha passati il modello
+    return f"Eseguire {nome} con {argomenti}? (s/n) "
+
+
 class _FermaAttesa(logging.Filter):
     """Ferma l'animazione prima che un log del grafo scriva sul terminale."""
 
@@ -114,13 +212,17 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
     if attesa is None:
         attesa = Attesa(scrivi=token_fn)
 
+    markdown = FiltroMarkdown()  # niente asterischi del Markdown nel terminale
+
     def scrivi_token(testo: str) -> None:
         # l'etichetta esce col primo token, cosi' i log degli strumenti non la spezzano
         if nuova_risposta[0]:
             nuova_risposta[0] = False
             attesa.ferma()
             token_fn(ETICHETTA_ASSISTENTE)
-        token_fn(testo)
+        pulito = markdown.aggiungi(testo)
+        if pulito:
+            token_fn(pulito)
 
     def invoca(messaggi: list) -> dict:
         """Esegue il grafo passo per passo: dopo uno strumento l'attesa riparte."""
@@ -130,15 +232,27 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
             for stato in grafo.stream({"messages": messaggi, "steps": 0},
                                       stream_mode="values"):
                 ultimo = stato["messages"][-1]
-                if (nuova_risposta[0] and isinstance(ultimo, ToolMessage)
-                        and ultimo.status != "error"):
+                # dopo il risultato di uno strumento (anche un errore o un'eliminazione
+                # annullata) il modello ragiona di nuovo: l'animazione riparte
+                if nuova_risposta[0] and isinstance(ultimo, ToolMessage):
                     attesa.avvia()
         finally:
             attesa.ferma()  # anche con errori o Ctrl+C: la riga animata sparisce
         return stato
 
+    def conferma(nome: str, argomenti: dict) -> bool:
+        """Chiesta dal grafo prima di un tool distruttivo: domanda (s/n) nel terminale."""
+        attesa.ferma()  # la riga animata non deve coprire la domanda
+        if stream and not nuova_risposta[0]:
+            token_fn("\n")  # il testo gia' scritto dal modello resta sulla sua riga
+        try:
+            risposta = input_fn(domanda_conferma(nome, argomenti, strumenti))
+        except (EOFError, KeyboardInterrupt):
+            return False  # nessuna risposta = nessuna eliminazione
+        return risposta_affermativa(_testo_valido(risposta))
+
     grafo = build_graph(llm, max_steps, on_token=scrivi_token if stream else None,
-                        strumenti=strumenti, system_prompt=system_prompt)
+                        strumenti=strumenti, system_prompt=system_prompt, conferma=conferma)
     filtro = _FermaAttesa(attesa)
     logging.getLogger("app.graph").addFilter(filtro)
     cronologia = []  # solo in memoria, mai su disco
@@ -154,6 +268,7 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
             if not testo:
                 continue
             nuova_risposta[0] = True
+            markdown.fine()  # nuova domanda: niente asterischi in sospeso da una risposta interrotta
             try:
                 out = invoca(cronologia + [HumanMessage(testo)])
             except KeyboardInterrupt:
@@ -178,9 +293,13 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
                 cronologia = out["messages"]
             if stream:
                 if not nuova_risposta[0]:
+                    resto = markdown.fine()  # asterischi rimasti in sospeso
+                    if resto:
+                        token_fn(resto)
                     token_fn("\n")  # il testo e' gia' stato scritto token per token
             else:
-                output_fn(ETICHETTA_ASSISTENTE + risposta)
+                # risposta in blocco: stesso filtro, in una volta sola
+                output_fn(ETICHETTA_ASSISTENTE + markdown.aggiungi(risposta) + markdown.fine())
     finally:
         logging.getLogger("app.graph").removeFilter(filtro)
         attesa.ferma()
@@ -196,15 +315,9 @@ def imposta_log(log_http: bool = LOG_HTTP, log_grafo: bool = LOG_GRAFO) -> None:
 
 
 def carica_strumenti() -> list:
-    """I 4 strumenti locali e HTTP piu' i tool scoperti dal server MCP del catalogo.
-    Se il server MCP non parte, l'agente continua con i soli strumenti locali."""
-    try:
-        catalogo = carica_strumenti_mcp()
-    except ErroreMCP as errore:
-        print(f"Avviso: catalogo MCP non disponibile ({errore}): solo gli strumenti locali.",
-              file=sys.stderr)
-        return list(STRUMENTI)
-    return list(STRUMENTI) + catalogo
+    """I 4 strumenti locali e HTTP piu' i tool scoperti dai server MCP (catalogo e note).
+    Un server MCP che non parte stampa un avviso; l'agente continua con gli altri strumenti."""
+    return list(STRUMENTI) + carica_tutti_mcp()
 
 
 def avvia() -> None:

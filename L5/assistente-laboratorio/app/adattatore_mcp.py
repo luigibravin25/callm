@@ -1,10 +1,13 @@
-"""Adattatore MCP: scopre i tool del server del catalogo e li rende tool LangChain sincroni.
+"""Adattatore MCP: scopre i tool dei server MCP e li rende tool LangChain sincroni.
 
-Il server (mcp_catalogo/server.py) si avvia come sottoprocesso (trasporto stdio). La discovery
-(tools/list) avviene una volta, all'avvio; ogni chiamata (tools/call) apre una sessione nuova.
-Il grafo resta sincrono: ogni tool asincrono dell'adattatore e' eseguito con asyncio.run.
+Server (SERVER_MCP): catalogo prodotti (mcp_catalogo/) e note (mcp_note/), ognuno avviato come
+sottoprocesso (trasporto stdio). La discovery (tools/list) avviene una volta, all'avvio, un
+server alla volta; ogni chiamata (tools/call) apre una sessione nuova. Il grafo resta
+sincrono: ogni tool asincrono dell'adattatore e' eseguito con asyncio.run. Le annotazioni MCP
+(es. destructiveHint) restano nei metadata del tool.
 """
 import asyncio
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -16,19 +19,36 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 CARTELLA_PROGETTO = Path(__file__).resolve().parent.parent
 MODULO_SERVER = "mcp_catalogo.server"
 TIMEOUT_S = 30  # discovery o chiamata bloccata: meglio un errore che un'attesa infinita
-MSG_NON_DISPONIBILE = "Server MCP del catalogo non disponibile"
+# server MCP dell'agente: nome -> modulo da avviare, etichetta per i messaggi, variabili da
+# passare (il client stdio di mcp inoltra solo un elenco ristretto di variabili d'ambiente)
+SERVER_MCP = {
+    "catalogo": {"modulo": "mcp_catalogo.server", "etichetta": "del catalogo", "variabili": []},
+    "note": {"modulo": "mcp_note.server", "etichetta": "delle note", "variabili": ["NOTE_DB"]},
+}
 
 
 class ErroreMCP(Exception):
     """Il server MCP non parte o non pubblica tool utilizzabili."""
 
 
-def configurazione_server(modulo: str = MODULO_SERVER, cartella: Path = CARTELLA_PROGETTO) -> dict:
+def configurazione_server(modulo: str = MODULO_SERVER, cartella: Path = CARTELLA_PROGETTO,
+                          env: dict | None = None) -> dict:
     """Voce di MultiServerMCPClient: il server e' un processo figlio con lo stesso interprete."""
-    # il server riparte a ogni chiamata e scrive su stderr (il terminale della chat): solo
-    # avvisi ed errori, niente righe INFO; mcp unisce env alle variabili predefinite
+    # il server riparte a ogni chiamata e scrive su stderr (il terminale della chat):
+    # - FASTMCP_LOG_LEVEL=CRITICAL: niente righe di FastMCP ("Starting...", "Error calling
+    #   tool ..."): gli errori arrivano gia' al modello come risultato del tool, e il log delle
+    #   modifiche delle note e' scritto dal server con print, non dal logger di FastMCP;
+    # - PYTHONIOENCODING=utf-8: accenti ed emoji leggibili nel log anche con stderr rediretto
+    #   (su Windows altrimenti cp1252).
+    # mcp unisce env alle variabili predefinite
     return {"command": sys.executable, "args": ["-m", modulo], "transport": "stdio",
-            "cwd": str(cartella), "env": {"FASTMCP_LOG_LEVEL": "WARNING"}}
+            "cwd": str(cartella),
+            "env": {"FASTMCP_LOG_LEVEL": "CRITICAL", "PYTHONIOENCODING": "utf-8", **(env or {})}}
+
+
+def è_distruttivo(tool: BaseTool) -> bool:
+    """Il tool ha l'annotazione MCP destructiveHint (es. delete_note): serve una conferma."""
+    return bool((tool.metadata or {}).get("destructiveHint"))
 
 
 def schema_valido(tool: BaseTool) -> bool:
@@ -72,8 +92,9 @@ def _testo(contenuto) -> str:
     return str(contenuto)
 
 
-def _sincrono(tool_async: BaseTool) -> StructuredTool:
-    """Stesso nome, descrizione e schema; esecuzione sincrona; errori come ToolException."""
+def _sincrono(tool_async: BaseTool, etichetta: str = "del catalogo") -> StructuredTool:
+    """Stesso nome, descrizione, schema e metadata (annotazioni MCP); esecuzione sincrona;
+    errori come ToolException."""
     def esegui(**argomenti) -> str:
         try:
             contenuto, _ = _esegui(lambda: tool_async.coroutine(**argomenti))
@@ -81,18 +102,20 @@ def _sincrono(tool_async: BaseTool) -> StructuredTool:
             # errore del tool (isError): il messaggio del server arriva al modello
             raise ToolException(_testo(errore.args[0] if errore.args else "")) from None
         except Exception as errore:  # trasporto: server caduto, non avviabile, bloccato
-            raise ToolException(f"{MSG_NON_DISPONIBILE}: {_motivo(errore)}") from None
+            raise ToolException(
+                f"Server MCP {etichetta} non disponibile: {_motivo(errore)}") from None
         return _testo(contenuto)
 
     return StructuredTool(name=tool_async.name, description=tool_async.description,
                           args_schema=tool_async.args_schema, func=esegui,
-                          handle_tool_error=True)
+                          metadata=tool_async.metadata, handle_tool_error=True)
 
 
-def carica_strumenti_mcp(modulo: str = MODULO_SERVER,
-                         cartella: Path = CARTELLA_PROGETTO) -> list[BaseTool]:
-    """Discovery (tools/list) una volta; scarta con un avviso i tool con schema non valido."""
-    client = MultiServerMCPClient({"catalogo": configurazione_server(modulo, cartella)})
+def carica_strumenti_mcp(modulo: str = MODULO_SERVER, cartella: Path = CARTELLA_PROGETTO,
+                         etichetta: str = "del catalogo",
+                         env: dict | None = None) -> list[BaseTool]:
+    """Discovery (tools/list) di UN server; scarta con un avviso i tool con schema non valido."""
+    client = MultiServerMCPClient({"server": configurazione_server(modulo, cartella, env)})
     try:
         scoperti = _esegui(client.get_tools)
     except Exception as errore:
@@ -101,10 +124,25 @@ def carica_strumenti_mcp(modulo: str = MODULO_SERVER,
     validi = []
     for tool in scoperti:
         if schema_valido(tool):
-            validi.append(_sincrono(tool))
+            validi.append(_sincrono(tool, etichetta))
         else:
             print(f"Avviso: tool MCP {tool.name} scartato, schema con anyOf o senza type.",
                   file=sys.stderr)
     if not validi:
         raise ErroreMCP(f"il server {modulo} non pubblica tool utilizzabili.")
     return validi
+
+
+def carica_tutti_mcp() -> list[BaseTool]:
+    """Tutti i server di SERVER_MCP, uno alla volta: se uno non parte, gli altri restano."""
+    strumenti = []
+    for nome, server in SERVER_MCP.items():  # un server alla volta, nell'ordine di SERVER_MCP
+        # variabili da passare al processo del server (es. NOTE_DB), solo se impostate
+        env = {v: os.environ[v] for v in server["variabili"] if os.environ.get(v)}
+        try:
+            strumenti += carica_strumenti_mcp(server["modulo"], CARTELLA_PROGETTO,
+                                              server["etichetta"], env)
+        except ErroreMCP as errore:  # questo server non parte: avviso e si passa al prossimo
+            print(f"Avviso: server MCP {nome} non disponibile ({errore}): i suoi tool non ci "
+                  "sono.", file=sys.stderr)
+    return strumenti

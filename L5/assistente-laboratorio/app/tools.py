@@ -115,10 +115,10 @@ def converti_unita(valore: float, da: str, a: str) -> str:
 CALC_URL_PREDEFINITO = "http://127.0.0.1:8001"
 TIMEOUT_CALC = 5.0  # secondi: oltre, l'agente non resta bloccato
 
-MSG_CALC_422 = ("Richiesta non accettata dal servizio calcolatrice (HTTP 422): "
+MSG_CALC_422 = ("Richiesta non accettata dal servizio HTTP (HTTP 422): "
                 "il contratto dell'endpoint potrebbe essere cambiato.")
-MSG_CALC_TIMEOUT = "Il servizio calcolatrice non ha risposto entro 5 secondi."
-MSG_CALC_NON_VALIDA = "Risposta non valida dal servizio calcolatrice."
+MSG_CALC_TIMEOUT = "Il servizio HTTP non ha risposto entro 5 secondi."
+MSG_CALC_NON_VALIDA = "Risposta non valida dal servizio HTTP."
 
 
 def calc_base_url() -> str:
@@ -182,7 +182,7 @@ def _chiedi_al_servizio(percorso: str, corpo: dict) -> tuple[int, dict] | str:
     except httpx.TimeoutException:
         return MSG_CALC_TIMEOUT
     except httpx.TransportError:
-        return f"Servizio calcolatrice non raggiungibile a {url}: avvialo e riprova."
+        return f"Servizio HTTP non raggiungibile a {url}: avvialo e riprova."
     except httpx.InvalidURL:
         return (f"CALC_BASE_URL non valida: {url!r}. "
                 "Usa un indirizzo come http://127.0.0.1:8001.")
@@ -191,7 +191,7 @@ def _chiedi_al_servizio(percorso: str, corpo: dict) -> tuple[int, dict] | str:
     if risposta.status_code == 422:
         return MSG_CALC_422
     if risposta.status_code not in (200, 400):
-        return f"Il servizio calcolatrice ha risposto con l'errore HTTP {risposta.status_code}."
+        return f"Il servizio HTTP ha risposto con l'errore HTTP {risposta.status_code}."
     try:
         dati = risposta.json()
     except ValueError:

@@ -8,7 +8,8 @@ strumento `toolconvert(valore, da, a)` (convertitore di unita'), entrambi locali
 strumento `toolcalc(espressione)` (calcolatrice sicura) e dello strumento
 `tooldate(operazione, data, da, giorni, tipo)` (giorni e scadenze), che chiamano via HTTP lo
 stesso servizio FastAPI separato, e dei tool `search_catalog` e `get_item` del catalogo
-prodotti, scoperti all'avvio da un server MCP (vedi «Catalogo locale (MCP)»). La risposta compare
+prodotti e `add_note`, `list_notes`, `delete_note` delle note persistenti, scoperti all'avvio
+da due server MCP (vedi «Catalogo locale (MCP)» e «Note persistenti (MCP)»). La risposta compare
 token per token (`STREAM = True`) oppure in blocco (`STREAM = False`). LM Studio resta
 sul computer host e non e' containerizzato.
 
@@ -30,7 +31,7 @@ Git) fornisce `LM_MODEL`, `MAX_STEPS` e `FUSO_PREDEFINITO`.
 | `LM_MODEL` | identificativo del modello (da `GET /v1/models`) |
 | `MAX_STEPS` | massimo di passaggi per strumenti a ogni domanda, predefinito 5 |
 | `FUSO_PREDEFINITO` | fuso IANA usato da `tooltime` quando l'utente non indica un luogo, predefinito `Europe/Rome` |
-| `CALC_BASE_URL` | indirizzo del servizio usato da `toolcalc` e `tooldate`, predefinito `http://127.0.0.1:8001` (in Compose `http://calcolatrice:8001`) |
+| `CALC_BASE_URL` | indirizzo del servizio usato da `toolcalc` e `tooldate`, predefinito `http://127.0.0.1:8001` (in Compose `http://servizio:8001`) |
 
 Senza `LM_BASE_URL` o `LM_MODEL`, o con un `FUSO_PREDEFINITO` non valido, l'app si ferma con un
 errore che nomina la variabile.
@@ -62,7 +63,7 @@ Il terminale mostra la chat con `Tu:` per i tuoi messaggi e `Assistente:` per le
 | `STREAM` | `True` | `True` = token per token, `False` = risposta in blocco |
 | `HISTORY` | `True` | `True` = il modello ricorda i messaggi precedenti della sessione, `False` = ogni domanda parte da zero |
 | `LOG_GRAFO` | `True` | `True` = mostra nel terminale i log del grafo (`app.graph`: chiamate agli strumenti, risultati, limite) |
-| `LOG_HTTP` | `True` | `True` = mostra nel terminale le righe `HTTP Request: POST ...` verso LM Studio e verso il servizio calcolatrice (`/calcola`) |
+| `LOG_HTTP` | `True` | `True` = mostra nel terminale le righe `HTTP Request: POST ...` verso LM Studio e verso il servizio HTTP (`/calcola`, `/giorni`) |
 
 ## Strumenti e limite
 
@@ -135,7 +136,7 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8001/calcola -ContentType '
 ```
 
 Diagnosi: il wrapper non fa mai cadere l'app e restituisce al modello un testo chiaro.
-"Servizio calcolatrice non raggiungibile a ..." significa che il servizio non e' avviato o che
+"Servizio HTTP non raggiungibile a ..." significa che il servizio non e' avviato o che
 `CALC_BASE_URL` e' sbagliata; dopo 5 secondi senza risposta il messaggio e' "non ha risposto
 entro 5 secondi"; anche errori HTTP e risposte malformate hanno un messaggio proprio.
 
@@ -239,6 +240,54 @@ avvia con `FASTMCP_LOG_LEVEL=WARNING`, quindi le righe INFO (`Starting MCP serve
 compaiono. Restano le righe `Error calling tool ...`: il log di FastMCP per un errore
 restituito al modello (es. codice inesistente).
 
+## Note persistenti (MCP)
+
+Lo stesso agente usa un secondo server **MCP**, `assistente-laboratorio/mcp_note/` (FastMCP,
+`stdio`), con un archivio **SQLite** che resta tra una sessione e l'altra. Gli strumenti
+diventano 9: `Strumenti: tooltime, toolconvert, toolcalc, tooldate, search_catalog, get_item,
+add_note, list_notes, delete_note`.
+
+| Tool | Cosa cambia | Risultato | Annotazione MCP |
+|---|---|---|---|
+| `add_note(text)` | aggiunge una nota | `Nota 7 creata il 2026-11-05 15:40:12: ...` | crea |
+| `list_notes(limit)` | niente (sola lettura) | `Note: [...]` dalla piu' recente, oppure `Nessuna nota salvata.` | `readOnlyHint` |
+| `delete_note(note_id)` | elimina una nota | `Nota 3 eliminata: ... (creata il ...).` | `destructiveHint` |
+
+- **Conferma**: prima di ogni tool con `destructiveHint` il programma chiede nel terminale
+  `Eliminare la nota 3 "..."? (s/n)`; solo `s`, `si` o `sì` confermano. Altrimenti il modello
+  riceve `Eliminazione annullata dall'utente: nessuna nota eliminata.` e nulla viene cancellato.
+- **Doppioni**: nella stessa domanda, una seconda `add_note` con lo stesso testo non viene
+  eseguita (`Nota già salvata in questa richiesta: ...`).
+- **Errori**: testo vuoto o oltre 500 caratteri; `limit` fuori da 1-50; ID inesistente
+  (`La nota 99 non esiste: nessuna nota eliminata.`); archivio non accessibile. Gli ID non vengono
+  mai riusati.
+- **Log** di ogni modifica su stderr: `[note] creata nota 7: ...`, `[note] eliminata nota 3: ...`;
+  il grafo scrive anche `Eliminazione confermata/annullata dall'utente per delete_note {...}`.
+- **Archivio**: `NOTE_DB`, predefinito `assistente-laboratorio/dati/note.sqlite` (cartella esclusa
+  da Git, creata al primo uso). I test usano sempre un archivio temporaneo.
+
+## Verifica dei server MCP (senza l'assistente)
+
+Un processo acceso non dimostra che il server MCP funzioni: lo script `tests/mcp_verifica.py` e' un
+client MCP che usa il protocollo vero (`tools/list`, `tools/call`), senza modello ne' grafo. Da
+`assistente-laboratorio/`:
+
+```powershell
+& ..\venv\Scripts\python.exe -m tests.mcp_verifica catalogo
+& ..\venv\Scripts\python.exe -m tests.mcp_verifica note     # archivio temporaneo: le note vere non si toccano
+```
+
+Ogni passo stampa `OK` o `ERRORE`; il codice d'uscita e' 0 solo se tutto e' OK.
+
+MCP Inspector (serve Node.js, scarica il pacchetto alla prima esecuzione) mostra elenco dei tool,
+annotazioni e chiamate fatte a mano. Da `assistente-laboratorio/`:
+
+```powershell
+$env:NOTE_DB = "$env:TEMP\note-inspector\note.sqlite"   # per non toccare le note vere
+npx -y @modelcontextprotocol/inspector ..\venv\Scripts\python.exe -m mcp_note.server
+npx -y @modelcontextprotocol/inspector --cli ..\venv\Scripts\python.exe -m mcp_note.server --method tools/list
+```
+
 ## Docker
 
 Prerequisiti: Docker Desktop avviato; LM Studio avviato sull'host con il modello caricato e il
@@ -253,18 +302,19 @@ docker compose build                  # 2. costruisce l'immagine assistente-labo
 docker compose run --rm app           # 3. sessione interattiva (serve un terminale)
 ```
 
-Compose ha due servizi con la stessa immagine: `app` (la chat) e `calcolatrice` (il servizio
-FastAPI, comando `uvicorn`). `docker compose run --rm app` avvia prima `calcolatrice` e aspetta
-che risponda a `/salute` (healthcheck); l'app lo raggiunge a `http://calcolatrice:8001` sulla
-rete interna. La porta 8001 non e' pubblicata sull'host.
+Compose ha due servizi con la stessa immagine: `app` (la chat) e `servizio` (il servizio
+FastAPI con `/calcola` e `/giorni`, comando `uvicorn`; fino all'esercizio 4 si chiamava
+`calcolatrice`). `docker compose run --rm app` avvia prima `servizio` (container `l5-servizio-1`)
+e aspetta che risponda a `/salute` (healthcheck); l'app lo raggiunge a `http://servizio:8001`
+sulla rete interna. La porta 8001 non e' pubblicata sull'host.
 
 Nella chat, con `LOG_HTTP = True`, ogni calcolo mostra la riga
-`[httpx] HTTP Request: POST http://calcolatrice:8001/calcola`. Il log del servizio (righe di
-uvicorn come `"POST /calcola HTTP/1.1" 200`) sta nel container `calcolatrice`: si vede da un
+`[httpx] HTTP Request: POST http://servizio:8001/calcola`. Il log del servizio (righe di
+uvicorn come `"POST /calcola HTTP/1.1" 200`) sta nel container `servizio`: si vede da un
 secondo terminale, sempre da questa cartella, con
 
 ```powershell
-docker compose logs -f calcolatrice
+docker compose logs -f servizio
 ```
 
 Prova rapida con input da pipe (`-T` perche' la pipe non ha un terminale):
@@ -282,11 +332,20 @@ serve un servizio Compose in piu'. Stesso comando di sempre:
 "quanto costa lo smartphone?`nexit" | docker compose run --rm -T app
 ```
 
+Note persistenti: l'archivio sta nel volume con nome `note-dati` (montato su `/app/dati`,
+`NOTE_DB=/app/dati/note.sqlite`), quindi le note restano tra un `docker compose run --rm app` e
+il successivo. Verifica del server MCP delle note dentro il container:
+
+```powershell
+docker compose run --rm --no-deps app python -m tests.mcp_verifica note
+```
+
 Dopo ogni modifica al codice o a `assistente-laboratorio/app/llm.py` (`STREAM`, `LOG_GRAFO`,
 `LOG_HTTP`, `SYSTEM_PROMPT`) rifai `docker compose build`: l'immagine contiene una copia di
-`app/`, `servizio/` e `mcp_catalogo/`.
+`app/`, `servizio/`, `mcp_catalogo/`, `mcp_note/` e `tests/mcp_verifica.py`.
 
-Pulizia: `docker compose down` ferma e rimuove container (anche `calcolatrice`, che resta
-attivo dopo `run`) e rete del progetto;
+Pulizia: `docker compose down` ferma e rimuove container (anche `servizio`, che resta
+attivo dopo `run`) e rete del progetto, ma **non** il volume delle note.
+**Attenzione:** `docker compose down -v` cancella anche il volume `note-dati`, cioe' tutte le note;
 `docker rmi assistente-laboratorio-l5` rimuove l'immagine.
 
