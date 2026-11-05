@@ -3,7 +3,8 @@ from langchain_openai import ChatOpenAI
 from app.config import Settings
 from app.tools import STRUMENTI
 
-# un solo agente: regola dell'orologio + regole del catalogo prodotti (tool dal server MCP)
+# un solo agente: regola dell'orologio + regole del catalogo prodotti e delle note (tool dai
+# server MCP)
 SYSTEM_PROMPT = (
     "Sei un assistente utile. Se l'utente chiede l'ora o la data senza indicare "
     "un luogo, chiama tooltime senza l'argomento fuso. "
@@ -12,7 +13,10 @@ SYSTEM_PROMPT = (
     "per prezzo, disponibilità, quantità o sede usa poi get_item con il codice trovato. "
     "Se search_catalog restituisce [], di' che il prodotto non c'è: non inventare prodotti. "
     "Se il risultato dice \"Mostrati N di M\", l'elenco è incompleto: richiama search_catalog "
-    "con la stessa query e l'argomento max_results=M, poi rispondi con tutti i prodotti.")
+    "con la stessa query e l'argomento max_results=M, poi rispondi con tutti i prodotti. "
+    "Per \"ricordami di…\" chiama add_note una sola volta con il testo da ricordare. "
+    "Per eliminare una nota usa delete_note con il suo ID: il programma chiede conferma "
+    "all'utente. Se l'ID non è chiaro, chiama prima list_notes.")
 STREAM = True  # True = token per token, False = risposta in blocco
 HISTORY = True  # True = il modello ricorda i messaggi precedenti, False = ogni domanda parte da zero
 LOG_HTTP = True  # True = mostra nel terminale le richieste HTTP verso LM Studio

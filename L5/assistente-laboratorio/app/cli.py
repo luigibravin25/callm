@@ -1,3 +1,4 @@
+import json  # per leggere l'elenco delle note restituito da list_notes
 import logging
 import sys
 import threading
@@ -94,6 +95,46 @@ class Attesa:
         self._scrivi("\r" + " " * larghezza + "\r")
 
 
+RISPOSTE_SI = {"s", "si", "sì"}  # uniche risposte che confermano un'eliminazione
+
+
+def risposta_affermativa(testo: str) -> bool:
+    """Vero solo per "s", "si" o "sì" (senza spazi esterni e maiuscole): tutto il resto e' no."""
+    return testo.strip().lower() in RISPOSTE_SI
+
+
+def _testo_della_nota(note_id, strumenti: list) -> str | None:
+    """Testo della nota `note_id` letto con il tool list_notes (le 50 piu' recenti).
+
+    La CLI non importa mcp_note/: usa lo stesso tool del modello. Nota non trovata o errore
+    -> None (la domanda mostrera' solo l'ID)."""
+    elenco = next((t for t in strumenti if t.name == "list_notes"), None)
+    if elenco is None:
+        return None
+    try:
+        testo = str(elenco.invoke({"limit": 50}))
+        prima_riga = testo.split("\n")[0]  # la riga "Mostrate N di M" non serve
+        if not prima_riga.startswith("Note: "):  # "Nessuna nota salvata." o un errore
+            return None
+        note = json.loads(prima_riga.removeprefix("Note: "))
+        cercato = int(str(note_id).strip())  # il modello puo' passare "3" come stringa
+    except Exception:  # elenco non disponibile o non leggibile: si chiede solo con l'ID
+        return None
+    return next((n["testo"] for n in note if n.get("id") == cercato), None)
+
+
+def domanda_conferma(nome: str, argomenti: dict, strumenti: list) -> str:
+    """Testo della domanda (s/n) prima di un tool distruttivo."""
+    if nome == "delete_note":
+        note_id = str(argomenti.get("note_id", "?")).strip()
+        testo = _testo_della_nota(note_id, strumenti)
+        if testo is not None:
+            return f'Eliminare la nota {note_id} "{testo}"? (s/n) '
+        return f"Eliminare la nota {note_id}? (s/n) "
+    # altri tool distruttivi futuri: nome e argomenti cosi' come li ha passati il modello
+    return f"Eseguire {nome} con {argomenti}? (s/n) "
+
+
 class _FermaAttesa(logging.Filter):
     """Ferma l'animazione prima che un log del grafo scriva sul terminale."""
 
@@ -137,8 +178,19 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
             attesa.ferma()  # anche con errori o Ctrl+C: la riga animata sparisce
         return stato
 
+    def conferma(nome: str, argomenti: dict) -> bool:
+        """Chiesta dal grafo prima di un tool distruttivo: domanda (s/n) nel terminale."""
+        attesa.ferma()  # la riga animata non deve coprire la domanda
+        if stream and not nuova_risposta[0]:
+            token_fn("\n")  # il testo gia' scritto dal modello resta sulla sua riga
+        try:
+            risposta = input_fn(domanda_conferma(nome, argomenti, strumenti))
+        except (EOFError, KeyboardInterrupt):
+            return False  # nessuna risposta = nessuna eliminazione
+        return risposta_affermativa(_testo_valido(risposta))
+
     grafo = build_graph(llm, max_steps, on_token=scrivi_token if stream else None,
-                        strumenti=strumenti, system_prompt=system_prompt)
+                        strumenti=strumenti, system_prompt=system_prompt, conferma=conferma)
     filtro = _FermaAttesa(attesa)
     logging.getLogger("app.graph").addFilter(filtro)
     cronologia = []  # solo in memoria, mai su disco
