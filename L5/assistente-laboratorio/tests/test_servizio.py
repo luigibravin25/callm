@@ -1,45 +1,56 @@
+# Test del servizio FastAPI (servizio/main.py): endpoint /calcola, /salute e /giorni.
+# TestClient chiama l'app in memoria, senza avviare uvicorn ne' aprire porte di rete.
 import pytest
 from fastapi.testclient import TestClient
 
 from servizio.main import app
 
+# un solo client finto condiviso da tutti i test del file
 client = TestClient(app)
 
 
+# Verifica il caso riuscito: HTTP 200 e risposta JSON con espressione e risultato.
 def test_calcola_ok():
     r = client.post("/calcola", json={"espressione": "(3+4)^2/7"})
     assert r.status_code == 200
     assert r.json() == {"espressione": "(3+4)^2/7", "risultato": 7}
 
 
+# Verifica che un'espressione non valida dia HTTP 400 con il motivo nel campo "errore".
 def test_espressione_rifiutata_e_400():
     r = client.post("/calcola", json={"espressione": "2+x"})
     assert r.status_code == 400
     assert "carattere non ammesso 'x'" in r.json()["errore"]
 
 
+# Verifica che la divisione per zero sia un errore dell'utente (400), non un crash (500).
 def test_divisione_per_zero_e_400_non_500():
     r = client.post("/calcola", json={"espressione": "1/0"})
     assert r.status_code == 400
     assert "divisione per zero" in r.json()["errore"]
 
 
+# Verifica che un corpo con forma sbagliata (vuoto, numero al posto del testo, campo con
+# nome errato) sia respinto da FastAPI con 422, prima di arrivare alla calcolatrice.
 @pytest.mark.parametrize("corpo", [{}, {"espressione": 3}, {"testo": "1+1"}])
 def test_corpo_non_valido_e_422(corpo):
     assert client.post("/calcola", json=corpo).status_code == 422
 
 
+# Verifica che un JSON malformato dia 422 e non un errore interno.
 def test_json_rotto_e_422():
     r = client.post("/calcola", content="{non json",
                     headers={"content-type": "application/json"})
     assert r.status_code == 422
 
 
+# Verifica l'endpoint di salute, usato dall'healthcheck di Docker Compose.
 def test_salute():
     r = client.get("/salute")
     assert r.status_code == 200 and r.json() == {"stato": "ok"}
 
 
+# Verifica che un carattere non valido in UTF-8 (surrogato isolato) dia 400 con il suo codice.
 def test_carattere_non_stampabile_e_400_non_500():
     # il JSON contiene la sequenza di escape \ud800 (surrogato isolato), non il carattere
     r = client.post("/calcola", content=r'{"espressione": "\ud800"}',
@@ -50,16 +61,21 @@ def test_carattere_non_stampabile_e_400_non_500():
 
 # --- /giorni (giorni e scadenze) ---
 
+# date per fissare "oggi"; il modulo della logica dei giorni lavorativi
 from datetime import date  # noqa: E402
 
 from servizio import date_lavoro  # noqa: E402
 
 
+# Fixture: rende "oggi" il 3 novembre 2026 (un martedi'), cosi' i risultati non cambiano
+# con il giorno in cui si lancia il test. Basta nominarla tra gli argomenti del test.
 @pytest.fixture
 def oggi_fisso(monkeypatch):
     monkeypatch.setattr(date_lavoro, "_oggi", lambda: date(2026, 11, 3))
 
 
+# Verifica il conteggio dei giorni lavorativi di dicembre 2026 (21, festivita' escluse) e la
+# presenza dell'avviso "risultato non normativo".
 def test_giorni_200_con_avviso(oggi_fisso):
     r = client.post("/giorni", json={"operazione": "giorni", "data": "31/12/2026",
                                      "da": "1/12/2026"})
@@ -68,6 +84,7 @@ def test_giorni_200_con_avviso(oggi_fisso):
     assert corpo["giorni_lavorativi"] == 21 and corpo["avviso"] == date_lavoro.AVVISO
 
 
+# Verifica la scadenza a 5 giorni di calendario: cade domenica 8, slitta a lunedi' 9 novembre.
 def test_scadenza_200(oggi_fisso):
     r = client.post("/giorni", json={"operazione": "scadenza", "giorni": 5,
                                      "tipo": "calendario"})
@@ -75,28 +92,35 @@ def test_scadenza_200(oggi_fisso):
     assert r.json()["scadenza"] == "2026-11-09" and r.json()["slittata_da"] == "2026-11-08"
 
 
+# Verifica una data scritta a parole ("pasqua 2027"): data ISO e nome della festivita'.
 def test_giorno_200(oggi_fisso):
     r = client.post("/giorni", json={"operazione": "giorno", "data": "pasqua 2027"})
     assert r.status_code == 200
     assert r.json()["data"] == "2027-03-28" and r.json()["festivita"] == ["Pasqua"]
 
 
+# Verifica che una data impossibile (31 febbraio) dia 400 con un messaggio che la spiega.
 def test_giorni_400(oggi_fisso):
     r = client.post("/giorni", json={"operazione": "giorno", "data": "31/02/2026"})
     assert r.status_code == 400 and "febbraio" in r.json()["errore"]
 
 
+# Verifica che "scadenza" senza il numero di giorni dia 400 con il motivo.
 def test_scadenza_senza_giorni_400(oggi_fisso):
     r = client.post("/giorni", json={"operazione": "scadenza"})
     assert r.status_code == 400 and "manca il numero di giorni" in r.json()["errore"]
 
 
+# Verifica che argomenti in piu', non usati dall'operazione, non causino errori: il modello
+# a volte li passa comunque.
 def test_argomenti_non_usati_ignorati(oggi_fisso):
     r = client.post("/giorni", json={"operazione": "giorno", "data": "oggi", "tipo": "calendario",
                                      "giorni": 3, "da": "1/1/2026"})
     assert r.status_code == 200 and r.json()["data"] == "2026-11-03"
 
 
+# Verifica che corpi con forma sbagliata siano respinti da FastAPI con 422: corpo vuoto,
+# operazione sconosciuta, tipi errati (numero al posto del testo e viceversa), tipo non ammesso.
 @pytest.mark.parametrize("corpo", [
     {}, {"operazione": "mesi"}, {"operazione": "giorno", "data": 5},
     {"operazione": "scadenza", "giorni": "3"},
@@ -106,11 +130,13 @@ def test_giorni_422(corpo):
     assert client.post("/giorni", json=corpo).status_code == 422
 
 
+# Verifica che un carattere di controllo nella data dia 400 e venga mostrato come U+0001.
 def test_giorni_carattere_non_stampabile_400(oggi_fisso):
     r = client.post("/giorni", json={"operazione": "giorno", "data": "25\u0001dicembre"})
     assert r.status_code == 400 and "U+0001" in r.json()["errore"]
 
 
+# Verifica che un surrogato isolato nella data dia 400 e non un errore interno 500.
 def test_giorni_surrogato_400(oggi_fisso):
     r = client.post("/giorni", content=r'{"operazione": "giorno", "data": "\ud800"}',
                     headers={"content-type": "application/json"})

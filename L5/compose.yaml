@@ -13,6 +13,12 @@ services:
       CALC_BASE_URL: http://servizio:8001
       # archivio delle note (server MCP mcp_note) nel volume note-dati: sopravvive a "run --rm"
       NOTE_DB: /app/dati/note.sqlite
+      # meteo (server MCP mcp_meteo): citta' usata quando l'utente non ne indica una e limite
+      # di richieste al giorno verso Open-Meteo (modificabili in .env)
+      CITTA_PREDEFINITA: ${CITTA_PREDEFINITA:-Roma}
+      METEO_LIMITE_GIORNALIERO: ${METEO_LIMITE_GIORNALIERO:-1000}
+      # contatore delle richieste nello stesso volume delle note: sopravvive a "run --rm"
+      METEO_CONTATORE: /app/dati/meteo_richieste.sqlite
     volumes:
       # volume con nome: eredita i permessi di /app/dati dell'immagine (utente non root)
       - note-dati:/app/dati
