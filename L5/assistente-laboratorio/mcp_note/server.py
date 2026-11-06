@@ -13,6 +13,7 @@ from fastmcp.exceptions import ToolError  # errore restituito al client come isE
 from mcp.types import ToolAnnotations  # annotazioni MCP: sola lettura, distruttivo...
 from pydantic import BeforeValidator  # controllo eseguito prima della conversione del tipo
 
+# la logica dell'archivio (SQLite) sta in archivio.py; qui solo i tool MCP
 from mcp_note.archivio import (LIMIT_PREDEFINITO, MAX_LIMIT, ErroreNote, aggiungi, elenca,
                                elimina)
 
@@ -20,8 +21,10 @@ from mcp_note.archivio import (LIMIT_PREDEFINITO, MAX_LIMIT, ErroreNote, aggiung
 mcp = FastMCP("note")
 
 
+# Crea un validatore per un argomento intero; nome serve solo per il messaggio d'errore
 def _niente_booleani(nome: str):
     """Validatore che rifiuta true/false al posto di un numero."""
+    # funzione interna: pydantic la chiama con il valore ricevuto dal modello
     def controlla(valore):
         # la validazione di FastMCP convertirebbe True in 1
         if isinstance(valore, bool):
@@ -35,12 +38,15 @@ Limite = Annotated[int, _niente_booleani("limit")]
 IdNota = Annotated[int, _niente_booleani("note_id")]
 
 
+# Scrive una riga di log su stderr (stdout e' riservato al protocollo MCP)
 def _log(testo: str) -> None:
     """Una riga di log su stderr per ogni modifica dell'archivio."""
     # log di ogni modifica, sempre visibile (non dipende da FASTMCP_LOG_LEVEL)
     print(f"[note] {testo}", file=sys.stderr, flush=True)
 
 
+# Tool MCP "add_note": salva una nota. Annotazioni: modifica l'archivio (non sola lettura),
+# non distrugge nulla, e due chiamate uguali creano due note (non idempotente)
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False,
                                       idempotentHint=False))
 def add_note(text: str) -> str:
@@ -56,9 +62,11 @@ def add_note(text: str) -> str:
     except ErroreNote as e:
         raise ToolError(str(e)) from None  # errore di contratto: isError con il motivo
     _log(f"creata nota {nota['id']}: {nota['testo']}")
+    # risposta in una frase, con ID e data, che il modello riferisce all'utente
     return f"Nota {nota['id']} creata il {nota['creata']}: {nota['testo']}"
 
 
+# Tool MCP "list_notes": elenco delle note, in sola lettura
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def list_notes(limit: Limite = LIMIT_PREDEFINITO) -> str:
     """Elenca le note salvate, dalla piu' recente alla piu' vecchia. Non modifica nulla.
@@ -71,20 +79,24 @@ def list_notes(limit: Limite = LIMIT_PREDEFINITO) -> str:
     try:
         note, totale = elenca(limit)  # sola lettura, nessun log
     except ErroreNote as e:
-        raise ToolError(str(e)) from None
+        raise ToolError(str(e)) from None  # limit non valido o archivio non accessibile
     if not note:
-        return "Nessuna nota salvata."
+        return "Nessuna nota salvata."  # archivio vuoto: frase esplicita, non una lista vuota
     # testo davanti alla lista: con una lista JSON pura gemma ripeteva il risultato grezzo
     testo = "Note: " + json.dumps(note, ensure_ascii=False)
     if totale > len(note):  # elenco tagliato: il modello deve saperlo
         if totale <= MAX_LIMIT:
+            # stanno tutte in una chiamata: si indica il limit giusto
             testo += (f"\nMostrate {len(note)} di {totale} note: richiama list_notes con "
                       f"limit={totale} per vederle tutte.")
         else:
+            # oltre il massimo per chiamata: si avvisa che le piu' vecchie mancano
             testo += f"\nMostrate {len(note)} di {totale} note: le più vecchie non sono mostrate."
     return testo
 
 
+# Tool MCP "delete_note": cancella una nota. destructiveHint=True fa chiedere conferma alla CLI;
+# idempotente: ripetere la stessa eliminazione non cambia di nuovo l'archivio
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True,
                                       idempotentHint=True))
 def delete_note(note_id: IdNota) -> str:
@@ -99,7 +111,7 @@ def delete_note(note_id: IdNota) -> str:
     try:
         nota = elimina(note_id)  # la conferma dell'utente e' gia' avvenuta nel grafo
     except ErroreNote as e:
-        raise ToolError(str(e)) from None
+        raise ToolError(str(e)) from None  # es. nota inesistente: nulla viene eliminato
     _log(f"eliminata nota {nota['id']}: {nota['testo']}")
     return f"Nota {nota['id']} eliminata: {nota['testo']} (creata il {nota['creata']})."
 

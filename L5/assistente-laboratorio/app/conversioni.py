@@ -5,27 +5,31 @@ grandezza con ``base = valore * fattore + offset`` (l'offset serve solo alle
 temperature).
 """
 
+# librerie standard: funzioni matematiche, accenti Unicode, classi di soli dati
 import math
 import unicodedata
 from dataclasses import dataclass
 
 
+# errore proprio del convertitore: chi lo cattura sa che il messaggio va mostrato al modello
 class ErroreConversione(ValueError):
     """Errore di conversione; il messaggio è il testo da restituire al modello."""
 
 
+# descrizione di una unita' di misura (immutabile grazie a frozen=True)
 @dataclass(frozen=True)
 class Unita:
     simbolo: str  # simbolo principale, usato nei messaggi
-    grandezza: str
-    singolare: str
-    plurale: str
-    fattore: float
-    offset: float = 0.0
+    grandezza: str  # famiglia dell'unita' (lunghezza, massa...): si converte solo nella stessa
+    singolare: str  # nome per 1 (es. "metro")
+    plurale: str  # nome per gli altri valori (es. "metri")
+    fattore: float  # moltiplicatore verso l'unita' di base della grandezza
+    offset: float = 0.0  # spostamento da aggiungere: diverso da 0 solo per °C e °F
     simboli: tuple[str, ...] = ()  # varianti esatte del simbolo
     nomi: tuple[str, ...] = ()  # alias in parole, confrontati dopo normalizza()
 
 
+# elenco delle grandezze ammesse, mostrato nel messaggio d'errore per unita' sconosciute
 GRANDEZZE: tuple[str, ...] = (
     "lunghezza", "massa", "tempo", "temperatura", "area", "volume",
     "velocità", "accelerazione", "forza", "pressione", "energia", "potenza",
@@ -33,22 +37,28 @@ GRANDEZZE: tuple[str, ...] = (
 )
 
 
+# aiuta a scrivere le unita' quadrate e cubiche: l'utente puo' digitare m2 o m^2 invece di m²
 def _q(*simboli: str) -> tuple[str, ...]:
     """Varianti ASCII di simboli con ² e ³ (es. m² -> m2, m^2)."""
     varianti = []
     for s in simboli:
+        # per ogni apice presente aggiunge due varianti: con la cifra e con ^cifra
         for apice, cifra in (("²", "2"), ("³", "3")):
             if apice in s:
                 varianti += [s.replace(apice, cifra), s.replace(apice, "^" + cifra)]
     return tuple(varianti)
 
 
-_GAL_US = 3.785411784e-3
-_FT3 = 0.028316846592
-_BTU = 1055.05585262
+# costanti usate da piu' unita' (valori esatti delle definizioni ufficiali)
+_GAL_US = 3.785411784e-3  # gallone US in metri cubi
+_FT3 = 0.028316846592  # piede cubo in metri cubi
+_BTU = 1055.05585262  # BTU in joule
+# "gallone" e "pinta" valgono sia per l'unita' US sia per quella UK: il nome resta ambiguo
 _GALLONE = ("gallone", "galloni")
 _PINTA = ("pinta", "pinte")
 
+# elenco chiuso di tutte le unita' ammesse, raggruppate per grandezza;
+# tra parentesi, nei commenti, l'unita' di base della grandezza (quella con fattore 1)
 UNITA: tuple[Unita, ...] = (
     # lunghezza (m)
     Unita("nm", "lunghezza", "nanometro", "nanometri", 1e-9),
@@ -238,57 +248,77 @@ UNITA: tuple[Unita, ...] = (
 )
 
 
+# rende confrontabili i nomi scritti in modi diversi ("Gradi  Celsius" = "gradi celsius")
 def normalizza(testo: str) -> str:
     """Minuscole, accenti tolti (NFKD), spazi multipli ridotti, strip."""
+    # NFKD separa la lettera dal suo accento (è diventa e + segno dell'accento)
     scomposto = unicodedata.normalize("NFKD", testo)
+    # scarta i segni separati, cioe' gli accenti
     senza_segni = "".join(c for c in scomposto if not unicodedata.combining(c))
+    # split() senza argomenti divide su qualunque spazio: il join rimette uno spazio solo
     return " ".join(senza_segni.lower().split())
 
 
+# prepara due dizionari per trovare in fretta un'unita' dal simbolo o dal nome
 def _indici() -> tuple[dict[str, Unita], dict[str, list[Unita]]]:
     per_simbolo: dict[str, Unita] = {}
+    # per nome serve una lista: lo stesso nome puo' indicare piu' unita' (es. "gallone")
     per_nome: dict[str, list[Unita]] = {}
     for u in UNITA:
+        # simbolo principale e varianti puntano tutti alla stessa unita'
         for s in (u.simbolo, *u.simboli):
             per_simbolo[s] = u
+        # l'insieme {...} toglie i doppioni (es. singolare uguale al plurale, "kelvin")
         for n in {normalizza(x) for x in (u.singolare, u.plurale, *u.nomi)}:
             per_nome.setdefault(n, []).append(u)
     return per_simbolo, per_nome
 
 
+# gli indici si costruiscono una volta sola, quando il modulo viene importato
 _PER_SIMBOLO, _PER_NOME = _indici()
 
 
+# trova l'unita' scritta dall'utente o dal modello; altrimenti spiega l'errore
 def riconosci(testo: str) -> Unita:
     """Unità corrispondente al testo: simbolo esatto oppure nome in parole."""
+    # prima prova il simbolo esatto: qui maiuscole e minuscole contano (mB non e' MB)
     unita = _PER_SIMBOLO.get(testo.strip())
     if unita is not None:
         return unita
+    # poi prova il nome in parole, dopo averlo normalizzato
     candidati = _PER_NOME.get(normalizza(testo), [])
     if len(candidati) == 1:
         return candidati[0]
+    # piu' candidati: il nome e' ambiguo, si chiede di scegliere elencando le possibilita'
     if candidati:
         elenco = ", ".join(f"{u.singolare} ({u.simbolo})" for u in candidati)
         raise ErroreConversione(f"Unità ambigua: {testo!r}. Specifica una tra: {elenco}.")
+    # nessun candidato: unita' fuori dall'elenco chiuso
     raise ErroreConversione(
         f"Unità non ammessa: {testo!r}. Grandezze disponibili: {', '.join(GRANDEZZE)}."
     )
 
 
+# scrive un numero all'italiana, leggibile, senza decimali inutili
 def formatta_numero(x: float) -> str:
     """6 cifre significative, virgola decimale, notazione m × 10^e fuori da [1e-4, 1e12)."""
     if x == 0:
         return "0"
+    # ".5e" = notazione scientifica con 1 cifra + 5 decimali, cioe' 6 cifre significative
     mantissa, esponente = f"{x:.5e}".split("e")
     esponente = int(esponente)
     if -4 <= esponente < 12:
+        # numero "normale": arrotonda a 6 cifre significative e lo scrive per esteso
         testo = f"{float(f'{x:.5e}'):.{max(0, 5 - esponente)}f}"
         suffisso = ""
     else:
+        # numero molto grande o molto piccolo: tiene la mantissa e aggiunge × 10^esponente
         testo = mantissa
         suffisso = f" × 10^{esponente}"
+    # toglie gli zeri finali dopo la virgola e, se resta, il punto da solo
     if "." in testo:
         testo = testo.rstrip("0").rstrip(".")
+    # virgola decimale italiana al posto del punto
     return testo.replace(".", ",") + suffisso
 
 
@@ -297,31 +327,39 @@ def formatta_numero(x: float) -> str:
 _RESIDUO = 1e-14
 
 
+# sceglie singolare o plurale in base al numero gia' scritto (1 metro, 2 metri)
 def _nome(unita: Unita, numero: str) -> str:
     return unita.singolare if numero in ("1", "-1") else unita.plurale
 
 
+# cuore del convertitore: usato dallo strumento toolconvert in app/tools.py
 def converti(valore: float, da: str, a: str) -> str:
     """Frase con il risultato della conversione; solleva ErroreConversione."""
+    # rifiuta infinito e NaN ("not a number"): non sono misure
     if not math.isfinite(valore):
         raise ErroreConversione("Valore non valido: serve un numero finito.")
     u_da, u_a = riconosci(da), riconosci(a)
+    # si puo' convertire solo nella stessa grandezza (metri in piedi si', metri in kg no)
     if u_da.grandezza != u_a.grandezza:
         raise ErroreConversione(
             f"Conversione incompatibile: {u_da.plurale} ({u_da.grandezza}) → "
             f"{u_a.plurale} ({u_a.grandezza})."
         )
     testo_valore = formatta_numero(valore)
+    # primo passo: dal valore di partenza all'unita' di base della grandezza
     base = valore * u_da.fattore + u_da.offset
     # residuo in virgola mobile dovuto all'offset di partenza (es. -459,67 °F -> 0 K)
     if abs(base) < _RESIDUO * abs(u_da.offset):
         base = 0.0
+    # in kelvin una temperatura non puo' essere negativa (piccola tolleranza per gli arrotondamenti)
     if u_da.grandezza == "temperatura" and base < -1e-9:
         raise ErroreConversione(
             f"Valore impossibile: {testo_valore} {_nome(u_da, testo_valore)} "
             "è sotto lo zero assoluto."
         )
+    # secondo passo: dall'unita' di base all'unita' di arrivo (formula inversa)
     risultato = (base - u_a.offset) / u_a.fattore
+    # numeri enormi possono diventare infinito durante il calcolo
     if not (math.isfinite(base) and math.isfinite(risultato)):
         raise ErroreConversione(
             "Valore non valido: risultato fuori dall'intervallo rappresentabile.")
@@ -329,5 +367,6 @@ def converti(valore: float, da: str, a: str) -> str:
     if abs(risultato) < _RESIDUO * (abs(base) + abs(u_a.offset)) / u_a.fattore:
         risultato = 0.0
     testo_risultato = formatta_numero(risultato)
+    # frase finale per il modello, es. "1 metro = 3,28084 piedi"
     return (f"{testo_valore} {_nome(u_da, testo_valore)} = "
             f"{testo_risultato} {_nome(u_a, testo_risultato)}")

@@ -7,13 +7,17 @@ La logica meteo resta in Open-Meteo; qui si decide soltanto:
   italiano, fonte dei dati);
 - quali dati sono validi (campi mancanti o di tipo sbagliato -> RispostaNonValida).
 """
+# os: variabile CITTA_PREDEFINITA; re: espressioni regolari per date e province;
+# datetime e zoneinfo: "oggi" nel fuso orario della citta'
 import os
 import re
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+# httpx: qui serve solo come tipo del client passato alle richieste
 import httpx
 
+# errori del meteo e le due richieste a Open-Meteo (geocoding e meteo)
 from mcp_meteo.errori import (ArgomentoNonValido, CittaNonTrovata, RispostaNonValida)
 from mcp_meteo.open_meteo import cerca_citta, meteo
 # lettura delle date gia' scritta e testata nell'esercizio 3 (giorni e scadenze): si riusa
@@ -76,21 +80,25 @@ _ACCENTO_APOSTROFO = re.compile(r"([aeiou])'(?=\s|$)")
 _SETTIMANA = tuple(normalizza(g) for g in GIORNI_SETTIMANA)  # "lunedi", "martedi"...
 
 
+# Orologio del modulo: l'istante attuale (i test lo sostituiscono con uno fisso)
 def _adesso() -> datetime:
     """Istante corrente in UTC (funzione separata per poterla sostituire nei test)."""
     return datetime.now(timezone.utc)
 
 
+# Citta' usata quando il modello non indica nessuna citta'
 def citta_predefinita() -> str:
     """Citta' da CITTA_PREDEFINITA; non impostata o vuota -> Roma."""
     return os.environ.get("CITTA_PREDEFINITA", "").strip() or CITTA_RISERVA
 
 
+# Traduce il codice numerico del meteo in parole (es. 3 -> "coperto")
 def condizione(codice: int) -> str:
     """Codice WMO -> condizione in italiano; un codice sconosciuto non e' un errore."""
     return CONDIZIONI_WMO.get(codice, f"condizione non riconosciuta (codice WMO {codice})")
 
 
+# Nome breve della provincia di un luogo del geocoding (campo admin2)
 def provincia(luogo: dict) -> str:
     """Provincia del luogo senza "Provincia di" ("Provincia di Mantova" -> "Mantova"); "" se manca."""
     testo = luogo.get("admin2")
@@ -101,6 +109,7 @@ def provincia(luogo: dict) -> str:
     return _PREFISSO_PROVINCIA.sub("", testo.strip())
 
 
+# Nome completo da mostrare, con provincia e regione tra parentesi
 def etichetta(luogo: dict) -> str:
     """"Nome (provincia, regione)": distingue gli omonimi italiani.
 
@@ -115,22 +124,26 @@ def etichetta(luogo: dict) -> str:
     return f"{luogo['name']} ({', '.join(parti)})" if parti else luogo["name"]
 
 
+# Numero di abitanti, usato per scegliere tra gli omonimi
 def _abitanti(luogo: dict) -> int:
     """Abitanti del luogo (campo population); mancanti o non validi valgono 0."""
     valore = luogo.get("population")
     return valore if _numero(valore) and valore > 0 else 0
 
 
+# Controllo di tipo: il valore e' un numero vero?
 def _numero(valore) -> bool:
     """Vero per int e float, falso per i booleani (True e' un int in Python)."""
     return isinstance(valore, (int, float)) and not isinstance(valore, bool)
 
 
+# Scrive un numero all'italiana, con una cifra decimale
 def _decimale(valore: float) -> str:
     """Una cifra decimale con la virgola italiana: 10.5 -> "10,5"."""
     return f"{valore:.1f}".replace(".", ",")
 
 
+# Controlla l'argomento city e lo divide in nome e precisazione (regione o provincia)
 def _leggi_citta(city: str) -> tuple[str, str, bool]:
     """(nome, precisazione, predefinita): divide sulla prima virgola; vuota -> predefinita."""
     if not isinstance(city, str):
@@ -148,6 +161,7 @@ def _leggi_citta(city: str) -> tuple[str, str, bool]:
     return nome, precisazione, False
 
 
+# Controlla l'argomento days del tool
 def _controlla_days(days) -> None:
     """days deve essere un intero da 0 a 7 (i booleani non sono numeri di giorni)."""
     if not _numero(days) or isinstance(days, float) or not 0 <= days <= GIORNI_MAX:
@@ -155,6 +169,7 @@ def _controlla_days(days) -> None:
                                  f"ricevuto {days!r}.")
 
 
+# Controlla che un luogo restituito dal geocoding abbia i campi indispensabili
 def _controlla_luogo(luogo: dict) -> None:
     """Un luogo del geocoding deve avere nome (testo), latitudine e longitudine (numeri)."""
     if not isinstance(luogo.get("name"), str) or not luogo["name"].strip():
@@ -164,6 +179,7 @@ def _controlla_luogo(luogo: dict) -> None:
             raise RispostaNonValida(f"il luogo {luogo['name']} non ha il campo {campo}.")
 
 
+# Tra i luoghi trovati sceglie la citta' giusta e raccoglie gli omonimi importanti
 def scegli_citta(risultati: list[dict], nome: str,
                  precisazione: str) -> tuple[dict, list[dict]]:
     """Sceglie la citta' italiana tra i risultati del geocoding: restituisce (scelta, alternative).
@@ -185,7 +201,8 @@ def scegli_citta(risultati: list[dict], nome: str,
                               "il servizio meteo copre solo l'Italia.")
     for luogo in risultati:
         _controlla_luogo(luogo)  # nome e coordinate presenti, altrimenti RispostaNonValida
-    cercato = normalizza(nome)
+    cercato = normalizza(nome)  # nome cercato senza maiuscole e accenti
+    # candidati: luoghi con lo stesso nome; viste: etichette gia' incontrate (contro i doppioni)
     candidati, viste = [], set()
     for luogo in risultati:
         if normalizza(luogo["name"]) != cercato:
@@ -213,12 +230,14 @@ def scegli_citta(risultati: list[dict], nome: str,
         candidati = filtrati
     # ordinamento stabile: a parita' di abitanti resta l'ordine di Open-Meteo
     candidati.sort(key=_abitanti, reverse=True)
-    scelto = candidati[0]
+    scelto = candidati[0]  # il piu' popoloso
+    # abitanti minimi per essere elencato come alternativa (5% della citta' scelta)
     soglia = _abitanti(scelto) * SOGLIA_ALTERNATIVE
     alternative = [luogo for luogo in candidati[1:] if _abitanti(luogo) >= soglia]
     return scelto, alternative
 
 
+# Legge un campo annidato della risposta del meteo (es. current.temperature_2m)
 def _campo(dati: dict, sezione: str, chiave: str):
     """dati[sezione][chiave], oppure RispostaNonValida con il nome del campo mancante."""
     blocco = dati.get(sezione)
@@ -227,6 +246,7 @@ def _campo(dati: dict, sezione: str, chiave: str):
     return blocco[chiave]
 
 
+# Controlli di tipo sui campi della risposta: testo, codice WMO, numero
 def _testo(valore, nome: str) -> str:
     """Il valore deve essere un testo non vuoto."""
     if not isinstance(valore, str) or not valore:
@@ -234,6 +254,7 @@ def _testo(valore, nome: str) -> str:
     return valore
 
 
+# Accetta anche 3.0 (numero con parte decimale zero) e lo restituisce come intero
 def _codice(valore, nome: str) -> int:
     """Il valore deve essere un codice WMO intero."""
     if not _numero(valore) or valore != int(valore):
@@ -241,6 +262,7 @@ def _codice(valore, nome: str) -> int:
     return int(valore)
 
 
+# Controlla una misura (temperatura, probabilita' di pioggia)
 def _misura(valore, nome: str) -> float:
     """Il valore deve essere un numero."""
     if not _numero(valore):
@@ -248,6 +270,7 @@ def _misura(valore, nome: str) -> float:
     return valore
 
 
+# "Oggi" secondo il fuso indicato nella risposta del meteo
 def _oggi_locale(dati: dict) -> date:
     """Data di oggi nel fuso della citta' (campo timezone della risposta del meteo)."""
     fuso = _testo(dati.get("timezone"), "timezone")
@@ -257,6 +280,7 @@ def _oggi_locale(dati: dict) -> date:
         raise RispostaNonValida(f"fuso orario sconosciuto: {fuso!r}.") from None
 
 
+# Prepara il testo della data togliendo le parole che non servono a leggerla
 def _pulisci_data(testo: str) -> tuple[str, bool]:
     """(testo normalizzato senza articoli e parole di contorno, c'era "prossimo"?)."""
     # minuscole, senza accenti; "venerdi'" (accento con l'apostrofo) -> "venerdi"
@@ -278,6 +302,7 @@ def _pulisci_data(testo: str) -> tuple[str, bool]:
     return norma, prossimo
 
 
+# Trasforma l'argomento date del tool in un giorno preciso
 def leggi_giorno(testo: str, oggi: date) -> date:
     """Legge il giorno chiesto dall'utente rispetto a `oggi` (data locale della citta').
 
@@ -321,6 +346,7 @@ def leggi_giorno(testo: str, oggi: date) -> date:
                                  f"{FORMATI_DATA}.") from None
 
 
+# Come leggi_giorno, ma restituisce un intervallo di giorni (serve per "tra N giorni")
 def leggi_periodo(testo: str, oggi: date) -> tuple[date, date]:
     """(primo, ultimo) giorno da mostrare per la data scritta dall'utente.
 
@@ -336,6 +362,7 @@ def leggi_periodo(testo: str, oggi: date) -> tuple[date, date]:
     return ultimo, ultimo  # un giorno solo
 
 
+# "Oggi" nel fuso della citta', prima di chiedere il meteo (serve per leggere la data)
 def _oggi_della_citta(luogo: dict) -> date:
     """Data di oggi nel fuso della citta' scelta (campo timezone del geocoding)."""
     fuso = luogo.get("timezone")
@@ -347,12 +374,14 @@ def _oggi_della_citta(luogo: dict) -> date:
         raise RispostaNonValida(f"fuso orario sconosciuto: {fuso!r}.") from None
 
 
+# Scrive una data per esteso, in italiano
 def data_in_italiano(giorno: date) -> str:
     """date(2026, 11, 5) -> "giovedì 5 novembre 2026"."""
     return (f"{GIORNI_SETTIMANA[giorno.weekday()]} {giorno.day} {MESI[giorno.month - 1]} "
             f"{giorno.year}")
 
 
+# Parte del risultato con il meteo di adesso
 def _attuale(scelto: dict, dati: dict) -> list[str]:
     """Righe del meteo attuale: citta', temperatura con unita', condizioni, ora con fuso."""
     # ogni campo e' controllato: mancante o di tipo sbagliato -> RispostaNonValida
@@ -372,10 +401,12 @@ def _attuale(scelto: dict, dati: dict) -> list[str]:
             f"- Ora di riferimento: {ora}, ora locale {fuso_testo}"]
 
 
+# Riorganizza le previsioni: Open-Meteo da' una lista per valore, qui un dizionario per giorno
 def _giorni_previsti(dati: dict) -> list[dict]:
     """Le previsioni giornaliere come elenco di giorni, dopo aver controllato le liste."""
     chiavi = ("time", "weather_code", "temperature_2m_max", "temperature_2m_min",
               "precipitation_probability_max")
+    # una lista per ogni valore giornaliero (date, codici, massime, minime, pioggia)
     liste = {k: _campo(dati, "daily", k) for k in chiavi}
     if not all(isinstance(v, list) for v in liste.values()):
         raise RispostaNonValida("le previsioni giornaliere non sono elenchi.")
@@ -402,16 +433,19 @@ def _giorni_previsti(dati: dict) -> list[dict]:
     return giorni
 
 
+# Come _misura, ma ammette anche il valore mancante
 def _misura_o_nulla(valore, nome: str):
     """Un numero oppure None (dato non disponibile); qualsiasi altro valore non e' valido."""
     return None if valore is None else _misura(valore, nome)
 
 
+# Scrive una temperatura con l'unita', o "n.d." se manca
 def _temperatura(valore, unita: str) -> str:
     """"9,1 °C", oppure "n.d." se il valore non e' disponibile."""
     return "n.d." if valore is None else f"{_decimale(valore)} {unita}"
 
 
+# Una riga di testo per un giorno di previsione
 def _riga_giorno(previsto: dict, oggi: date, unita_t: str, unita_p: str) -> str:
     """"- oggi, giovedì 5 novembre 2026: coperto, minima 9,1 °C, massima 17,4 °C, pioggia 10 %"."""
     distanza = (previsto["giorno"] - oggi).days  # 0 = oggi, 1 = domani...
@@ -425,6 +459,7 @@ def _riga_giorno(previsto: dict, oggi: date, unita_t: str, unita_p: str) -> str:
             f"massima {_temperatura(previsto['massima'], unita_t)}, pioggia {pioggia}")
 
 
+# Parte del risultato con le previsioni dei giorni scelti
 def _previsioni(dati: dict, giorni_previsti: list[dict]) -> list[str]:
     """Righe "Previsioni:" per i giorni indicati, con le unita' prese dalla risposta."""
     unita_t = _testo(_campo(dati, "daily_units", "temperature_2m_max"),
@@ -435,6 +470,7 @@ def _previsioni(dati: dict, giorni_previsti: list[dict]) -> list[str]:
     return ["Previsioni:"] + [_riga_giorno(p, oggi, unita_t, unita_p) for p in giorni_previsti]
 
 
+# Avviso aggiunto al risultato se la localita' scelta ha pochi abitanti
 def _righe_piccola_localita(scelto: dict) -> list[str]:
     """Avviso per una localita' piccola (o senza abitanti): forse l'utente intendeva altro.
 
@@ -449,6 +485,7 @@ def _righe_piccola_localita(scelto: dict) -> list[str]:
             "intendeva una città estera, il servizio meteo copre solo l'Italia."]
 
 
+# Righe finali con gli omonimi, per far scegliere all'utente
 def _righe_alternative(alternative: list[dict]) -> list[str]:
     """Omonimi dichiarati e domanda all'utente (nessuna riga se non ci sono alternative)."""
     if not alternative:
@@ -464,6 +501,7 @@ def _righe_alternative(alternative: list[dict]) -> list[str]:
             f'Chiedi all\'utente quale preferisce: può scrivere per esempio "{esempio}".']
 
 
+# Funzione principale, chiamata dal tool get_weather: mette insieme tutti i passi
 def testo_meteo(city: str, days: int, data: str, client: httpx.Client, contatore) -> str:
     """Risultato del tool get_weather: meteo attuale, previsioni, alternative e fonte.
 
@@ -523,5 +561,5 @@ def testo_meteo(city: str, days: int, data: str, client: httpx.Client, contatore
         # la risposta vera ha `days` giorni; se ne ha di piu' si mostrano solo i primi `days`
         righe += _previsioni(dati, _giorni_previsti(dati)[:days])
     righe += _righe_alternative(alternative)
-    righe.append(FONTE)
+    righe.append(FONTE)  # la fonte va sempre citata, per la licenza dei dati
     return "\n".join(righe)

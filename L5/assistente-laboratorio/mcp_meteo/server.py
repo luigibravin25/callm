@@ -13,6 +13,7 @@ from fastmcp.exceptions import ToolError  # errore restituito al client come isE
 from mcp.types import ToolAnnotations  # annotazioni MCP: sola lettura, mondo aperto
 from pydantic import BeforeValidator  # controllo eseguito prima della conversione del tipo
 
+# moduli del meteo: contatore del limite, errori, logica del testo e client HTTP
 from mcp_meteo.contatore import Contatore, limite_giornaliero, percorso_contatore
 from mcp_meteo.errori import ErroreMeteo
 from mcp_meteo.meteo import _adesso, testo_meteo
@@ -22,6 +23,7 @@ from mcp_meteo.open_meteo import crea_client
 mcp = FastMCP("meteo")
 
 
+# Controllo sull'argomento days, eseguito prima della validazione di pydantic
 def _niente_booleani(valore):
     """Rifiuta true/false al posto del numero di giorni (FastMCP convertirebbe True in 1)."""
     if isinstance(valore, bool):
@@ -33,6 +35,7 @@ def _niente_booleani(valore):
 GiorniPrevisione = Annotated[int, BeforeValidator(_niente_booleani)]
 
 
+# Crea il contatore delle richieste giornaliere per una chiamata del tool
 def crea_contatore() -> Contatore:
     """Contatore del limite giornaliero, con file e limite letti dall'ambiente a ogni chiamata."""
     return Contatore(percorso_contatore(), limite_giornaliero(), _adesso)
@@ -71,5 +74,6 @@ def get_weather(city: str = "", days: GiorniPrevisione = 0, date: str = "") -> s
         raise ToolError(str(errore)) from None
 
 
+# avviato da solo (python -m mcp_meteo.server): parla MCP su stdin/stdout, senza banner
 if __name__ == "__main__":
     mcp.run(transport="stdio", show_banner=False)

@@ -1,5 +1,7 @@
+# client LangChain per le API compatibili con OpenAI (come quella di LM Studio)
 from langchain_openai import ChatOpenAI
 
+# configurazione letta dall'ambiente e i 4 strumenti locali/FastAPI
 from app.config import Settings
 from app.tools import STRUMENTI
 
@@ -65,13 +67,15 @@ LOG_HTTP = True  # True = mostra nel terminale le richieste HTTP verso LM Studio
 LOG_GRAFO = True  # True = mostra nel terminale i log del grafo (chiamate agli strumenti, limite)
 
 
+# crea il collegamento al modello di LM Studio e gli fa conoscere gli strumenti
 def build_llm(settings: Settings, strumenti=STRUMENTI, max_tokens: int = 8192):
     modello = ChatOpenAI(
         base_url=settings.base_url,
         model=settings.model,
         api_key="lm-studio",  # LM Studio ignora la chiave: valore fittizio, non un segreto
-        temperature=0.2,
-        timeout=300,
+        temperature=0.2,  # valore basso: risposte piu' stabili e meno creative
+        timeout=300,  # secondi di attesa massima: un modello locale puo' essere lento
         max_tokens=max_tokens,  # il modello ragiona prima di rispondere: servono token a sufficienza
     )
+    # bind_tools manda al modello nome, descrizione e argomenti di ogni strumento
     return modello.bind_tools(strumenti)
