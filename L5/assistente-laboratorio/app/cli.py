@@ -3,6 +3,7 @@ import logging
 import re  # per riconoscere gli elenchi Markdown nelle risposte
 import sys
 import threading
+from contextlib import contextmanager  # per log_con_attesa (with ...: e ripristino alla fine)
 
 from langchain_core.messages import HumanMessage, ToolMessage
 from openai import APIConnectionError, APIError, APIStatusError
@@ -84,6 +85,11 @@ class Attesa:
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._ciclo, args=(self._stop,), daemon=True)
         self._thread.start()
+
+    @property
+    def in_corso(self) -> bool:
+        """Vero se i puntini si stanno muovendo (thread dell'animazione avviato)."""
+        return self._thread is not None
 
     def ferma(self) -> None:
         """Ferma l'animazione e cancella la riga; innocuo se non e' avviata."""
@@ -192,16 +198,49 @@ def domanda_conferma(nome: str, argomenti: dict, strumenti: list) -> str:
     return f"Eseguire {nome} con {argomenti}? (s/n) "
 
 
-class _FermaAttesa(logging.Filter):
-    """Ferma l'animazione prima che un log del grafo scriva sul terminale."""
+class _GestoreConAttesa(logging.Handler):
+    """Gestore di log che avvolge quelli veri: ogni log ([app.graph], [httpx], [httpx2]...)
+    esce su una riga sua, senza mescolarsi con la riga animata 'Assistente: ...'."""
 
-    def __init__(self, attesa: Attesa):
+    def __init__(self, attesa: Attesa, gestori: list):
         super().__init__()
-        self._attesa = attesa
+        self._attesa = attesa  # l'animazione dei puntini da fermare
+        self._gestori = gestori  # i gestori veri (es. quello di basicConfig su stderr)
 
-    def filter(self, record: logging.LogRecord) -> bool:
+    def emit(self, record: logging.LogRecord) -> None:
+        # le finte usate nei test possono non avere in_corso: si considerano ferme
+        in_corso = getattr(self._attesa, "in_corso", False)
+        # 1. cancella la riga dei puntini, cosi' il log parte da inizio riga
         self._attesa.ferma()
-        return True
+        # 2. il log passa ai gestori veri, rispettando il loro livello (come fa logging)
+        for gestore in self._gestori:
+            if record.levelno >= gestore.level:
+                gestore.handle(record)
+        # 3. il modello sta ancora ragionando: i puntini ripartono sulla riga dopo il log.
+        #    Se erano fermi (es. la risposta e' gia' iniziata) restano fermi.
+        if in_corso:
+            self._attesa.avvia()
+
+
+def _installa_gestore_con_attesa(attesa: Attesa) -> list:
+    """Mette _GestoreConAttesa al posto dei gestori della radice; restituisce quelli di prima.
+
+    I log di app.graph, httpx e httpx2 arrivano alla radice (propagate), quindi basta
+    cambiare i suoi gestori."""
+    radice = logging.getLogger()
+    gestori = radice.handlers[:]  # copia: questa lista va rimessa alla fine
+    radice.handlers = [_GestoreConAttesa(attesa, gestori)]
+    return gestori
+
+
+@contextmanager
+def log_con_attesa(attesa: Attesa):
+    """Come _installa_gestore_con_attesa, dentro un with: alla fine tornano i gestori di prima."""
+    gestori = _installa_gestore_con_attesa(attesa)
+    try:
+        yield
+    finally:
+        logging.getLogger().handlers = gestori  # anche con errori o Ctrl+C
 
 
 def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
@@ -253,8 +292,9 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
 
     grafo = build_graph(llm, max_steps, on_token=scrivi_token if stream else None,
                         strumenti=strumenti, system_prompt=system_prompt, conferma=conferma)
-    filtro = _FermaAttesa(attesa)
-    logging.getLogger("app.graph").addFilter(filtro)
+    # ogni log (grafo, httpx, httpx2) ferma i puntini, esce su una riga sua e li fa ripartire;
+    # i gestori di prima si rimettono nel finally in fondo
+    gestori_di_prima = _installa_gestore_con_attesa(attesa)
     cronologia = []  # solo in memoria, mai su disco
     output_fn("Scrivi un messaggio ('exit' per uscire).")
     try:
@@ -301,7 +341,7 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
                 # risposta in blocco: stesso filtro, in una volta sola
                 output_fn(ETICHETTA_ASSISTENTE + markdown.aggiungi(risposta) + markdown.fine())
     finally:
-        logging.getLogger("app.graph").removeFilter(filtro)
+        logging.getLogger().handlers = gestori_di_prima  # log di nuovo ai gestori veri
         attesa.ferma()
 
 
