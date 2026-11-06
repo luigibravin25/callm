@@ -1,4 +1,5 @@
 import logging
+import re  # per riconoscere "tra/fra N giorni" nella domanda dell'utente
 from typing import Annotated, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -50,6 +51,40 @@ def _note_salvate_nella_domanda(messaggi: list) -> set[str]:
         elif isinstance(m, ToolMessage) and m.tool_call_id in testi and m.status != "error":
             salvati.add(_normalizza(testi[m.tool_call_id]))
     return salvati
+
+
+# "tra 3 giorni", "fra due giorni", "tra un giorno" dentro la domanda (stessa forma che legge
+# il server meteo): parole intere, maiuscole indifferenti
+_TRA_N_GIORNI = re.compile(r"\b(?:tra|fra)\s+\w+\s+giorn[oi]\b", re.IGNORECASE)
+
+
+def _tra_n_giorni_nella_domanda(messaggi: list) -> str | None:
+    """"tra/fra N giorni" scritto nell'ultima domanda dell'utente (minuscolo), oppure None."""
+    # solo la domanda in corso: una domanda precedente non deve cambiare questa chiamata
+    domanda = next((m for m in reversed(messaggi) if isinstance(m, HumanMessage)), None)
+    if domanda is None:
+        return None
+    trovato = _TRA_N_GIORNI.search(str(domanda.content))
+    # spazi multipli ridotti a uno: il server legge "tra 3 giorni" con spazi singoli
+    return " ".join(trovato[0].lower().split()) if trovato else None
+
+
+def _correggi_meteo(c: dict, messaggi: list) -> dict:
+    """Chiamata get_weather con "tra/fra N giorni" della domanda in date, se il modello non
+    ha passato date.
+
+    Il modello piccolo a volte usa days=N (oggi compreso) invece di date="tra N giorni" (gli
+    N giorni da domani): il programma corregge la chiamata e lo scrive nel log. Ogni altra
+    chiamata resta com'e'."""
+    if c["name"] != "get_weather" or str(c["args"].get("date") or "").strip():
+        return c  # altro strumento, oppure date gia' scelta dal modello: nessuna correzione
+    testo = _tra_n_giorni_nella_domanda(messaggi)
+    if testo is None:
+        return c  # la domanda non dice "tra/fra N giorni"
+    # con date presente il server ignora days: days resta com'era, solo per il log
+    logger.info("get_weather: date=%r presa dalla domanda (il modello aveva usato days=%s)",
+                testo, c["args"].get("days"))
+    return {**c, "args": {**c["args"], "date": testo}}  # copia: il messaggio originale resta
 
 
 def instrada(state: State, max_steps: int = 5) -> Literal["strumenti", "limite", "__end__"]:
@@ -111,6 +146,8 @@ def build_graph(llm=None, max_steps: int = 5, on_token=None, strumenti=STRUMENTI
         ammesse, risposte = [], {}  # risposte: tool_call_id -> ToolMessage gia' deciso
         for c in ultimo.tool_calls:
             logger.info("Chiamata strumento %s con argomenti %s", c["name"], c["args"])
+            # meteo: "tra/fra N giorni" della domanda va in date anche se il modello usa days
+            c = _correggi_meteo(c, state["messages"])
             if c["name"] == "add_note":
                 testo = _normalizza(c["args"].get("text", ""))
                 if testo and testo in salvati:  # gia' salvata con successo in questa domanda

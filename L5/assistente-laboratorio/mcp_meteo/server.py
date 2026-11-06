@@ -52,10 +52,13 @@ def get_weather(city: str = "", days: GiorniPrevisione = 0, date: str = "") -> s
     risultato elenca altre località con lo stesso nome, l'utente può scegliere scrivendo la
     città seguita da virgola e regione o provincia, per esempio "San Giovanni, Pordenone".
     days: 0 = solo meteo attuale; da 1 a 7 = anche le previsioni, oggi compreso (1 = oggi,
-    2 = oggi e domani).
+    2 = oggi e domani). Non usarlo per "tra N giorni" o "fra N giorni": usa date.
     date: un giorno preciso scritto come l'ha scritto l'utente ("sabato", "15 novembre",
-    "domani"), senza calcolare la data; se presente, days è ignorato. Oltre 7 giorni il
-    risultato dice che non ci sono previsioni affidabili.
+    "domani"), senza calcolare la data; per "tra N giorni" o "fra N giorni" passa proprio
+    quelle parole ("fra due giorni", "tra 3 giorni"): il risultato ha gli N giorni da domani,
+    oggi escluso.
+    Se presente, days è ignorato. Oltre 7 giorni il risultato dice che non ci sono
+    previsioni affidabili.
     Presenta il risultato con parole tue, non ripeterlo come dati grezzi. Un errore di rete o
     di timeout riguarda la connessione, non la città.
     """

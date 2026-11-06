@@ -68,7 +68,10 @@ def test_system_prompt_ricerca_generica():
 
 def test_system_prompt_meteo():
     """Regole del meteo (esercizio 6, autorizzate dall'utente il 2026-11-05)."""
-    for parte in ("get_weather", "senza city", "days=1", "days=2", "presentatore",
+    # 2026-11-06: "domani" passa da days=2 a date="domani" e "tra/fra N giorni" va in date
+    # (ritocchi autorizzati dall'utente: il modello usava days=N per "tra N giorni")
+    for parte in ("get_weather", "senza city", "days=1", "date=\"domani\"",
+                  "NON usare days", "date=\"tra 3 giorni\"", "presentatore",
                   "regione o provincia", "solo l'Italia", "non è raggiungibile",
                   "riprova domani", "7 giorni", "Città non trovata", "controllare il nome",
                   "chiama sempre get_weather"):
