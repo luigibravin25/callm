@@ -9,7 +9,41 @@ services:
       LM_MODEL: ${LM_MODEL:-google/gemma-4-e2b}
       MAX_STEPS: ${MAX_STEPS:-5}
       FUSO_PREDEFINITO: ${FUSO_PREDEFINITO:-Europe/Rome}
+      # il servizio HTTP (calcolatrice e date) si raggiunge per nome sulla rete interna di Compose
+      CALC_BASE_URL: http://servizio:8001
+      # archivio delle note (server MCP mcp_note) nel volume note-dati: sopravvive a "run --rm"
+      NOTE_DB: /app/dati/note.sqlite
+      # meteo (server MCP mcp_meteo): citta' usata quando l'utente non ne indica una e limite
+      # di richieste al giorno verso Open-Meteo (modificabili in .env)
+      CITTA_PREDEFINITA: ${CITTA_PREDEFINITA:-Roma}
+      METEO_LIMITE_GIORNALIERO: ${METEO_LIMITE_GIORNALIERO:-1000}
+      # contatore delle richieste nello stesso volume delle note: sopravvive a "run --rm"
+      METEO_CONTATORE: /app/dati/meteo_richieste.sqlite
+    volumes:
+      # volume con nome: eredita i permessi di /app/dati dell'immagine (utente non root)
+      - note-dati:/app/dati
+    depends_on:
+      # l'app parte solo quando il servizio risponde a /salute
+      servizio:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     stdin_open: true
     tty: true
+
+  # servizio HTTP FastAPI con /calcola e /giorni (prima si chiamava "calcolatrice")
+  servizio:
+    build: .
+    image: assistente-laboratorio-l5
+    command: ["python", "-m", "uvicorn", "servizio.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    # nessun "ports": la porta 8001 serve solo all'app, non e' pubblicata sull'host
+    healthcheck:
+      # l'immagine slim non ha curl: il controllo usa Python
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/salute', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  # le note restano qui finche' non si usa "docker compose down -v" (che cancella il volume)
+  note-dati:
