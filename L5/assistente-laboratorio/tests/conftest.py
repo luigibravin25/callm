@@ -1,4 +1,6 @@
 """Impostazioni comuni ai test."""
+# pytest legge questo file prima di ogni test: qui si prepara l'ambiente comune.
+# moduli della libreria standard: variabili d'ambiente, cartelle temporanee, percorsi
 import os
 import tempfile
 from pathlib import Path
