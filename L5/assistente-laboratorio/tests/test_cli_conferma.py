@@ -52,25 +52,42 @@ def _cancella(registro):
 ELENCO = 'Note: [{"id": 3, "testo": "report", "creata": "2026-11-05 10:00:00"}]'
 
 
-@pytest.mark.parametrize("testo, atteso", [
-    ("s", True), (" S ", True), ("si", True), ("Sì", True),
-    ("n", False), ("", False), ("si grazie", False), ("no", False),
-])
-def test_risposta_affermativa(testo, atteso):
-    assert risposta_affermativa(testo) is atteso
+@pytest.mark.parametrize("testo", [
+    # le risposte brevi di prima
+    "s", " S ", "si", "Sì",
+    # risposte naturali concordate con l'utente il 2026-11-06 (maiuscole, spazi e
+    # punteggiatura finale non contano)
+    "ok", "Okay!", "certo", "Va bene.", "d'accordo", "vai", "procedi", "conferma", "confermo",
+    "elimina", "elimina pure", "cancella", "Cancella pure", "esatto",
+    # le stesse precedute da "sì"
+    "sì vai", "Sì, certo", "si elimina", "si grazie", "sì, va bene", "Sì, elimina pure!"])
+def test_risposta_affermativa_si(testo):
+    """Frasi intere che valgono sì: solo queste cancellano la nota."""
+    assert risposta_affermativa(testo) is True
+
+
+@pytest.mark.parametrize("testo", [
+    "n", "", "no", "No grazie", "non ora", "annulla", "lascia stare", "forse",
+    # un sì insieme a un dubbio o a un rifiuto vale no
+    "sì ma aspetta", "si, anzi no", "ok ma non quella", "certo che no",
+    # frasi lunghe o altro testo: in caso di dubbio non si cancella
+    "sì quella di ieri", "elimina la 5", "grazie", "sisi"])
+def test_risposta_affermativa_no(testo):
+    """Tutto il resto vale no."""
+    assert risposta_affermativa(testo) is False
 
 
 def test_domanda_con_testo_della_nota():
+    """La domanda e' colloquiale: la dice l'assistente, con numero e testo veri della nota."""
     strumenti = [_elenco(ELENCO)]
-    assert domanda_conferma("delete_note", {"note_id": 3}, strumenti) == \
-        'Eliminare la nota 3 "report"? (s/n) '
-    assert domanda_conferma("delete_note", {"note_id": "3"}, strumenti) == \
-        'Eliminare la nota 3 "report"? (s/n) '
+    attesa = 'Vuoi che elimini la nota 3 "report"? Rispondimi sì o no.'
+    assert domanda_conferma("delete_note", {"note_id": 3}, strumenti) == attesa
+    assert domanda_conferma("delete_note", {"note_id": "3"}, strumenti) == attesa
 
 
 def test_domanda_nota_assente_solo_id():
     assert domanda_conferma("delete_note", {"note_id": 99}, [_elenco(ELENCO)]) == \
-        "Eliminare la nota 99? (s/n) "
+        "Vuoi che elimini la nota 99? Rispondimi sì o no."
 
 
 def test_domanda_elenco_in_errore_solo_id():
@@ -79,12 +96,12 @@ def test_domanda_elenco_in_errore_solo_id():
         raise RuntimeError("archivio rotto")
     rotto = StructuredTool.from_function(list_notes)
     assert domanda_conferma("delete_note", {"note_id": 3}, [rotto]) == \
-        "Eliminare la nota 3? (s/n) "
+        "Vuoi che elimini la nota 3? Rispondimi sì o no."
 
 
 def test_domanda_altro_tool_distruttivo():
     assert domanda_conferma("svuota", {"tutto": True}, []) == \
-        "Eseguire svuota con {'tutto': True}? (s/n) "
+        "Vuoi che esegua svuota con {'tutto': True}? Rispondimi sì o no."
 
 
 def _sessione(risposte, registro):
@@ -104,17 +121,26 @@ def _sessione(risposte, registro):
         return valore
 
     attesa = AttesaMuta()
-    main(input_fn=input_fn, output_fn=lambda _t: None, llm=llm, stream=False,
+    uscite = []  # righe scritte con output_fn (la domanda dell'assistente)
+    main(input_fn=input_fn, output_fn=uscite.append, llm=llm, stream=False,
          attesa=attesa, strumenti=[_elenco(ELENCO), _cancella(registro)])
-    return domande, attesa
+    return domande, attesa, uscite
 
 
 def test_main_chiede_conferma_e_annulla_con_n():
     registro = []
-    domande, attesa = _sessione(["elimina la nota 3", "n", "exit"], registro)
-    assert 'Eliminare la nota 3 "report"? (s/n) ' in domande
+    domande, attesa, uscite = _sessione(["elimina la nota 3", "n", "exit"], registro)
+    # la domanda la dice l'assistente; la risposta si scrive alla solita riga "Tu: "
+    assert 'Assistente: Vuoi che elimini la nota 3 "report"? Rispondimi sì o no.' in uscite
+    assert domande.count("Tu: ") == 3  # domanda, risposta alla conferma, exit
     assert registro == []
     assert attesa.fermate >= 1  # l'animazione si ferma prima della domanda
+
+
+def test_main_elimina_con_risposta_naturale():
+    registro = []
+    _sessione(["elimina la nota 3", "Sì, elimina pure!", "exit"], registro)
+    assert registro == [3]
 
 
 def test_main_elimina_con_s():
@@ -161,3 +187,48 @@ def test_animazione_riparte_dopo_un_annullamento():
     main(input_fn=lambda _p="": next(righe), output_fn=lambda _t: None, llm=llm, stream=False,
          attesa=attesa, strumenti=[_elenco(ELENCO), _cancella([])])
     assert attesa.avvii == 2  # all'inizio della domanda e dopo il risultato annullato
+
+
+def _turno_in_streaming(testo_prima: str, risposta: str) -> str:
+    """Una domanda in streaming: il modello scrive `testo_prima` (anche vuoto), chiama
+    delete_note(3), l'utente risponde `risposta`; restituisce tutto il testo del terminale."""
+    from langchain_core.messages import AIMessageChunk
+
+    from tests.test_streaming import ModelloStream, _pezzi
+
+    # primo turno del modello: testo facoltativo e poi la chiamata a delete_note
+    chiamata = ([AIMessageChunk(content=testo_prima)] if testo_prima else []) + [
+        AIMessageChunk(content="", tool_call_chunks=[
+            {"name": "delete_note", "args": '{"note_id": 3}', "id": "c1", "index": 0}])]
+    llm = ModelloStream([chiamata, _pezzi("Fatto: nota 3 ", "eliminata.")])
+    scritti = []  # tutto quello che finisce nel terminale, in ordine
+    righe = iter(["elimina la nota 3", risposta, "exit"])
+
+    def input_fn(prompt=""):
+        scritti.append(prompt + "<invio>\n")  # la domanda e l'invio dell'utente
+        return next(righe)
+
+    # output_fn come print: ogni riga finisce con un a capo
+    main(input_fn=input_fn, output_fn=lambda t: scritti.append(t + "\n"),
+         token_fn=scritti.append, llm=llm, stream=True, attesa=AttesaMuta(),
+         strumenti=[_elenco(ELENCO), _cancella([])])
+    return "".join(scritti)
+
+
+DOMANDA = 'Assistente: Vuoi che elimini la nota 3 "report"? Rispondimi sì o no.\n'
+
+
+def test_dopo_la_conferma_nuova_riga_assistente():
+    """Come in una chat: il testo scritto prima della domanda resta, la domanda la dice
+    l'assistente, l'utente risponde a "Tu: " e il modello riparte con "Assistente: "."""
+    testo = _turno_in_streaming("Certo, elimino la nota.", "sì vai")
+    assert ('Assistente: Certo, elimino la nota.\n' + DOMANDA + 'Tu: <invio>\n'
+            'Assistente: Fatto: nota 3 eliminata.\n') in testo
+
+
+def test_conferma_senza_testo_prima():
+    """Senza testo prima della chiamata: domanda dell'assistente, risposta, poi la risposta
+    del modello con la sua etichetta."""
+    testo = _turno_in_streaming("", "s")
+    assert (DOMANDA + 'Tu: <invio>\nAssistente: Fatto: nota 3 eliminata.\n') in testo
+    assert testo.count("Assistente: ") == 2  # la domanda e la risposta del modello

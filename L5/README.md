@@ -258,9 +258,15 @@ add_note, list_notes, delete_note`.
 | `list_notes(limit)` | niente (sola lettura) | `Note: [...]` dalla piu' recente, oppure `Nessuna nota salvata.` | `readOnlyHint` |
 | `delete_note(note_id)` | elimina una nota | `Nota 3 eliminata: ... (creata il ...).` | `destructiveHint` |
 
-- **Conferma**: prima di ogni tool con `destructiveHint` il programma chiede nel terminale
-  `Eliminare la nota 3 "..."? (s/n)`; solo `s`, `si` o `sì` confermano. Altrimenti il modello
-  riceve `Eliminazione annullata dall'utente: nessuna nota eliminata.` e nulla viene cancellato.
+- **Conferma**: prima di ogni tool con `destructiveHint` il programma fa dire all'assistente
+  `Assistente: Vuoi che elimini la nota 3 "..."? Rispondimi sì o no.` e legge la risposta alla
+  riga `Tu: `. Confermano solo queste frasi intere (maiuscole, spazi e punteggiatura non
+  contano), anche precedute da «sì»: `s`, `si`, `sì`, `ok`, `okay`, `certo`, `va bene`,
+  `d'accordo`, `vai`, `procedi`, `conferma`, `confermo`, `elimina`, `elimina pure`, `cancella`,
+  `cancella pure`, `esatto` (e `sì grazie`). Una parola di dubbio o di rifiuto (`no`, `non`,
+  `ma`, `aspetta`, `annulla`, `lascia stare`, `forse`, `anzi`...) vale sempre no. Altrimenti il
+  modello riceve `Eliminazione annullata dall'utente: nessuna nota eliminata.` e nulla viene
+  cancellato. La decisione la prende il programma, non il modello.
 - **Doppioni**: nella stessa domanda, una seconda `add_note` con lo stesso testo non viene
   eseguita (`Nota già salvata in questa richiesta: ...`).
 - **Errori**: testo vuoto o oltre 500 caratteri; `limit` fuori da 1-50; ID inesistente
@@ -332,7 +338,7 @@ npx -y @modelcontextprotocol/inspector -e METEO_CONTATORE="$env:TEMP\meteo-inspe
 
 Nel browser (`http://localhost:6274`, URL con il token stampato nel terminale): Transport `STDIO`,
 **Connect**, poi **Tools** -> **List Tools**. La cartella di `NOTE_DB` la crea il server al primo uso.
-`delete_note` dall'Inspector non chiede conferma: la conferma `(s/n)` sta nel grafo della CLI.
+`delete_note` dall'Inspector non chiede conferma: la conferma sta nel grafo della CLI.
 
 ## Docker
 

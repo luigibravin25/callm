@@ -158,12 +158,34 @@ class FiltroMarkdown:
         return resto
 
 
-RISPOSTE_SI = {"s", "si", "sì"}  # uniche risposte che confermano un'eliminazione
+# frasi intere che confermano un'eliminazione (elenco concordato con l'utente il 2026-11-06);
+# valgono anche precedute da "sì" ("sì vai", "sì, va bene"). Tutto il resto e' no.
+RISPOSTE_SI = {"s", "si", "ok", "okay", "certo", "va bene", "d'accordo", "vai", "procedi",
+               "conferma", "confermo", "elimina", "elimina pure", "cancella", "cancella pure",
+               "esatto"}
+# dopo "sì" vale anche "grazie" ("sì grazie"), che da solo non e' una conferma
+_DOPO_SI = RISPOSTE_SI | {"grazie"}
+# parole di dubbio o di rifiuto: anche insieme a un sì ("sì ma aspetta") la risposta e' no
+PAROLE_DI_DUBBIO = {"no", "non", "ma", "però", "pero", "aspetta", "annulla", "lascia", "stare",
+                    "forse", "anzi", "ferma"}
 
 
 def risposta_affermativa(testo: str) -> bool:
-    """Vero solo per "s", "si" o "sì" (senza spazi esterni e maiuscole): tutto il resto e' no."""
-    return testo.strip().lower() in RISPOSTE_SI
+    """Vero solo se la risposta e' una frase dell'elenco dei sì (anche preceduta da "sì").
+
+    Maiuscole, spazi e punteggiatura non contano; una parola di dubbio o di rifiuto rende
+    la risposta no. Il codice non cerca un sì dentro frasi lunghe: nel dubbio non cancella."""
+    # 1. minuscole, "sì" -> "si", punteggiatura tolta ("Sì, va bene!" -> "si va bene")
+    norma = testo.strip().lower().replace("sì", "si")
+    parole = re.sub(r"[.,;:!?]", " ", norma).split()
+    # 2. una parola di dubbio basta per dire no
+    if not parole or any(p in PAROLE_DI_DUBBIO for p in parole):
+        return False
+    frase = " ".join(parole)
+    if frase in RISPOSTE_SI:
+        return True  # es. "ok", "va bene", "elimina pure"
+    # 3. "sì" seguito da una frase dell'elenco: "si vai", "si grazie", "si va bene"
+    return parole[0] in ("s", "si") and " ".join(parole[1:]) in _DOPO_SI
 
 
 def _testo_della_nota(note_id, strumenti: list) -> str | None:
@@ -187,15 +209,18 @@ def _testo_della_nota(note_id, strumenti: list) -> str | None:
 
 
 def domanda_conferma(nome: str, argomenti: dict, strumenti: list) -> str:
-    """Testo della domanda (s/n) prima di un tool distruttivo."""
+    """Domanda colloquiale, detta dall'assistente, prima di un tool distruttivo.
+
+    La frase la scrive il codice (numero e testo della nota sono sempre quelli veri); la
+    risposta dell'utente la legge risposta_affermativa."""
     if nome == "delete_note":
         note_id = str(argomenti.get("note_id", "?")).strip()
         testo = _testo_della_nota(note_id, strumenti)
         if testo is not None:
-            return f'Eliminare la nota {note_id} "{testo}"? (s/n) '
-        return f"Eliminare la nota {note_id}? (s/n) "
+            return f'Vuoi che elimini la nota {note_id} "{testo}"? Rispondimi sì o no.'
+        return f"Vuoi che elimini la nota {note_id}? Rispondimi sì o no."
     # altri tool distruttivi futuri: nome e argomenti cosi' come li ha passati il modello
-    return f"Eseguire {nome} con {argomenti}? (s/n) "
+    return f"Vuoi che esegua {nome} con {argomenti}? Rispondimi sì o no."
 
 
 class _GestoreConAttesa(logging.Handler):
@@ -280,12 +305,19 @@ def main(input_fn=input, output_fn=print, llm=None, max_steps: int = 5,
         return stato
 
     def conferma(nome: str, argomenti: dict) -> bool:
-        """Chiesta dal grafo prima di un tool distruttivo: domanda (s/n) nel terminale."""
+        """Chiesta dal grafo prima di un tool distruttivo: domanda dell'assistente e risposta
+        dell'utente alla riga "Tu: " (sì solo con le frasi di RISPOSTE_SI)."""
         attesa.ferma()  # la riga animata non deve coprire la domanda
         if stream and not nuova_risposta[0]:
-            token_fn("\n")  # il testo gia' scritto dal modello resta sulla sua riga
+            resto = markdown.fine()  # asterischi in sospeso del testo gia' scritto
+            token_fn(resto + "\n")  # il testo gia' scritto dal modello resta sulla sua riga
+        # come in una chat: dopo la risposta dell'utente il modello parla di nuovo, quindi la
+        # sua prossima frase riparte con l'etichetta "Assistente: " (e i puntini d'attesa)
+        nuova_risposta[0] = True
+        # la domanda la dice l'assistente, sulla sua riga; l'utente risponde a "Tu: "
+        output_fn(ETICHETTA_ASSISTENTE + domanda_conferma(nome, argomenti, strumenti))
         try:
-            risposta = input_fn(domanda_conferma(nome, argomenti, strumenti))
+            risposta = input_fn(PROMPT_UTENTE)
         except (EOFError, KeyboardInterrupt):
             return False  # nessuna risposta = nessuna eliminazione
         return risposta_affermativa(_testo_valido(risposta))
