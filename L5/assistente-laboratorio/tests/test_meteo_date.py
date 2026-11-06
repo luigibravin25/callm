@@ -3,10 +3,12 @@ domani, limite a oggi + 7, fuso della citta'.
 
 Istante fisso (giovedi' 5 novembre 2026) e risposte simulate: nessuna rete.
 """
+# date (giorni di calendario) e istanti con fuso
 from datetime import date, datetime, timezone
 
 import pytest
 
+# il codice da verificare e i dati finti di Open-Meteo
 from mcp_meteo import errori
 from mcp_meteo import meteo as modulo_meteo  # il modulo: "testo_meteo" sembrerebbe un test
 from mcp_meteo.contatore import Contatore
@@ -14,15 +16,17 @@ from mcp_meteo.meteo import FONTE, leggi_giorno, leggi_periodo
 from tests.meteo_finto import GEO_ROMA, METEO_ESEMPIO, client_finto, geo_con, meteo_copia
 
 ISTANTE = datetime(2026, 11, 5, 12, 0, tzinfo=timezone.utc)  # giovedi' 5 novembre 2026
-OGGI = date(2026, 11, 5)
+OGGI = date(2026, 11, 5)  # lo stesso giorno, come data di calendario
 
 
+# contatore in un file temporaneo: il limite vero non si consuma
 @pytest.fixture
 def contatore(tmp_path):
     """Contatore vero su un file temporaneo, limite 1000."""
     return Contatore(tmp_path / "c.sqlite", 1000, lambda: ISTANTE)
 
 
+# scorciatoia: orologio fermo (monkeypatch) e client finto, poi la chiamata vera
 def _meteo(monkeypatch, contatore, data, days=0, istante=ISTANTE, geo=GEO_ROMA,
            meteo=METEO_ESEMPIO, richieste=None):
     """testo_meteo per "Roma" (o il geocoding indicato) con una data e un istante fisso."""
@@ -31,11 +35,15 @@ def _meteo(monkeypatch, contatore, data, days=0, istante=ISTANTE, geo=GEO_ROMA,
     return modulo_meteo.testo_meteo("Roma", days, data, client, contatore)
 
 
+# solo le richieste all'API del meteo, per controllare se e come e' stata chiamata
 def _api(richieste):
     """Richieste inviate all'API meteo (non al geocoding)."""
     return [r for r in richieste if r.url.host == "api.open-meteo.com"]
 
 
+# --- lettura del testo della data ---
+
+# leggi_giorno capisce le date come le scrive l'utente (oggi e' giovedi' 5 novembre 2026)
 @pytest.mark.parametrize("testo, atteso", [
     ("oggi", date(2026, 11, 5)), ("domani", date(2026, 11, 6)),
     ("dopodomani", date(2026, 11, 7)), ("tra 3 giorni", date(2026, 11, 8)),
@@ -57,6 +65,7 @@ def test_leggi_giorno(testo, atteso):
     assert leggi_giorno(testo, OGGI) == atteso
 
 
+# leggi_periodo da' primo e ultimo giorno da mostrare
 @pytest.mark.parametrize("testo, primo, ultimo", [
     # "tra N giorni": gli N giorni da domani, oggi escluso (oggi e' sottinteso)
     ("tra 1 giorno", date(2026, 11, 6), date(2026, 11, 6)),
@@ -73,6 +82,7 @@ def test_leggi_periodo(testo, primo, ultimo):
     assert leggi_periodo(testo, OGGI) == (primo, ultimo)
 
 
+# "tra 0 giorni" non ha senso: errore invece di un periodo vuoto
 @pytest.mark.parametrize("testo", ["tra 0 giorni", "fra zero giorni"])
 def test_tra_zero_giorni_non_valido(testo):
     """"tra 0 giorni" non indica nessun giorno da domani -> ArgomentoNonValido."""
@@ -80,6 +90,7 @@ def test_tra_zero_giorni_non_valido(testo):
         leggi_periodo(testo, OGGI)
 
 
+# testo incomprensibile, data impossibile o vuota: l'errore elenca i formati ammessi
 @pytest.mark.parametrize("testo", ["boh", "32 novembre", ""])
 def test_data_non_leggibile(testo):
     """Data non leggibile o vuota -> ArgomentoNonValido con i formati ammessi."""
@@ -88,6 +99,9 @@ def test_data_non_leggibile(testo):
     assert "formati ammessi" in str(info.value)
 
 
+# --- il testo del meteo per una data ---
+
+# una data precisa: solo quel giorno nelle previsioni, piu' il meteo attuale
 def test_data_valida_una_riga(monkeypatch, contatore):
     """Data entro 7 giorni: meteo attuale piu' la sola riga di quel giorno."""
     richieste = []
@@ -95,10 +109,12 @@ def test_data_valida_una_riga(monkeypatch, contatore):
     righe = [r for r in testo.split("Previsioni:\n")[1].split("\n") if r.startswith("- ")]
     assert righe == ["- mercoledì 11 novembre 2026: rovesci di pioggia deboli, minima 4,4 °C, "
                      "massima 9,9 °C, pioggia 60 %"]
+    # si chiedono a Open-Meteo i giorni fino a quella data (oggi compreso: 7)
     assert _api(richieste)[0].url.params["forecast_days"] == "7"
     assert "Meteo attuale a Roma (Lazio)" in testo  # anche il meteo attuale
 
 
+# risposta finta con 8 giorni: oggi piu' i 7 successivi
 def _meteo_8_giorni() -> dict:
     """METEO_ESEMPIO con un ottavo giorno (12 novembre): serve a "tra 7 giorni"."""
     dati = meteo_copia()
@@ -109,16 +125,19 @@ def _meteo_8_giorni() -> dict:
     return dati
 
 
+# estrae le righe dell'elenco delle previsioni
 def _righe_previsione(testo: str) -> list[str]:
     """Le righe "- ..." dopo "Previsioni:"."""
     return [r for r in testo.split("Previsioni:\n")[1].split("\n") if r.startswith("- ")]
 
 
+# "tra N giorni" e' un periodo da domani: due righe, la riga di oggi non compare
 def test_tra_due_giorni_da_domani(monkeypatch, contatore):
     """"tra due giorni" detto il 5 novembre: il 6 e il 7, oggi escluso."""
     richieste = []
     testo = _meteo(monkeypatch, contatore, "tra due giorni", richieste=richieste)
     righe = _righe_previsione(testo)
+    # controlli: due righe (6 e 7), niente "oggi", 3 giorni chiesti all'API
     assert len(righe) == 2
     assert righe[0].startswith("- domani, venerdì 6 novembre 2026: ")
     assert righe[1].startswith("- sabato 7 novembre 2026: ")
@@ -127,12 +146,14 @@ def test_tra_due_giorni_da_domani(monkeypatch, contatore):
     assert "Meteo attuale a Roma (Lazio)" in testo  # il meteo attuale resta
 
 
+# "tra un giorno" coincide con domani
 def test_tra_un_giorno_e_domani(monkeypatch, contatore):
     """"tra un giorno" = domani: una sola riga."""
     righe = _righe_previsione(_meteo(monkeypatch, contatore, "tra un giorno"))
     assert len(righe) == 1 and righe[0].startswith("- domani, venerdì 6 novembre 2026: ")
 
 
+# caso limite del periodo: "tra 7 giorni" arriva a oggi + 7 e chiede 8 giorni all'API
 def test_tra_sette_giorni(monkeypatch, contatore):
     """"tra 7 giorni": 7 righe dal 6 al 12 novembre, 8 giorni chiesti a Open-Meteo."""
     richieste = []
@@ -140,11 +161,12 @@ def test_tra_sette_giorni(monkeypatch, contatore):
                    richieste=richieste)
     righe = _righe_previsione(testo)
     assert len(righe) == 7
-    assert righe[0].startswith("- domani, venerdì 6 novembre 2026: ")
-    assert righe[-1].startswith("- giovedì 12 novembre 2026: ")
+    assert righe[0].startswith("- domani, venerdì 6 novembre 2026: ")  # primo giorno
+    assert righe[-1].startswith("- giovedì 12 novembre 2026: ")  # ultimo giorno
     assert _api(richieste)[0].url.params["forecast_days"] == "8"
 
 
+# caso limite di una data singola: oggi + 7 e' ancora ammesso
 def test_data_singola_a_oggi_piu_sette(monkeypatch, contatore):
     """Anche una data singola arriva a oggi + 7 (12 novembre): una riga, 8 giorni chiesti."""
     richieste = []
@@ -155,6 +177,7 @@ def test_data_singola_a_oggi_piu_sette(monkeypatch, contatore):
     assert _api(richieste)[0].url.params["forecast_days"] == "8"
 
 
+# oltre oggi + 7 non si inventano valori: messaggio chiaro e nessuna chiamata all'API meteo
 @pytest.mark.parametrize("data, giorno", [
     ("2026-11-13", "venerdì 13 novembre 2026"), ("tra 30 giorni", "sabato 5 dicembre 2026"),
     ("fra 8 giorni", "venerdì 13 novembre 2026"), ("fra 20 giorni", "mercoledì 25 novembre 2026")])
@@ -164,12 +187,14 @@ def test_data_oltre(monkeypatch, contatore, data, giorno):
     testo = _meteo(monkeypatch, contatore, data, richieste=richieste)
     assert (f"Nessuna previsione affidabile per {giorno}: oltre giovedì 12 novembre 2026 "
             "non ci sono previsioni affidabili.") in testo
+    # il testo dice comunque per quale luogo e cita la fonte
     assert "Località: Roma (Lazio)" in testo
     assert testo.rstrip().endswith(FONTE)
     assert _api(richieste) == [] and len(richieste) == 1  # solo il geocoding
     assert "°C" not in testo  # nessun valore
 
 
+# una data gia' passata: spiega cosa e' disponibile, senza chiamare l'API meteo
 def test_data_passata(monkeypatch, contatore):
     """Data passata: lo dice e non chiama il meteo."""
     richieste = []
@@ -179,6 +204,9 @@ def test_data_passata(monkeypatch, contatore):
     assert _api(richieste) == []
 
 
+# --- date insieme a days ---
+
+# se il modello passa sia date sia days, conta date
 def test_date_prevale_su_days(monkeypatch, contatore):
     """Con date e days insieme vale date: una sola riga."""
     testo = _meteo(monkeypatch, contatore, "domani", days=5)
@@ -186,6 +214,7 @@ def test_date_prevale_su_days(monkeypatch, contatore):
     assert len(righe) == 1 and righe[0].startswith("- domani, venerdì 6 novembre 2026: ")
 
 
+# con date presente un days sbagliato non provoca errori
 def test_date_con_days_fuori_intervallo(monkeypatch, contatore):
     """Con date presente days e' ignorato, anche se fuori intervallo (il modello riempie entrambi)."""
     testo = _meteo(monkeypatch, contatore, "domani", days=10)
@@ -193,12 +222,16 @@ def test_date_con_days_fuori_intervallo(monkeypatch, contatore):
     assert len(righe) == 1 and righe[0].startswith("- domani, ")
 
 
+# date deve essere un testo: un numero e' rifiutato
 def test_date_non_testo(monkeypatch, contatore):
     """date che non e' un testo -> ArgomentoNonValido."""
     with pytest.raises(errori.ArgomentoNonValido):
         _meteo(monkeypatch, contatore, 15)
 
 
+# --- fuso orario ---
+
+# "oggi" segue l'ora locale della citta', non l'ora UTC del computer
 def test_oggi_dopo_la_mezzanotte_italiana(monkeypatch, contatore):
     """"oggi" e' la data locale della citta': alle 23:30 UTC del 5 novembre in Italia e' gia' il 6."""
     # Review Focus 4: il giorno non e' quello UTC ma quello del fuso della citta' (Europe/Rome)
@@ -207,9 +240,10 @@ def test_oggi_dopo_la_mezzanotte_italiana(monkeypatch, contatore):
     assert "- oggi, venerdì 6 novembre 2026: " in testo
 
 
+# senza fuso non si puo' sapere che giorno e' nella citta': risposta non valida
 def test_fuso_della_citta_mancante(monkeypatch, contatore):
     """Luogo senza fuso orario con una data -> RispostaNonValida."""
-    roma = dict(GEO_ROMA["results"][0])
+    roma = dict(GEO_ROMA["results"][0])  # copia del luogo, senza toccare GEO_ROMA
     del roma["timezone"]
     with pytest.raises(errori.RispostaNonValida):
         _meteo(monkeypatch, contatore, "domani", geo=geo_con(roma))

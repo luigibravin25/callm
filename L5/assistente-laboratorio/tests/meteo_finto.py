@@ -10,11 +10,12 @@ sceglie la voce del geocoding o del meteo in base all'host. Una voce puo' essere
 I dati imitano le risposte vere del geocoding con countryCode=IT (solo luoghi italiani,
 admin1 = regione, admin2 = provincia), viste il 2026-11-05.
 """
-import copy
+import copy  # copie profonde dei dati finti, cosi' un test non sporca gli altri
 
-import httpx
+import httpx  # client HTTP; MockTransport risponde senza rete
 
 
+# costruisce un luogo come quelli del geocoding vero (solo i campi letti dal server)
 def _luogo(nome: str, regione: str, provincia: str | None, abitanti: int | None,
            latitudine: float = 41.9, longitudine: float = 12.5) -> dict:
     """Un luogo del geocoding italiano con i soli campi usati dal server."""
@@ -76,6 +77,8 @@ METEO_ESEMPIO = {
 }
 
 
+# funzioni pubbliche per i test: luoghi, geocoding e meteo su misura
+
 def luogo(nome: str, regione: str, provincia: str | None = None,
           abitanti: int | None = None) -> dict:
     """Un luogo italiano per i test che costruiscono un geocoding su misura."""
@@ -92,6 +95,7 @@ def meteo_copia() -> dict:
     return copy.deepcopy(METEO_ESEMPIO)
 
 
+# sceglie il comportamento del trasporto finto in base al tipo della voce
 def _risposta(voce, richiesta: httpx.Request) -> httpx.Response:
     """Traduce una voce (dict, Response, eccezione, funzione) nella risposta del trasporto."""
     if isinstance(voce, BaseException):
@@ -103,6 +107,7 @@ def _risposta(voce, richiesta: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json=voce)  # un dict: risposta riuscita con quel JSON
 
 
+# il client da passare al server al posto di quello vero: nessuna richiesta esce in rete
 def client_finto(geo=None, meteo=None, richieste: list | None = None) -> httpx.Client:
     """httpx.Client che risponde con `geo` al geocoding e con `meteo` all'API meteo.
 
@@ -120,4 +125,5 @@ def client_finto(geo=None, meteo=None, richieste: list | None = None) -> httpx.C
             raise AssertionError(f"richiesta inattesa: {richiesta.url}")
         return _risposta(voce, richiesta)
 
+    # MockTransport chiama gestore per ogni richiesta invece di aprire una connessione
     return httpx.Client(transport=httpx.MockTransport(gestore), timeout=5)
