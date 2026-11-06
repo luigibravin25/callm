@@ -20,6 +20,9 @@ from mcp_meteo.open_meteo import cerca_citta, meteo
 from servizio.date_lavoro import (GIORNI_SETTIMANA, MESI, ErroreData, leggi_data, normalizza)
 
 GIORNI_MAX = 7  # previsioni fino a 7 giorni, oggi compreso (Open-Meteo arriverebbe a 16)
+# con date ("tra 7 giorni", "12 novembre") si arriva fino a oggi + 7: "tra 7 giorni" sono i
+# 7 giorni da domani, quindi a Open-Meteo si chiedono 8 giorni (oggi compreso)
+GIORNI_AVANTI_MAX = 7
 LUNGHEZZA_MAX_CITTA = 100  # caratteri: oltre e' certamente un errore dell'argomento
 CITTA_RISERVA = "Roma"  # citta' predefinita se CITTA_PREDEFINITA non e' impostata
 FONTE = "Fonte: Open-Meteo.com (CC BY 4.0)"  # la licenza dei dati chiede di citare la fonte
@@ -291,10 +294,12 @@ def leggi_giorno(testo: str, oggi: date) -> date:
     if norma in relativi:
         return oggi + timedelta(days=relativi[norma])
     if trovato := _TRA_N_GIORNI.fullmatch(norma):
-        # "tra 3 giorni" o "tra tre giorni": oggi + 3 (oltre i 7 giorni lo segnala testo_meteo)
+        # "tra 3 giorni" o "tra tre giorni": l'ultimo giorno e' oggi + 3 (il periodo da domani
+        # lo costruisce leggi_periodo; oltre oggi + 7 lo segnala testo_meteo)
         quanti = (int(trovato[1]) if trovato[1].isdigit()
                   else _NUMERI_IN_LETTERE.get(trovato[1]))
-        if quanti is None or quanti > _MAX_GIORNI_AVANTI:
+        # "tra 0 giorni" non indica nessun giorno da domani: e' un errore come un numero illeggibile
+        if quanti is None or quanti < 1 or quanti > _MAX_GIORNI_AVANTI:
             raise ArgomentoNonValido(f"numero di giorni non leggibile in «{testo.strip()}»; "
                                      f"{FORMATI_DATA}.")
         return oggi + timedelta(days=quanti)
@@ -314,6 +319,21 @@ def leggi_giorno(testo: str, oggi: date) -> date:
     except ErroreData as errore:
         raise ArgomentoNonValido(f"data non leggibile «{testo.strip()}» ({errore}); "
                                  f"{FORMATI_DATA}.") from None
+
+
+def leggi_periodo(testo: str, oggi: date) -> tuple[date, date]:
+    """(primo, ultimo) giorno da mostrare per la data scritta dall'utente.
+
+    "tra N giorni" sono gli N giorni da domani, oggi escluso (oggi e' sottinteso: e' il giorno
+    in cui si scrive): il 2 ottobre "tra 2 giorni" -> (3 ottobre, 4 ottobre). Ogni altra data
+    ("domani", "sabato", "15 novembre") e' un giorno solo: primo == ultimo.
+    """
+    # leggi_giorno controlla il testo e calcola l'ultimo giorno (per "tra N giorni": oggi + N)
+    ultimo = leggi_giorno(testo, oggi)
+    norma, _ = _pulisci_data(testo)  # stessa pulizia di leggi_giorno ("per tra 2 giorni"...)
+    if _TRA_N_GIORNI.fullmatch(norma):
+        return oggi + timedelta(days=1), ultimo  # da domani all'ultimo giorno compreso
+    return ultimo, ultimo  # un giorno solo
 
 
 def _oggi_della_citta(luogo: dict) -> date:
@@ -466,18 +486,18 @@ def testo_meteo(city: str, days: int, data: str, client: httpx.Client, contatore
     if predefinita:
         # citta' predefinita: scelta voluta, non si chiede all'utente quale omonimo intende
         alternative = []
-    # 3. data precisa: fuori dai 7 giorni si risponde subito, senza chiedere il meteo
-    giorno = None  # giorno preciso chiesto dall'utente (None = nessuno)
+    # 3. data precisa: oltre oggi + 7 si risponde subito, senza chiedere il meteo
+    primo = giorno = None  # periodo chiesto dall'utente, dal primo al giorno (None = nessuno)
     if data.strip():
         # con una data, days e' ignorato: si chiedono i giorni fino a quella data
         oggi = _oggi_della_citta(scelto)
-        giorno = leggi_giorno(data, oggi)
-        ultimo = oggi + timedelta(days=GIORNI_MAX - 1)  # oggi compreso: 7 giorni
+        # "tra 2 giorni" -> da domani a oggi + 2; le altre date -> primo == giorno
+        primo, giorno = leggi_periodo(data, oggi)
+        ultimo = oggi + timedelta(days=GIORNI_AVANTI_MAX)  # ultimo giorno con previsioni
         fuori = None
         if giorno > ultimo:
-            fuori = (f"Nessuna previsione affidabile per {data_in_italiano(giorno)}: le "
-                     f"previsioni arrivano a {GIORNI_MAX} giorni, fino a "
-                     f"{data_in_italiano(ultimo)}.")
+            fuori = (f"Nessuna previsione affidabile per {data_in_italiano(giorno)}: oltre "
+                     f"{data_in_italiano(ultimo)} non ci sono previsioni affidabili.")
         elif giorno < oggi:
             fuori = (f"Il {giorno.day} {MESI[giorno.month - 1]} {giorno.year} è già passato: "
                      "sono disponibili solo il meteo attuale e le previsioni fino a "
@@ -494,9 +514,9 @@ def testo_meteo(city: str, days: int, data: str, client: httpx.Client, contatore
     righe += _attuale(scelto, dati)
     righe += _righe_piccola_localita(scelto)  # subito dopo il nome della localita'
     if giorno is not None:
-        # solo la riga del giorno chiesto
-        scelti = [p for p in _giorni_previsti(dati) if p["giorno"] == giorno]
-        if not scelti:
+        # solo le righe del periodo chiesto (una sola riga se primo == giorno)
+        scelti = [p for p in _giorni_previsti(dati) if primo <= p["giorno"] <= giorno]
+        if not scelti or scelti[-1]["giorno"] != giorno:
             raise RispostaNonValida(f"le previsioni non contengono il {giorno.isoformat()}.")
         righe += _previsioni(dati, scelti)
     elif days:
