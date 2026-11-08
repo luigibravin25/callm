@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assistente del laboratorio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- barra in alto: menu delle impostazioni e titolo -->
+  <header class="topbar">
+    <button class="icon-btn" id="menu-btn" aria-label="Menù">&#9776;</button>
+    <h1>Assistente del laboratorio (L5)</h1>
+    <div class="menu" id="menu" hidden>
+      <div class="menu-title">Impostazioni</div>
+      <!-- cronologia solo in memoria nella pagina, mai salvata -->
+      <label class="toggle">
+        <span>Conserva history</span>
+        <input type="checkbox" id="history-toggle" checked>
+        <span class="slider"></span>
+      </label>
+      <div class="toggle-state" id="history-state">Attivato</div>
+      <!-- risposta parola per parola oppure tutta insieme -->
+      <label class="toggle setting">
+        <span>Streaming parole</span>
+        <input type="checkbox" id="stream-toggle" checked>
+        <span class="slider"></span>
+      </label>
+      <div class="toggle-state" id="stream-state">Attivato</div>
+      <!-- elenco degli strumenti caricati dal server (GET /strumenti) -->
+      <div class="menu-title tools-title" id="tools-title">Strumenti</div>
+      <ul class="tools-list" id="tools-list"></ul>
+    </div>
+  </header>
+
+  <!-- area dei messaggi -->
+  <main class="chat" id="chat">
+    <p class="empty" id="empty">Scrivi un messaggio per iniziare.</p>
+  </main>
+
+  <!-- casella di scrittura con allegati e invio -->
+  <form class="composer" id="form">
+    <div class="attachments" id="attachments" hidden></div>
+    <div class="composer-box">
+      <button class="attach" id="attach" type="button" aria-label="Allega file">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </button>
+      <input type="file" id="file-input" multiple hidden>
+      <textarea id="input" rows="1" placeholder="Scrivi un messaggio..." autofocus></textarea>
+      <button class="send" id="send" type="submit" aria-label="Invia">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 19V5M5 12l7-7 7 7"/>
+        </svg>
+      </button>
+    </div>
+  </form>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+ID_Prodotto,Nome_Prodotto,Categoria,Prezzo_Euro,Quantita_Magazzino,Stato,Sede_Magazzino
+PRD001,Smartphone Alpha,Elettronica,499.99,45,Disponibile,Milano Hub
+PRD002,Auricolari Wireless,Elettronica,79.90,120,Disponibile,Milano Hub
+PRD003,T-Shirt Cotone,Abbigliamento,19.99,85,Disponibile,Torino Deposito
+PRD004,Jeans Slim Fit,Abbigliamento,59.90,0,Esaurito,Roma Logistica
+PRD005,Moka Caffè 3 Tazze,Casa & Cucina,24.50,60,Disponibile,Bologna Express
+PRD006,Frullatore Express,Casa & Cucina,45.00,15,Disponibile,Torino Deposito
+PRD007,Guida a Python,Libri,34.90,30,Disponibile,Bologna Express
+PRD008,Romanzo Giallo,Libri,14.99,110,Disponibile,Roma Logistica
+PRD009,Tappetino Yoga,Sport,29.99,40,Disponibile,Milano Hub
+PRD010,Borraccia Termica,Sport,18.50,0,Esaurito,Torino Deposito
+PRD011,Smartwatch Fit,Elettronica,129.00,25,Disponibile,Bologna Express
+PRD012,Caricatore Rapido,Elettronica,22.99,200,Disponibile,Milano Hub
+PRD013,Felpa con Cappuccio,Abbigliamento,39.99,70,Disponibile,Torino Deposito
+PRD014,Giacca Antivento,Abbigliamento,89.90,12,Disponibile,Roma Logistica
+PRD015,Set Coltelli Cucina,Casa & Cucina,65.00,0,Esaurito,Milano Hub
+PRD016,Bollitore Elettrico,Casa & Cucina,35.90,55,Disponibile,Bologna Express
+PRD017,Manuale SQL,Libri,39.90,18,Disponibile,Bologna Express
+PRD018,Libro di Ricette,Libri,22.00,45,Disponibile,Roma Logistica
+PRD019,Manubri Regolabili,Sport,89.99,8,Disponibile,Torino Deposito
+PRD020,Corda per Saltare,Sport,12.50,150,Disponibile,Milano Hub
+PRD021,Monitor 24 Pollici,Elettronica,159.90,14,Disponibile,Bologna Express
+PRD022,Tastiera Meccanica,Elettronica,69.99,33,Disponibile,Milano Hub
+PRD023,Camicia di Lino,Abbigliamento,45.00,0,Esaurito,Torino Deposito
+PRD024,Calzini Sportivi,Abbigliamento,9.99,300,Disponibile,Roma Logistica
+PRD025,Padella Antiaderente,Casa & Cucina,29.90,42,Disponibile,Milano Hub
+PRD026,Tostapane Vintage,Casa & Cucina,49.99,19,Disponibile,Bologna Express
+PRD027,Enciclopedia Spazio,Libri,45.00,7,Disponibile,Roma Logistica
+PRD028,Thriller Psicologico,Libri,16.50,88,Disponibile,Bologna Express
+PRD029,Zaino da Trekking,Sport,75.00,22,Disponibile,Torino Deposito
+PRD030,Occhialini Nuoto,Sport,15.90,65,Disponibile,Milano Hub
+PRD031,Mouse Wireless,Elettronica,29.90,95,Disponibile,Milano Hub
+PRD032,Power Bank 20k,Elettronica,39.99,0,Esaurito,Bologna Express
+PRD033,Pantaloni Cargo,Abbigliamento,49.90,51,Disponibile,Roma Logistica
+PRD034,Cappello Lana,Abbigliamento,14.99,120,Disponibile,Torino Deposito
+PRD035,Panni Microfibra,Casa & Cucina,8.50,250,Disponibile,Milano Hub
+PRD036,Bilancia Cucina,Casa & Cucina,18.00,38,Disponibile,Bologna Express
+PRD037,Romanzo Fantasy,Libri,19.90,63,Disponibile,Roma Logistica
+PRD038,Saggio Storico,Libri,28.00,12,Disponibile,Bologna Express
+PRD039,Palla Fitness,Sport,19.99,0,Esaurito,Torino Deposito
+PRD040,Borsa Palestra,Sport,34.90,47,Disponibile,Milano Hub
+PRD041,Cassa Bluetooth,Elettronica,55.00,74,Disponibile,Milano Hub
+PRD042,Luce LED Scrivania,Elettronica,27.50,41,Disponibile,Bologna Express
+PRD043,Sneakers Casual,Abbigliamento,79.90,28,Disponibile,Torino Deposito
+PRD044,Pigiama Cotone,Abbigliamento,29.99,36,Disponibile,Roma Logistica
+PRD045,Contenitori Alimenti,Casa & Cucina,15.90,105,Disponibile,Milano Hub
+PRD046,Macchina Caffè,Casa & Cucina,119.00,9,Disponibile,Torino Deposito
+PRD047,Manuale Economia,Libri,42.00,21,Disponibile,Bologna Express
+PRD048,Fumetto d'Autore,Libri,12.00,140,Disponibile,Roma Logistica
+PRD049,Racchetta Tennis,Sport,135.00,11,Disponibile,Torino Deposito
+PRD050,Lacci di Ricambio,Sport,4.99,500,Disponibile,Milano Hub
