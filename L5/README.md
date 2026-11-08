@@ -60,6 +60,36 @@ $env:FUSO_PREDEFINITO = "Europe/Rome"   # facoltativa
 Il terminale mostra la chat con `Tu:` per i tuoi messaggi e `Assistente:` per le risposte.
 `exit`, Ctrl+C o Ctrl+Z (EOF) per uscire.
 
+## Interfaccia grafica (pagina web)
+
+Lo stesso agente, con gli stessi 10 strumenti e la stessa conferma prima di eliminare una nota,
+si usa anche da una pagina web locale (solo branch `graphicinterface`). Il server
+(`assistente-laboratorio/app/gui.py`) usa solo la libreria standard (`http.server`): nessuna
+dipendenza in piu'. La pagina sta in `assistente-laboratorio/app/web/`.
+
+Stesse variabili d'ambiente della CLI; per `toolcalc` e `tooldate` il servizio FastAPI va avviato
+in un secondo terminale (vedi «Calcolatrice sicura»). Da `assistente-laboratorio/`:
+
+```powershell
+$env:LM_BASE_URL = "http://127.0.0.1:1234/v1"
+$env:LM_MODEL = "google/gemma-4-e2b"
+& ..\venv\Scripts\python.exe -m app.gui
+```
+
+Il browser si apre su `http://127.0.0.1:8765` (Ctrl+C nel terminale per chiudere).
+
+- Menu ☰: «Conserva history» (cronologia solo in memoria nella pagina, mai su disco),
+  «Streaming parole» (token per token oppure risposta in blocco) e l'elenco dei 10 strumenti.
+- Sopra ogni risposta compaiono nome leggibile e icona dello strumento usato: 🕒 Orologio,
+  📏 Convertitore di unità, 🧮 Calcolatrice, 📅 Giorni e scadenze, 🛒 catalogo (ricerca e
+  dettagli prodotto), 📝 note (aggiungi, elenco, elimina), 🌤️ Meteo. I nomi interni
+  (`tooltime`, `get_weather`, ...) restano quelli usati dal modello.
+- Prima di `delete_note` l'assistente chiede nella pagina «Vuoi che elimini la nota N ...?
+  Rispondimi sì o no.»; la risposta la valuta `risposta_affermativa` (stesse regole della CLI).
+  Nessuna risposta entro 300 secondi vale no.
+- Con un archivio di prova le note vere non si toccano: impostare prima `$env:NOTE_DB` (e
+  `$env:METEO_CONTATORE`) su file temporanei.
+
 ## Costanti in `assistente-laboratorio/app/llm.py`
 
 | Costante | Valore | Effetto |
