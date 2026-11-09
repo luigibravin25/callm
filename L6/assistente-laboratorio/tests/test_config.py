@@ -12,7 +12,7 @@ RIFIUTO = "Posso aiutarti solo con ora, data e fusi orari. Questa domanda è fuo
 def ambiente(monkeypatch):
     monkeypatch.setenv("LM_BASE_URL", "http://127.0.0.1:1234/v1")
     monkeypatch.setenv("LM_MODEL", "google/gemma-4-e2b")
-    for nome in ("MAX_STEPS", "FUSO_PREDEFINITO", "AMBITO_FILE"):
+    for nome in ("MAX_STEPS", "FUSO_PREDEFINITO", "AMBITO_FILE", "MAX_REVISIONI"):
         monkeypatch.delenv(nome, raising=False)
     return monkeypatch
 
@@ -107,3 +107,22 @@ def test_ambito_esempi_non_lista(tmp_path, valore):
     testo = f'descrizione = "ora"\nrifiuto = "no"\nesempi_in_ambito = {valore}'
     with pytest.raises(ValueError, match="esempi_in_ambito"):
         load_ambito(_toml(tmp_path, testo))
+
+
+# Verifica che senza MAX_REVISIONI il revisore possa rimandare all'agente 2 volte.
+def test_max_revisioni_predefinito(ambiente):
+    assert load_settings().max_revisioni == 2
+
+
+# Verifica che MAX_REVISIONI=0 sia ammesso (il revisore valuta ma non rimanda).
+def test_max_revisioni_zero_ammesso(ambiente):
+    ambiente.setenv("MAX_REVISIONI", "0")
+    assert load_settings().max_revisioni == 0
+
+
+# Verifica che MAX_REVISIONI non numerico o negativo sia rifiutato.
+@pytest.mark.parametrize("valore", ["due", "-1"])
+def test_max_revisioni_non_valido(ambiente, valore):
+    ambiente.setenv("MAX_REVISIONI", valore)
+    with pytest.raises(ValueError, match="MAX_REVISIONI"):
+        load_settings()

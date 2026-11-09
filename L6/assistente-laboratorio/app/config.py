@@ -20,6 +20,7 @@ class Settings:
     max_steps: int  # numero massimo di giri modello-strumenti per una domanda
     fuso_predefinito: str  # fuso dell'orologio quando l'utente non indica un luogo
     ambito_file: Path  # file TOML con l'ambito dell'agente
+    max_revisioni: int = 2  # quante volte il revisore puo' rimandare la risposta all'agente
 
 
 # ambito dell'agente letto da config/ambito.toml: entra nel prompt del router
@@ -70,8 +71,17 @@ def load_settings() -> Settings:
     ambito_file = Path(os.environ.get("AMBITO_FILE", "").strip() or AMBITO_PREDEFINITO)
     if not ambito_file.is_absolute():
         ambito_file = CARTELLA_PROGETTO / ambito_file
+    # MAX_REVISIONI e' facoltativa: se manca vale 2; 0 = il revisore valuta ma non rimanda
+    grezzo = os.environ.get("MAX_REVISIONI", "2").strip()
+    try:
+        max_revisioni = int(grezzo)
+    except ValueError:
+        max_revisioni = -1  # un testo non numerico cade nel controllo qui sotto
+    if max_revisioni < 0:
+        raise ValueError(f"MAX_REVISIONI deve essere un intero >= 0, trovato: {grezzo!r}")
     return Settings(base_url=base_url, model=model, max_steps=max_steps,
-                    fuso_predefinito=fuso, ambito_file=ambito_file)
+                    fuso_predefinito=fuso, ambito_file=ambito_file,
+                    max_revisioni=max_revisioni)
 
 
 # controlla un campo di testo obbligatorio del file dell'ambito
