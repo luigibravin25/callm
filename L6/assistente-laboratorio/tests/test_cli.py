@@ -9,15 +9,17 @@ from app.cli import MSG_CONNESSIONE, main
 from app.config import Ambito
 from app.graph import build_graph
 from app.router import DecisioneRouter
-from tests.finti import ModelloFinto, RouterFinto
+from app.revisore import DecisioneRevisore
+from tests.finti import ModelloFinto, RevisoreFinto, RouterFinto
 
 AMBITO = Ambito(descrizione="Solo ora.", rifiuto="Fuori dal mio ambito.")
 IN_AMBITO = DecisioneRouter(categoria="conversazione", motivo="ora")
 FUORI = DecisioneRouter(categoria="fuori_ambito", motivo="ricetta")
+OK = DecisioneRevisore(motivo="risponde", coerente=True)
 
 
 # esegue la chat con le righe date e restituisce cio' che e' stato stampato
-def _chat(righe, agente, router):
+def _chat(righe, agente, router, revisore=None):
     input_righe = iter(righe)
 
     # finto input(): restituisce le righe in ordine, poi EOF come Ctrl+Z
@@ -28,7 +30,9 @@ def _chat(righe, agente, router):
             raise EOFError
 
     stampato = []
-    main(build_graph(agente, router, AMBITO), input_fn=leggi, output_fn=stampato.append)
+    revisore = revisore or RevisoreFinto([OK])
+    main(build_graph(agente, router, revisore, AMBITO), input_fn=leggi,
+         output_fn=stampato.append)
     return "\n".join(stampato)
 
 

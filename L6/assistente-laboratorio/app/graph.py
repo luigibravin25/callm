@@ -3,7 +3,8 @@ import logging
 from typing import Annotated, Literal, TypedDict
 
 # messaggi della conversazione; grafo LangGraph; nodo che esegue gli strumenti
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (AIMessage, HumanMessage, RemoveMessage, SystemMessage,
+                                     ToolMessage)
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -11,13 +12,17 @@ from langgraph.prebuilt import ToolNode
 # parti del progetto: ambito, prompt dell'agente, decisione del router, strumenti
 from app.config import Ambito
 from app.llm import SYSTEM_PROMPT
+from app.revisore import MSG_REVISORE, valuta
 from app.router import decidi
 from app.tools import STRUMENTI
 
-# un logger per ruolo: nel terminale compaiono come [router], [agente], [rifiuto]
+# un logger per ruolo: nel terminale compaiono come [router], [agente], [rifiuto], [revisore]
 log_router = logging.getLogger("router")
 log_agente = logging.getLogger("agente")
 log_rifiuto = logging.getLogger("rifiuto")
+log_revisore = logging.getLogger("revisore")
+
+REVISORE = "revisore"  # name dei messaggi del revisore nella cronologia
 
 # risposta usata quando il modello non restituisce ne' testo ne' chiamate
 MSG_VUOTO = (
@@ -33,14 +38,50 @@ class State(TypedDict):
     steps: int  # quante volte sono stati eseguiti strumenti in questa domanda
     categoria: str  # decisione del router: conversazione o fuori_ambito
     motivo: str  # motivo della decisione del router (solo per i log, mai all'utente)
+    revisioni: int  # quante volte il revisore ha gia' rimandato la risposta all'agente
 
 
-# dopo il modello: strumenti, limite oppure fine (come in L5)
-def instrada(state: State, max_steps: int = 5) -> Literal["strumenti", "limite", "__end__"]:
+# e' un messaggio del revisore? (HumanMessage con name="revisore")
+def _del_revisore(m) -> bool:
+    return isinstance(m, HumanMessage) and m.name == REVISORE
+
+
+# posizione dell'ultima domanda vera dell'utente (i messaggi del revisore non contano)
+def _ultima_domanda(messages: list) -> int:
+    return max(i for i, m in enumerate(messages) if isinstance(m, HumanMessage)
+               and not _del_revisore(m))
+
+
+# dopo il modello: strumenti, limite, revisore oppure pulizia
+def instrada(state: State, max_steps: int = 5) -> Literal["strumenti", "limite", "revisore",
+                                                           "pulizia"]:
+    ultimo = state["messages"][-1]
     # getattr con valore None: funziona anche con messaggi che non hanno tool_calls
-    if getattr(state["messages"][-1], "tool_calls", None):
+    if getattr(ultimo, "tool_calls", None):
         return "strumenti" if state["steps"] < max_steps else "limite"
-    return END  # nessuna chiamata a strumenti: la risposta e' finale
+    # il messaggio fisso di risposta vuota non e' una risposta del modello: niente revisione
+    if ultimo.content == MSG_VUOTO:
+        return "pulizia"
+    return "revisore"  # risposta vera del modello: la controlla il revisore
+
+
+# dopo il revisore: di nuovo all'agente se ha lasciato un'indicazione, altrimenti pulizia
+def dopo_revisore(state: State) -> Literal["modello", "pulizia"]:
+    return "modello" if _del_revisore(state["messages"][-1]) else "pulizia"
+
+
+# id dei messaggi da togliere a fine turno: indicazioni del revisore e bozze rifiutate
+def messaggi_da_pulire(messages: list) -> list[str]:
+    """Nei messaggi dopo l'ultima domanda vera: ogni messaggio del revisore e ogni AIMessage
+    senza tool_calls seguito subito da un messaggio del revisore (la bozza rifiutata)."""
+    turno = messages[_ultima_domanda(messages) + 1:]
+    ids = []
+    for i, m in enumerate(turno):
+        seguito_dal_revisore = i + 1 < len(turno) and _del_revisore(turno[i + 1])
+        if _del_revisore(m) or (isinstance(m, AIMessage) and not m.tool_calls
+                                and seguito_dal_revisore):
+            ids.append(m.id)
+    return ids
 
 
 # dopo il router: l'agente per le domande in ambito, il rifiuto per le altre
@@ -49,10 +90,10 @@ def dopo_router(state: State) -> Literal["modello", "rifiuto"]:
 
 
 # costruisce il grafo: router, rifiuto e i nodi dell'agente (modello, strumenti, limite)
-def build_graph(llm, router_llm, ambito: Ambito, max_steps: int = 5, strumenti=STRUMENTI,
-                system_prompt: str = SYSTEM_PROMPT):
-    """`llm`: modello dell'agente con gli strumenti; `router_llm`: modello del router con
-    output strutturato. Input: {"messages": [...], "steps": 0}."""
+def build_graph(llm, router_llm, revisore_llm, ambito: Ambito, max_steps: int = 5,
+                max_revisioni: int = 2, strumenti=STRUMENTI, system_prompt: str = SYSTEM_PROMPT):
+    """`llm`: modello dell'agente con gli strumenti; `router_llm` e `revisore_llm`: modelli con
+    output strutturato. Input: {"messages": [...], "steps": 0, "revisioni": 0}."""
     nodo_strumenti = ToolNode(strumenti)
 
     # nodo "router": decide se la domanda e' in ambito; non valuta gli strumenti
@@ -99,6 +140,33 @@ def build_graph(llm, router_llm, ambito: Ambito, max_steps: int = 5, strumenti=S
                  "e mi fermo qui senza una risposta completa.")
         return {"messages": chiuse + [AIMessage(testo)]}
 
+    # nodo "revisore": la risposta risponde a tutta la domanda? se no, torna all'agente
+    def revisore(state: State) -> dict:
+        messaggi = state["messages"]
+        domanda = str(messaggi[_ultima_domanda(messaggi)].content)
+        decisione = valuta(revisore_llm, domanda, str(messaggi[-1].content))
+        if decisione.coerente:
+            log_revisore.info('coerente motivo="%s" → fine', decisione.motivo)
+            return {}
+        if state["revisioni"] >= max_revisioni:
+            log_revisore.warning("limite di revisioni raggiunto (%d): restituisco l'ultima "
+                                 "risposta", max_revisioni)
+            return {}
+        revisioni = state["revisioni"] + 1
+        log_revisore.info('non coerente motivo="%s" → agente (revisione %d di %d)',
+                          decisione.motivo, revisioni, max_revisioni)
+        # l'indicazione entra nella cronologia come messaggio "utente" marcato revisore
+        indicazione = HumanMessage(MSG_REVISORE.format(motivo=decisione.motivo), name=REVISORE)
+        return {"messages": [indicazione], "revisioni": revisioni}
+
+    # nodo "pulizia": a fine turno toglie indicazioni del revisore e bozze rifiutate
+    def pulizia(state: State) -> dict:
+        ids = messaggi_da_pulire(state["messages"])
+        if ids:
+            log_revisore.info("pulizia: tolti %d messaggi del revisore", len(ids))
+        # RemoveMessage: add_messages toglie dallo stato il messaggio con quell'id
+        return {"messages": [RemoveMessage(id=i) for i in ids]}
+
     # montaggio del grafo
     g = StateGraph(State)
     g.add_node("router", router)
@@ -106,15 +174,22 @@ def build_graph(llm, router_llm, ambito: Ambito, max_steps: int = 5, strumenti=S
     g.add_node("modello", modello)
     g.add_node("strumenti", strumenti_)
     g.add_node("limite", limite)
+    g.add_node("revisore", revisore)
+    g.add_node("pulizia", pulizia)
     # si parte sempre dal router
     g.add_edge(START, "router")
     # conversazione -> agente; fuori ambito -> rifiuto
     g.add_conditional_edges("router", dopo_router, {"modello": "modello", "rifiuto": "rifiuto"})
     g.add_edge("rifiuto", END)
-    # ciclo dell'agente come in L5
+    # ciclo dell'agente come in L5; la risposta finale passa dal revisore
     g.add_conditional_edges("modello", lambda s: instrada(s, max_steps),
-                            {"strumenti": "strumenti", "limite": "limite", END: END})
+                            {"strumenti": "strumenti", "limite": "limite",
+                             "revisore": "revisore", "pulizia": "pulizia"})
     g.add_edge("strumenti", "modello")
-    g.add_edge("limite", END)
+    # non coerente -> di nuovo all'agente; coerente o limite -> pulizia
+    g.add_conditional_edges("revisore", dopo_revisore,
+                            {"modello": "modello", "pulizia": "pulizia"})
+    g.add_edge("limite", "pulizia")
+    g.add_edge("pulizia", END)
     # compile() controlla il grafo e lo rende eseguibile con invoke()
     return g.compile()
