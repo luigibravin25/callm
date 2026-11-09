@@ -17,6 +17,10 @@ MAX_ERRORE = 100  # caratteri massimi dell'errore riportato nel log
 FRASE_CONSERVA = ("Conserva i nomi, le preferenze e i fatti detti dall'utente e le risposte "
                   "date.")
 FRASE_LUNGHEZZA = "Scrivi in italiano, al massimo 150 parole, in testo semplice."
+# ritocco 1 (prova reale con gemma): il riassunto diceva "si e' presentato dicendo il suo nome"
+# e l'agente non capiva come si chiamasse l'utente; i dati vanno scritti in modo esplicito
+FRASE_DATI_ESPLICITI = ("Scrivi i dati dell'utente in modo esplicito, per esempio: "
+                        "\"L'utente si chiama Luigi.\"")
 
 
 # prompt di sistema del modello che riassume
@@ -26,6 +30,7 @@ def prompt_riassunto() -> str:
         "precedente (se c'e') e la parte di conversazione da aggiungere: scrivi un solo "
         "riassunto aggiornato che li unisce.",
         FRASE_CONSERVA,
+        FRASE_DATI_ESPLICITI,
         FRASE_LUNGHEZZA,
     ])
 

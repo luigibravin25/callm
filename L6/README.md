@@ -1,18 +1,23 @@
 # Lezione 6 · Chat con agente LangGraph
 
-Applicazione di chat con agente basata su LangGraph, costruita per step. Stato attuale: **step 2**
-(router e revisore). L'agente risponde da terminale; un nodo router decide prima se la domanda
+Applicazione di chat con agente basata su LangGraph, costruita per step. Stato attuale: **step 3**
+(riassunto, router e revisore). L'agente risponde da terminale; un nodo router decide prima se la domanda
 rientra nell'ambito dichiarato in configurazione; un nodo revisore controlla poi che la risposta
 risponda a tutta la domanda.
 
 ```
-START → router ─(conversazione)→ modello ⇄ strumenti
+START → riassunto → router ─(conversazione)→ modello ⇄ strumenti
                 │                   ├→ revisore ─(coerente)→ pulizia → END
                 │                   │      └─(non coerente)→ modello  (al massimo MAX_REVISIONI volte)
                 │                   └→ limite / risposta vuota → pulizia → END
                 └─(fuori_ambito)→ rifiuto → END
 ```
 
+- `riassunto`: oltre `SOGLIA_RIASSUNTO` messaggi sostituisce i più vecchi con un riassunto (campo
+  dello stato aggiornato, non accumulato) e lascia interi gli ultimi turni (almeno
+  `MESSAGGI_RECENTI` messaggi; il taglio cade sempre all'inizio di un turno). Il riassunto va in
+  fondo al prompt di sistema dell'agente. Sotto la soglia non chiama il modello; se il riassunto
+  fallisce i messaggi restano.
 - `router`: stesso modello, nessuno strumento, output strutturato `motivo` + `categoria`
   (`conversazione` o `fuori_ambito`). Non sceglie gli strumenti: lo fa l'agente.
 - `rifiuto`: frase fissa letta da `config/ambito.toml`, nessuna chiamata al modello.
@@ -50,6 +55,8 @@ L'app legge solo variabili d'ambiente (elenco e valori di esempio in `.env.examp
 | `FUSO_PREDEFINITO` | no | `Europe/Rome` |
 | `AMBITO_FILE` | no | `config/ambito.toml` (relativo a `assistente-laboratorio/`) |
 | `MAX_REVISIONI` | no | `2` (0 = il revisore valuta ma non rimanda) |
+| `SOGLIA_RIASSUNTO` | no | `16` messaggi |
+| `MESSAGGI_RECENTI` | no | `6` (≥ 1 e minore della soglia) |
 
 L'ambito dell'agente sta in `assistente-laboratorio/config/ambito.toml`: `descrizione`,
 `esempi_in_ambito`, `esempi_fuori_ambito` (facoltativi) e `rifiuto`. Si modifica senza toccare il
@@ -68,6 +75,9 @@ $env:LM_MODEL = "google/gemma-4-e2b"
 Log attesi:
 
 ```
+[riassunto] 3 messaggi, soglia 16: nessun riassunto
+[riassunto] messaggi prima 17, dopo 7 (riassunti 10)
+[riassunto] nuovo riassunto: "L'utente si chiama Luigi. ..."
 [router] categoria=conversazione motivo="..." → agente
 [agente] nodo modello
 [agente] chiamata strumento tooltime con argomenti {'fuso': 'Asia/Tokyo', 'parte': 'ora'}
@@ -87,8 +97,8 @@ Nel percorso fuori ambito non compare `[agente] nodo modello`. I log si accendon
 & ..\venv\Scripts\python.exe -m pytest -q
 ```
 
-I test usano modelli simulati e non richiedono LM Studio (4 prove reali saltate: router in e fuori
-ambito, revisore su risposta parziale e completa). Prova reale con
+I test usano modelli simulati e non richiedono LM Studio (5 prove reali saltate: router in e fuori
+ambito, revisore su risposta parziale e completa, riassunto che conserva il nome). Prova reale con
 LM Studio avviato:
 
 ```powershell
@@ -104,5 +114,6 @@ $env:LM_MODEL = "google/gemma-4-e2b"
   resta aperta e la domanda non entra nella cronologia.
 - `[router] output non valido (...)`: il modello non ha prodotto la decisione (per esempio token
   finiti nel ragionamento); la domanda passa comunque all'agente.
+- Per vedere il riassunto in pochi turni: `$env:SOGLIA_RIASSUNTO = "6"`, `$env:MESSAGGI_RECENTI = "2"`.
 - Con gemma e2b il router può sbagliare su domande al confine dell'ambito (per esempio «Che
   differenza di orario c'è tra Roma e Londra?» viene rifiutata).

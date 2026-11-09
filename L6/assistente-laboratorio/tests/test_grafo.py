@@ -308,6 +308,7 @@ def test_sopra_la_soglia_riassume(log):
     out = _esegui(ModelloFinto([AIMessage("ok")]), RouterFinto([IN_AMBITO]),
                   cronologia=_turni(9), riassunto_llm=RiassuntoFinto(["nuovo riassunto"]))
     assert "messaggi prima 19, dopo 7 (riassunti 12)" in log.text
+    assert 'nuovo riassunto: "nuovo riassunto"' in log.text
     assert out["riassunto"] == "nuovo riassunto"
     assert out["messages"][0].content == "domanda 6"  # i turni 0-5 sono stati riassunti
 

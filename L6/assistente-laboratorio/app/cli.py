@@ -56,6 +56,7 @@ def _testo_valido(testo: str) -> str:
 def main(grafo, input_fn=input, output_fn=print) -> None:
     """Chat da terminale. Ogni domanda passa dal grafo (router, poi agente o rifiuto)."""
     cronologia = []  # solo in memoria, mai su disco
+    riassunto = ""  # riassunto dei messaggi usciti dalla cronologia (solo in memoria)
     output_fn(MSG_INIZIO)
     while True:
         try:
@@ -71,7 +72,7 @@ def main(grafo, input_fn=input, output_fn=print) -> None:
         try:
             # il grafo riceve tutta la cronologia piu' la nuova domanda; contatori da 0
             out = grafo.invoke({"messages": cronologia + [HumanMessage(testo)], "steps": 0,
-                                "revisioni": 0})
+                                "revisioni": 0, "riassunto": riassunto})
         except KeyboardInterrupt:
             break
         # in ogni caso di errore la domanda fallita non entra nella cronologia
@@ -86,6 +87,8 @@ def main(grafo, input_fn=input, output_fn=print) -> None:
             continue
         # la cronologia diventa tutta la conversazione, strumenti e rifiuti compresi
         cronologia = out["messages"]
+        # il riassunto aggiornato dal grafo passa al turno successivo
+        riassunto = out.get("riassunto", riassunto)
         output_fn(ETICHETTA_ASSISTENTE + str(cronologia[-1].content))
 
 
@@ -97,18 +100,18 @@ def imposta_log(log_http: bool = LOG_HTTP, log_grafo: bool = LOG_GRAFO) -> None:
     # richieste HTTP verso LM Studio: il client OpenAI usa httpx o httpx2 secondo la versione
     for nome in ("httpx", "httpx2"):
         logging.getLogger(nome).setLevel(logging.INFO if log_http else logging.CRITICAL)
-    for nome in ("router", "agente", "rifiuto", "revisore"):
+    for nome in ("router", "agente", "rifiuto", "revisore", "riassunto"):
         logging.getLogger(nome).setLevel(logging.INFO if log_grafo else logging.CRITICAL)
 
 
 # avvio del programma (python -m app.cli)
 def avvia() -> None:
-    """Legge configurazione e ambito, costruisce i modelli (agente, router, revisore) e il grafo,
+    """Legge configurazione e ambito, costruisce i modelli (agente, router, revisore, riassunto) e il grafo,
     avvia la chat."""
     # import qui dentro: servono solo all'avvio vero, non quando i test importano il modulo
     from app.config import load_ambito, load_settings
     from app.graph import build_graph
-    from app.llm import build_llm, build_revisore_llm, build_router_llm
+    from app.llm import build_llm, build_revisore_llm, build_riassunto_llm, build_router_llm
 
     imposta_log()
     try:
@@ -118,8 +121,9 @@ def avvia() -> None:
         # SystemExit chiude il programma mostrando solo il messaggio, senza traceback
         raise SystemExit(f"Configurazione non valida: {errore}")
     grafo = build_graph(build_llm(impostazioni), build_router_llm(impostazioni),
-                        build_revisore_llm(impostazioni), ambito, impostazioni.max_steps,
-                        impostazioni.max_revisioni)
+                        build_revisore_llm(impostazioni), build_riassunto_llm(impostazioni),
+                        ambito, impostazioni.max_steps, impostazioni.max_revisioni,
+                        impostazioni.soglia_riassunto, impostazioni.messaggi_recenti)
     main(grafo)
 
 

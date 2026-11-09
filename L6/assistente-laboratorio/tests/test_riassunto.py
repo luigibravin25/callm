@@ -6,7 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from openai import APIConnectionError
 
-from app.riassunto import (FRASE_CONSERVA, FRASE_LUNGHEZZA, indice_di_taglio,
+from app.riassunto import (FRASE_CONSERVA, FRASE_DATI_ESPLICITI, FRASE_LUNGHEZZA, indice_di_taglio,
                            messaggi_per_riassunto, prompt_riassunto, riassumi, trascrizione)
 from tests.finti import RiassuntoFinto
 
@@ -25,6 +25,7 @@ def _risultato(id_="c1"):
 def test_prompt_contiene_le_regole():
     assert FRASE_CONSERVA in prompt_riassunto()
     assert FRASE_LUNGHEZZA in prompt_riassunto()
+    assert FRASE_DATI_ESPLICITI in prompt_riassunto()
 
 
 # Verifica il testo mandato al modello: una riga per messaggio, con chi parla.

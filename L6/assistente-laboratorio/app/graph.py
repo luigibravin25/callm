@@ -120,6 +120,8 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
         if testo is None:
             return {}  # riassunto fallito: i messaggi restano (avviso gia' nel log)
         log_riassunto.info("messaggi prima %d, dopo %d (riassunti %d)", n, n - taglio, taglio)
+        # il testo nel log: si vede cosa ricevera' l'agente (evidenza dello step 3)
+        log_riassunto.info('nuovo riassunto: "%s"', testo)
         # i messaggi riassunti escono dalla cronologia; il riassunto nuovo sostituisce il vecchio
         return {"messages": [RemoveMessage(id=m.id) for m in messaggi[:taglio]],
                 "riassunto": testo}

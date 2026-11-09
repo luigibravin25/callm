@@ -19,7 +19,7 @@ OK = DecisioneRevisore(motivo="risponde", coerente=True)
 
 
 # esegue la chat con le righe date e restituisce cio' che e' stato stampato
-def _chat(righe, agente, router, revisore=None):
+def _chat(righe, agente, router, revisore=None, grafo=None):
     input_righe = iter(righe)
 
     # finto input(): restituisce le righe in ordine, poi EOF come Ctrl+Z
@@ -31,9 +31,10 @@ def _chat(righe, agente, router, revisore=None):
 
     stampato = []
     revisore = revisore or RevisoreFinto([OK])
-    main(build_graph(agente, router, revisore, RiassuntoFinto(["riassunto"]), AMBITO),
-         input_fn=leggi,
-         output_fn=stampato.append)
+    # grafo gia' costruito dal test (per esempio con una soglia del riassunto bassa)
+    if grafo is None:
+        grafo = build_graph(agente, router, revisore, RiassuntoFinto(["riassunto"]), AMBITO)
+    main(grafo, input_fn=leggi, output_fn=stampato.append)
     return "\n".join(stampato)
 
 
@@ -114,3 +115,22 @@ def test_imposta_log_accende_il_revisore():
     import logging
     cli.imposta_log()
     assert logging.getLogger("revisore").level == logging.INFO
+
+
+# Verifica che il riassunto passi da un turno al successivo: al quarto turno non si riassume, ma
+# l'agente deve ancora ricevere il riassunto fatto al terzo.
+def test_riassunto_passato_al_turno_successivo():
+    agente = ModelloFinto([AIMessage("r1"), AIMessage("r2"), AIMessage("r3"), AIMessage("r4")])
+    grafo = build_graph(agente, RouterFinto([IN_AMBITO]), RevisoreFinto([OK]),
+                        RiassuntoFinto(["Si chiama Luigi."]), AMBITO, soglia_riassunto=3,
+                        messaggi_recenti=1)
+    _chat(["Mi chiamo Luigi", "d2", "d3", "d4", "esci"], agente, None, grafo=grafo)
+    sistema_quarto_turno = agente.chiamate[3][0].content
+    assert "Riassunto della conversazione precedente: Si chiama Luigi." in sistema_quarto_turno
+
+
+# Verifica che i log del riassunto siano accesi con LOG_GRAFO.
+def test_imposta_log_accende_il_riassunto():
+    import logging
+    cli.imposta_log()
+    assert logging.getLogger("riassunto").level == logging.INFO
