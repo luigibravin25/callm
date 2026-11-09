@@ -34,7 +34,8 @@ def test_prompt_non_parla_di_strumenti():
     assert FRASE_NO_STRUMENTI in prompt
 
 
-# Verifica le due regole aggiunte dopo la prova con gemma: solo l'argomento, nel dubbio conversazione.
+# Verifica le due regole aggiunte dopo la prova con gemma: solo l'argomento,
+# nel dubbio conversazione.
 def test_prompt_valuta_solo_l_argomento():
     # con gemma il router rifiutava "Che ore sono a Tokyo?" perche' giudicava se l'assistente
     # avesse abbastanza dettagli: deve guardare solo l'argomento, e nel dubbio far passare
@@ -51,7 +52,8 @@ def test_messaggi_router_solo_domanda():
     assert messaggi[1].content == "Che ore sono?"
 
 
-# Verifica che una domanda di seguito arrivi al router con la risposta precedente, senza ToolMessage.
+# Verifica che una domanda di seguito arrivi al router con la risposta precedente,
+# senza ToolMessage.
 def test_messaggi_router_con_risposta_precedente():
     # la domanda di seguito "e a Londra?" si capisce solo con la risposta precedente
     chiamata = {"name": "tooltime", "args": {"fuso": "Asia/Tokyo"}, "id": "c1"}
@@ -108,3 +110,11 @@ def test_errore_di_connessione_non_e_output_non_valido():
     errore = APIConnectionError(request=httpx.Request("POST", "http://x"))
     with pytest.raises(APIConnectionError):
         decidi(RouterFinto([errore]), AMBITO, [HumanMessage("ciao")])
+
+
+# Verifica che il router ignori i messaggi del revisore e veda la domanda vera dell'utente.
+def test_router_ignora_i_messaggi_del_revisore():
+    from app.revisore import REVISORE
+    cronologia = [HumanMessage("Che ore sono?"), AIMessage("bozza"),
+                  HumanMessage("[Revisore] manca una parte", name=REVISORE)]
+    assert messaggi_per_router(AMBITO, cronologia)[1].content == "Che ore sono?"

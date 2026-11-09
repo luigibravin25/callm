@@ -20,3 +20,15 @@ def test_agente_llm_con_tooltime():
 def test_router_llm_senza_strumenti():
     router_llm = build_router_llm(IMPOSTAZIONI)
     assert "tooltime" not in repr(router_llm)
+
+
+# Verifica che il modello del revisore non riceva strumenti.
+def test_revisore_llm_senza_strumenti():
+    from app.llm import build_revisore_llm
+    assert "tooltime" not in repr(build_revisore_llm(IMPOSTAZIONI))
+
+
+# Verifica che il prompt dell'agente spieghi i messaggi [Revisore].
+def test_system_prompt_spiega_il_revisore():
+    from app.llm import FRASE_REVISORE, SYSTEM_PROMPT
+    assert FRASE_REVISORE in SYSTEM_PROMPT

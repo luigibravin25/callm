@@ -33,3 +33,7 @@ class RouterFinto:
         if isinstance(decisione, Exception):
             raise decisione
         return decisione
+
+
+# finto revisore: stesso comportamento del finto router (decisioni, None o eccezioni)
+RevisoreFinto = RouterFinto

@@ -9,15 +9,17 @@ from app.cli import MSG_CONNESSIONE, main
 from app.config import Ambito
 from app.graph import build_graph
 from app.router import DecisioneRouter
-from tests.finti import ModelloFinto, RouterFinto
+from app.revisore import DecisioneRevisore
+from tests.finti import ModelloFinto, RevisoreFinto, RouterFinto
 
 AMBITO = Ambito(descrizione="Solo ora.", rifiuto="Fuori dal mio ambito.")
 IN_AMBITO = DecisioneRouter(categoria="conversazione", motivo="ora")
 FUORI = DecisioneRouter(categoria="fuori_ambito", motivo="ricetta")
+OK = DecisioneRevisore(motivo="risponde", coerente=True)
 
 
 # esegue la chat con le righe date e restituisce cio' che e' stato stampato
-def _chat(righe, agente, router):
+def _chat(righe, agente, router, revisore=None):
     input_righe = iter(righe)
 
     # finto input(): restituisce le righe in ordine, poi EOF come Ctrl+Z
@@ -28,7 +30,9 @@ def _chat(righe, agente, router):
             raise EOFError
 
     stampato = []
-    main(build_graph(agente, router, AMBITO), input_fn=leggi, output_fn=stampato.append)
+    revisore = revisore or RevisoreFinto([OK])
+    main(build_graph(agente, router, revisore, AMBITO), input_fn=leggi,
+         output_fn=stampato.append)
     return "\n".join(stampato)
 
 
@@ -53,7 +57,8 @@ def test_cronologia_passata_al_turno_successivo():
     assert "Che ore sono?" in testi and "Sono le 10" in testi and "grazie" in testi
 
 
-# Verifica LM Studio spento durante il router: messaggio, domanda fuori dalla cronologia, chat aperta.
+# Verifica LM Studio spento durante il router: messaggio, domanda fuori dalla cronologia,
+# chat aperta.
 def test_connessione_assente_durante_il_router():
     errore = APIConnectionError(request=httpx.Request("POST", "http://x"))
     agente = ModelloFinto([AIMessage("Risposta a b")])
@@ -87,3 +92,24 @@ def test_configurazione_non_valida(monkeypatch):
     monkeypatch.delenv("LM_BASE_URL", raising=False)
     with pytest.raises(SystemExit, match="Configurazione non valida"):
         cli.avvia()
+
+
+# Verifica che dopo un rifiuto del revisore l'utente veda solo la risposta finale e che il turno
+# successivo non riceva il messaggio [Revisore] ne' la bozza.
+def test_turno_successivo_senza_revisore():
+    no = DecisioneRevisore(motivo="parziale", coerente=False)
+    agente = ModelloFinto([AIMessage("bozza"), AIMessage("completa"), AIMessage("prego")])
+    out = _chat(["domanda", "grazie", "esci"], agente, RouterFinto([IN_AMBITO]),
+                RevisoreFinto([no, OK, OK]))
+    assert "Assistente: completa" in out
+    assert "[Revisore]" not in out and "bozza" not in out
+    secondo_turno = agente.chiamate[2]
+    assert all(getattr(m, "name", None) != "revisore" for m in secondo_turno)
+    assert "bozza" not in [m.content for m in secondo_turno]
+
+
+# Verifica che i log del revisore siano accesi con LOG_GRAFO.
+def test_imposta_log_accende_il_revisore():
+    import logging
+    cli.imposta_log()
+    assert logging.getLogger("revisore").level == logging.INFO

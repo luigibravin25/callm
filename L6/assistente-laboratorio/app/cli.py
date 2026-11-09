@@ -69,8 +69,9 @@ def main(grafo, input_fn=input, output_fn=print) -> None:
             continue  # riga vuota: si chiede di nuovo, senza disturbare il modello
         output_fn(MSG_ATTESA)
         try:
-            # il grafo riceve tutta la cronologia piu' la nuova domanda; steps riparte da 0
-            out = grafo.invoke({"messages": cronologia + [HumanMessage(testo)], "steps": 0})
+            # il grafo riceve tutta la cronologia piu' la nuova domanda; contatori da 0
+            out = grafo.invoke({"messages": cronologia + [HumanMessage(testo)], "steps": 0,
+                                "revisioni": 0})
         except KeyboardInterrupt:
             break
         # in ogni caso di errore la domanda fallita non entra nella cronologia
@@ -96,17 +97,18 @@ def imposta_log(log_http: bool = LOG_HTTP, log_grafo: bool = LOG_GRAFO) -> None:
     # richieste HTTP verso LM Studio: il client OpenAI usa httpx o httpx2 secondo la versione
     for nome in ("httpx", "httpx2"):
         logging.getLogger(nome).setLevel(logging.INFO if log_http else logging.CRITICAL)
-    for nome in ("router", "agente", "rifiuto"):
+    for nome in ("router", "agente", "rifiuto", "revisore"):
         logging.getLogger(nome).setLevel(logging.INFO if log_grafo else logging.CRITICAL)
 
 
 # avvio del programma (python -m app.cli)
 def avvia() -> None:
-    """Legge configurazione e ambito, costruisce i modelli e il grafo, avvia la chat."""
+    """Legge configurazione e ambito, costruisce i modelli (agente, router, revisore) e il grafo,
+    avvia la chat."""
     # import qui dentro: servono solo all'avvio vero, non quando i test importano il modulo
     from app.config import load_ambito, load_settings
     from app.graph import build_graph
-    from app.llm import build_llm, build_router_llm
+    from app.llm import build_llm, build_revisore_llm, build_router_llm
 
     imposta_log()
     try:
@@ -115,8 +117,9 @@ def avvia() -> None:
     except ValueError as errore:
         # SystemExit chiude il programma mostrando solo il messaggio, senza traceback
         raise SystemExit(f"Configurazione non valida: {errore}")
-    grafo = build_graph(build_llm(impostazioni), build_router_llm(impostazioni), ambito,
-                        impostazioni.max_steps)
+    grafo = build_graph(build_llm(impostazioni), build_router_llm(impostazioni),
+                        build_revisore_llm(impostazioni), ambito, impostazioni.max_steps,
+                        impostazioni.max_revisioni)
     main(grafo)
 
 
