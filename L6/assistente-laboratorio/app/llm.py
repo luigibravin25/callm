@@ -49,3 +49,8 @@ def build_router_llm(settings: Settings, max_tokens: int = 2048):
 def build_revisore_llm(settings: Settings, max_tokens: int = 2048):
     return _chat(settings, temperature=0, max_tokens=max_tokens).with_structured_output(
         DecisioneRevisore, method="json_schema")
+
+
+# modello del riassunto: stesso modello, nessuno strumento, risposta in testo semplice
+def build_riassunto_llm(settings: Settings, max_tokens: int = 2048):
+    return _chat(settings, temperature=0, max_tokens=max_tokens)

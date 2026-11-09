@@ -1,4 +1,5 @@
 # modelli finti per i test: nessuna richiesta a LM Studio
+from langchain_core.messages import AIMessage
 
 
 # finto modello dell'agente: restituisce le risposte preparate, una per chiamata
@@ -37,3 +38,18 @@ class RouterFinto:
 
 # finto revisore: stesso comportamento del finto router (decisioni, None o eccezioni)
 RevisoreFinto = RouterFinto
+
+
+# finto modello del riassunto: restituisce i testi preparati come AIMessage (o solleva)
+class RiassuntoFinto:
+    def __init__(self, testi: list):
+        self.testi = list(testi)
+        self.chiamate = []  # messaggi ricevuti a ogni chiamata
+
+    def invoke(self, messaggi):
+        self.chiamate.append(list(messaggi))
+        # finiti i testi preparati si ripete l'ultimo
+        testo = self.testi.pop(0) if len(self.testi) > 1 else self.testi[0]
+        if isinstance(testo, Exception):
+            raise testo
+        return AIMessage(testo)
