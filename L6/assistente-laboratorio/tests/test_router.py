@@ -9,8 +9,8 @@ from openai import APIConnectionError
 from pydantic import ValidationError
 
 from app.config import Ambito
-from app.router import (FRASE_NO_STRUMENTI, DecisioneRouter, decidi, messaggi_per_router,
-                        prompt_router)
+from app.router import (FRASE_NEL_DUBBIO, FRASE_NO_STRUMENTI, FRASE_SOLO_ARGOMENTO,
+                        DecisioneRouter, decidi, messaggi_per_router, prompt_router)
 from tests.finti import RouterFinto
 
 # ambito di prova: testi riconoscibili nel prompt
@@ -30,6 +30,14 @@ def test_prompt_non_parla_di_strumenti():
     prompt = prompt_router(AMBITO)
     assert "tooltime" not in prompt
     assert FRASE_NO_STRUMENTI in prompt
+
+
+def test_prompt_valuta_solo_l_argomento():
+    # con gemma il router rifiutava "Che ore sono a Tokyo?" perche' giudicava se l'assistente
+    # avesse abbastanza dettagli: deve guardare solo l'argomento, e nel dubbio far passare
+    prompt = prompt_router(AMBITO)
+    assert FRASE_SOLO_ARGOMENTO in prompt
+    assert FRASE_NEL_DUBBIO in prompt
 
 
 def test_messaggi_router_solo_domanda():
@@ -72,6 +80,12 @@ def test_eccezione_di_validazione_va_all_agente(caplog):
     assert decisione.categoria == "conversazione"
     assert decisione.motivo.startswith("output del router non valido")
     assert "json rotto" in caplog.text
+
+
+def test_motivo_prima_della_categoria():
+    # il modello genera i campi nell'ordine dello schema: prima ragiona (motivo), poi decide.
+    # Con categoria per prima gemma scriveva "rientra nell'ambito" e categoria fuori_ambito
+    assert list(DecisioneRouter.model_json_schema()["properties"]) == ["motivo", "categoria"]
 
 
 def test_categoria_sconosciuta_rifiutata_dallo_schema():

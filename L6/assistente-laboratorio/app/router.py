@@ -15,16 +15,26 @@ logger = logging.getLogger("router")
 
 # il router decide solo l'ambito: gli strumenti li sceglie l'agente (consegna, punto 04)
 FRASE_NO_STRUMENTI = "Non decidere quali strumenti usare: lo decide l'assistente dopo di te."
+# con gemma il router rifiutava "Che ore sono a Tokyo?" giudicando se l'assistente avesse
+# abbastanza dettagli per rispondere: conta solo l'argomento della domanda
+FRASE_SOLO_ARGOMENTO = (
+    "Valuta solo l'argomento della domanda, non se l'assistente ha abbastanza dettagli per "
+    "rispondere: l'assistente ha strumenti per l'ora di qualunque città e usa un fuso "
+    "predefinito se il luogo manca.")
+# un output in dubbio deve far passare la domanda, come l'output non valido
+FRASE_NEL_DUBBIO = "Nel dubbio scegli conversazione."
 
 MAX_ERRORE = 100  # caratteri massimi dell'errore riportato nel motivo e nel log
 
 
 # output strutturato del router: LM Studio lo riceve come json_schema
 class DecisioneRouter(BaseModel):
+    # motivo per primo: il modello scrive i campi in quest'ordine, cosi' ragiona prima di
+    # decidere (con categoria per prima gemma scriveva "rientra" e poi fuori_ambito)
+    motivo: str = Field(description="motivo breve della decisione, in italiano")
     # Literal: ogni altro valore e' un errore di validazione (output non valido)
     categoria: Literal["conversazione", "fuori_ambito"] = Field(
         description="conversazione se la domanda rientra nell'ambito, altrimenti fuori_ambito")
-    motivo: str = Field(description="motivo breve della decisione, in italiano")
 
 
 # costruisce il prompt di sistema del router a partire dall'ambito
@@ -36,7 +46,9 @@ def prompt_router(ambito: Ambito) -> str:
         "Ambito dell'assistente:",
         ambito.descrizione,
         "Saluti, ringraziamenti e domande sull'assistente stesso sono sempre conversazione.",
+        FRASE_SOLO_ARGOMENTO,
         FRASE_NO_STRUMENTI,
+        FRASE_NEL_DUBBIO,
     ]
     # gli esempi sono facoltativi: si aggiungono solo se il file li contiene
     if ambito.esempi_in_ambito:
