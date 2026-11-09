@@ -38,7 +38,8 @@ def test_parte_ora_e_data(monkeypatch):
 def test_parte_predefinita_entrambe(monkeypatch):
     _fissa(monkeypatch)
     # controllo: la risposta senza "parte" e' uguale a quella con parte="entrambe"
-    assert tools.ora_corrente.invoke({"fuso": "Europe/Rome"}) ==         tools.ora_corrente.invoke({"fuso": "Europe/Rome", "parte": "entrambe"})
+    assert tools.ora_corrente.invoke({"fuso": "Europe/Rome"}) == \
+        tools.ora_corrente.invoke({"fuso": "Europe/Rome", "parte": "entrambe"})
 
 
 # Verifica che la data dipenda dal fuso: vicino a mezzanotte due luoghi hanno giorni diversi.
@@ -90,7 +91,8 @@ def test_mese_in_italiano(monkeypatch):
         monkeypatch.setattr(
             tools, "_adesso",
             lambda mese=mese: datetime(2026, mese, 27, 12, 0, 0, tzinfo=timezone.utc))
-        assert tools.ora_corrente.invoke({"fuso": "UTC", "parte": "data"}) ==             f"UTC: 27 {nome} del 2026"
+        assert tools.ora_corrente.invoke({"fuso": "UTC", "parte": "data"}) == \
+            f"UTC: 27 {nome} del 2026"
     assert tools.MESI[9] == "ottobre"
 
 
@@ -136,7 +138,8 @@ def test_nome_del_luogo_senza_nome_iana(monkeypatch):
     # controllo: "New York" senza "America/", barre o trattini bassi
     assert ny.startswith("New York: ")
     assert "/" not in ny and "_" not in ny and "America" not in ny
-    assert tools.ora_corrente.invoke({"fuso": "America/Argentina/Buenos_Aires", "parte": "ora"})         .startswith("Buenos Aires: ")
+    assert tools.ora_corrente.invoke({"fuso": "America/Argentina/Buenos_Aires", "parte": "ora"}) \
+        .startswith("Buenos Aires: ")
     assert tools.ora_corrente.invoke({"fuso": "UTC", "parte": "ora"}).startswith("UTC: ")
 
 

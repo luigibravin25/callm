@@ -32,17 +32,20 @@ def _chat(righe, agente, router):
     return "\n".join(stampato)
 
 
+# Verifica che la CLI mostri la risposta dell'agente a una domanda in ambito.
 def test_domanda_in_ambito_e_risposta():
     out = _chat(["Che ore sono?", "esci"], ModelloFinto([AIMessage("Sono le 10")]),
                 RouterFinto([IN_AMBITO]))
     assert "Assistente: Sono le 10" in out
 
 
+# Verifica che la CLI mostri la frase di rifiuto del file dell'ambito.
 def test_domanda_fuori_ambito_rifiutata():
     out = _chat(["Carbonara?", "esci"], ModelloFinto([AIMessage("x")]), RouterFinto([FUORI]))
     assert "Assistente: " + AMBITO.rifiuto in out
 
 
+# Verifica che il secondo turno riceva la cronologia del primo.
 def test_cronologia_passata_al_turno_successivo():
     agente = ModelloFinto([AIMessage("Sono le 10"), AIMessage("Prego")])
     _chat(["Che ore sono?", "grazie", "esci"], agente, RouterFinto([IN_AMBITO]))
@@ -50,6 +53,7 @@ def test_cronologia_passata_al_turno_successivo():
     assert "Che ore sono?" in testi and "Sono le 10" in testi and "grazie" in testi
 
 
+# Verifica LM Studio spento durante il router: messaggio, domanda fuori dalla cronologia, chat aperta.
 def test_connessione_assente_durante_il_router():
     errore = APIConnectionError(request=httpx.Request("POST", "http://x"))
     agente = ModelloFinto([AIMessage("Risposta a b")])
@@ -60,6 +64,7 @@ def test_connessione_assente_durante_il_router():
     assert "a" not in [m.content for m in agente.chiamate[0]]
 
 
+# Verifica l'uscita con EXIT (maiuscole indifferenti) e con la fine dell'input.
 @pytest.mark.parametrize("righe", [["EXIT"], []])
 def test_uscita_con_exit_e_eof(righe):
     agente = ModelloFinto([AIMessage("x")])
@@ -67,6 +72,7 @@ def test_uscita_con_exit_e_eof(righe):
     assert agente.chiamate == []
 
 
+# Verifica che LOG_HTTP spento zittisca sia httpx sia httpx2.
 def test_log_http_spegne_httpx_e_httpx2():
     # il client OpenAI scrive le richieste dal logger httpx2 (visto con LM Studio vero)
     import logging
@@ -76,6 +82,7 @@ def test_log_http_spegne_httpx_e_httpx2():
     cli.imposta_log()  # rimette i valori predefiniti
 
 
+# Verifica che l'avvio con configurazione mancante si fermi con un messaggio chiaro.
 def test_configurazione_non_valida(monkeypatch):
     monkeypatch.delenv("LM_BASE_URL", raising=False)
     with pytest.raises(SystemExit, match="Configurazione non valida"):

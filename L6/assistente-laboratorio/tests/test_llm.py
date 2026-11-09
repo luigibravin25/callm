@@ -10,11 +10,13 @@ IMPOSTAZIONI = Settings(base_url="http://127.0.0.1:1234/v1", model="google/gemma
                         ambito_file=Path("config/ambito.toml"))
 
 
+# Verifica che il modello dell'agente conosca tooltime.
 def test_agente_llm_con_tooltime():
     llm = build_llm(IMPOSTAZIONI)
     assert llm.kwargs["tools"][0]["function"]["name"] == "tooltime"
 
 
+# Verifica che il modello del router non riceva strumenti.
 def test_router_llm_senza_strumenti():
     router_llm = build_router_llm(IMPOSTAZIONI)
     assert "tooltime" not in repr(router_llm)

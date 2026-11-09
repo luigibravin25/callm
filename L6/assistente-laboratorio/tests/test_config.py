@@ -24,12 +24,14 @@ def _toml(tmp_path, testo: str):
     return percorso
 
 
+# Verifica che senza LM_BASE_URL la configurazione dia un errore che la nomina.
 def test_config_mancante(ambiente):
     ambiente.delenv("LM_BASE_URL")
     with pytest.raises(ValueError, match="LM_BASE_URL"):
         load_settings()
 
 
+# Verifica i valori predefiniti di MAX_STEPS, del fuso e del file dell'ambito.
 def test_config_valida(ambiente):
     s = load_settings()
     assert s.max_steps == 5
@@ -37,6 +39,7 @@ def test_config_valida(ambiente):
     assert s.ambito_file == CARTELLA_PROGETTO / "config" / "ambito.toml"
 
 
+# Verifica che MAX_STEPS non numerico o zero sia rifiutato.
 @pytest.mark.parametrize("valore", ["zero", "0"])
 def test_max_steps_non_valido(ambiente, valore):
     ambiente.setenv("MAX_STEPS", valore)
@@ -44,12 +47,14 @@ def test_max_steps_non_valido(ambiente, valore):
         load_settings()
 
 
+# Verifica che un FUSO_PREDEFINITO inesistente sia rifiutato.
 def test_fuso_non_valido(ambiente):
     ambiente.setenv("FUSO_PREDEFINITO", "Marte/Base")
     with pytest.raises(ValueError, match="FUSO_PREDEFINITO"):
         load_settings()
 
 
+# Verifica che AMBITO_FILE relativo parta dalla cartella del progetto, non da quella corrente.
 def test_ambito_file_relativo_alla_cartella_del_progetto(ambiente, tmp_path):
     # la cartella corrente non conta: il percorso relativo parte dal progetto
     ambiente.chdir(tmp_path)
@@ -61,6 +66,7 @@ def test_ambito_file_relativo_alla_cartella_del_progetto(ambiente, tmp_path):
     assert load_settings().ambito_file == assoluto
 
 
+# Verifica che il file vero config/ambito.toml si legga, accenti compresi.
 def test_ambito_vero_si_carica():
     a = load_ambito(CARTELLA_PROGETTO / "config" / "ambito.toml")
     assert "fusi orari" in a.descrizione
@@ -69,16 +75,19 @@ def test_ambito_vero_si_carica():
     assert "Quanti km sono 10 miglia?" in a.esempi_fuori_ambito
 
 
+# Verifica che un file dell'ambito inesistente dia un errore con il suo nome.
 def test_ambito_file_mancante(tmp_path):
     with pytest.raises(ValueError, match="non_esiste.toml"):
         load_ambito(tmp_path / "non_esiste.toml")
 
 
+# Verifica che un TOML scritto male dia un errore comprensibile.
 def test_ambito_toml_non_valido(tmp_path):
     with pytest.raises(ValueError, match="TOML"):
         load_ambito(_toml(tmp_path, "descrizione = "))
 
 
+# Verifica che descrizione e rifiuto assenti o vuoti siano rifiutati con il nome del campo.
 @pytest.mark.parametrize("campo", ["descrizione", "rifiuto"])
 @pytest.mark.parametrize("valore", [None, "   "])
 def test_ambito_campo_obbligatorio(tmp_path, campo, valore):
@@ -92,6 +101,7 @@ def test_ambito_campo_obbligatorio(tmp_path, campo, valore):
         load_ambito(_toml(tmp_path, testo))
 
 
+# Verifica che gli esempi debbano essere una lista di testi.
 @pytest.mark.parametrize("valore", ['"ciao"', "[1, 2]"])
 def test_ambito_esempi_non_lista(tmp_path, valore):
     testo = f'descrizione = "ora"\nrifiuto = "no"\nesempi_in_ambito = {valore}'

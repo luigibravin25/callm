@@ -42,6 +42,7 @@ def _esegui(agente, router, domanda="Che ore sono?", max_steps=5):
     return grafo.invoke({"messages": [HumanMessage(domanda)], "steps": 0})
 
 
+# Verifica il percorso in ambito: log del router con categoria e motivo, poi nodo modello.
 def test_in_ambito_passa_all_agente(log):
     agente = ModelloFinto([AIMessage("Sono le 10")])
     out = _esegui(agente, RouterFinto([IN_AMBITO]))
@@ -51,6 +52,7 @@ def test_in_ambito_passa_all_agente(log):
     assert "nodo modello" in log.text
 
 
+# Verifica il percorso fuori ambito: rifiuto fisso e nessuna esecuzione del nodo modello.
 def test_fuori_ambito_non_raggiunge_l_agente(log):
     agente = ModelloFinto([AIMessage("non dovrei rispondere")])
     out = _esegui(agente, RouterFinto([FUORI]), "Ricetta della carbonara")
@@ -61,6 +63,7 @@ def test_fuori_ambito_non_raggiunge_l_agente(log):
     assert "nodo modello" not in log.text
 
 
+# Verifica che con un output non valido del router risponda l'agente.
 def test_output_non_valido_passa_all_agente(log):
     agente = ModelloFinto([AIMessage("Ciao!")])
     out = _esegui(agente, RouterFinto([None]))
@@ -69,6 +72,7 @@ def test_output_non_valido_passa_all_agente(log):
     assert "la domanda passa all'agente" in log.text
 
 
+# Verifica che in ambito l'agente usi tooltime e risponda con il risultato.
 def test_in_ambito_con_strumento(log):
     agente = ModelloFinto([AIMessage("", tool_calls=[_chiamata()]),
                            AIMessage("A Tokyo sono le 20")])
@@ -79,12 +83,14 @@ def test_in_ambito_con_strumento(log):
     assert "chiamata strumento tooltime" in log.text
 
 
+# Verifica che il prompt mandato al router non nomini tooltime.
 def test_router_non_riceve_strumenti():
     router = RouterFinto([IN_AMBITO])
     _esegui(ModelloFinto([AIMessage("ok")]), router)
     assert "tooltime" not in router.chiamate[0][0].content
 
 
+# Verifica il limite di passaggi e che ogni tool_call abbia la sua risposta.
 def test_limite_passaggi():
     agente = ModelloFinto([AIMessage("", tool_calls=[_chiamata()])])  # chiede sempre tooltime
     out = _esegui(agente, RouterFinto([IN_AMBITO]), max_steps=2)
@@ -95,17 +101,20 @@ def test_limite_passaggi():
     assert chiamate == risposte
 
 
+# Verifica il messaggio fisso quando il modello non restituisce niente.
 def test_risposta_vuota():
     out = _esegui(ModelloFinto([AIMessage("")]), RouterFinto([IN_AMBITO]))
     assert out["messages"][-1].content == MSG_VUOTO
 
 
+# Verifica che categoria e motivo del router restino nello stato.
 def test_stato_contiene_categoria_e_motivo():
     out = _esegui(ModelloFinto([AIMessage("x")]), RouterFinto([FUORI]))
     assert out["categoria"] == "fuori_ambito"
     assert out["motivo"] == "ricetta"
 
 
+# Verifica che domanda e rifiuto restino nella cronologia della sessione.
 def test_rifiuto_resta_in_cronologia():
     out = _esegui(ModelloFinto([AIMessage("x")]), RouterFinto([FUORI]), "Ricetta")
     assert [type(m) for m in out["messages"]] == [HumanMessage, AIMessage]
