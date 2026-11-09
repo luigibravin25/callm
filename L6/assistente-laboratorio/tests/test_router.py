@@ -108,3 +108,10 @@ def test_errore_di_connessione_non_e_output_non_valido():
     errore = APIConnectionError(request=httpx.Request("POST", "http://x"))
     with pytest.raises(APIConnectionError):
         decidi(RouterFinto([errore]), AMBITO, [HumanMessage("ciao")])
+
+
+# Verifica che il router ignori i messaggi del revisore e veda la domanda vera dell'utente.
+def test_router_ignora_i_messaggi_del_revisore():
+    cronologia = [HumanMessage("Che ore sono?"), AIMessage("bozza"),
+                  HumanMessage("[Revisore] manca una parte", name="revisore")]
+    assert messaggi_per_router(AMBITO, cronologia)[1].content == "Che ore sono?"
