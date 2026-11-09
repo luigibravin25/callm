@@ -1,0 +1,18 @@
+# Ambito dell'agente: di cosa puo' parlare. Il router lo legge per decidere se una domanda
+# va all'agente (conversazione) o riceve il rifiuto (fuori_ambito).
+# Si modifica senza toccare il codice; il percorso del file si cambia con AMBITO_FILE.
+
+# di cosa puo' parlare l'agente: entra nel prompt del router
+descrizione = """
+Assistente che risponde su:
+- ora e data correnti, in Italia o in qualunque luogo del mondo;
+- fusi orari (che fuso usa una città, differenza di orario tra due luoghi);
+- saluti, ringraziamenti e domande sull'assistente stesso (cosa sa fare, come si usa).
+"""
+
+# esempi che aiutano il modello piccolo a decidere (facoltativi)
+esempi_in_ambito = ["Che ore sono a Tokyo?", "Che giorno è oggi?", "Ciao, cosa sai fare?"]
+esempi_fuori_ambito = ["Dammi la ricetta della carbonara", "Quanti km sono 10 miglia?", "Scrivi una funzione Python"]
+
+# risposta fissa del nodo rifiuto (nessuna chiamata al modello)
+rifiuto = "Posso aiutarti solo con ora, data e fusi orari. Questa domanda è fuori dal mio ambito."

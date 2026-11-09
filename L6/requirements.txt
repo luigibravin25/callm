@@ -1,0 +1,11 @@
+# Python 3.14 (venv in L6/venv, creato con Python 3.14.5)
+# Stesse versioni di L5 per la parte agente; dipendenze nuove solo motivate e concordate.
+
+# grafo dell'agente: stato, nodi, archi condizionali, ToolNode
+langgraph==1.2.17
+# client compatibile OpenAI verso LM Studio (ChatOpenAI, bind_tools, with_structured_output)
+langchain-openai==1.7.2
+# database dei fusi orari IANA per zoneinfo (su Windows non c'e' quello di sistema)
+tzdata==2026.5
+# test automatici
+pytest==9.1.1
