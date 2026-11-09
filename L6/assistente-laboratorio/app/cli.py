@@ -106,7 +106,8 @@ def imposta_log(log_http: bool = LOG_HTTP, log_grafo: bool = LOG_GRAFO) -> None:
 
 # avvio del programma (python -m app.cli)
 def avvia() -> None:
-    """Legge configurazione e ambito, costruisce i modelli (agente, router, revisore, riassunto) e il grafo,
+    """Legge configurazione e ambito, costruisce i modelli (agente, router, revisore,
+    riassunto) e il grafo,
     avvia la chat."""
     # import qui dentro: servono solo all'avvio vero, non quando i test importano il modulo
     from app.config import load_ambito, load_settings

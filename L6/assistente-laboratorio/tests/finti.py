@@ -42,10 +42,12 @@ RevisoreFinto = RouterFinto
 
 # finto modello del riassunto: restituisce i testi preparati come AIMessage (o solleva)
 class RiassuntoFinto:
+    # testi: risposte del modello in ordine (o eccezioni da sollevare)
     def __init__(self, testi: list):
         self.testi = list(testi)
         self.chiamate = []  # messaggi ricevuti a ogni chiamata
 
+    # registra i messaggi e restituisce il prossimo testo come AIMessage
     def invoke(self, messaggi):
         self.chiamate.append(list(messaggi))
         # finiti i testi preparati si ripete l'ultimo

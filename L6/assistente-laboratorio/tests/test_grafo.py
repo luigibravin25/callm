@@ -47,7 +47,6 @@ def _chiamata(id_="c1"):
 
 
 # esegue il grafo con una domanda e restituisce lo stato finale
-# (revisore predefinito: approva sempre)
 # (revisore predefinito: approva sempre; riassunto predefinito: testo fisso "riassunto")
 def _esegui(agente, router, domanda="Che ore sono?", max_steps=5, revisore=None,
             max_revisioni=2, cronologia=(), riassunto="", riassunto_llm=None, soglia=16,
