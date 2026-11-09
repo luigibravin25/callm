@@ -8,28 +8,61 @@ from langchain_core.messages import HumanMessage, ToolMessage
 pytestmark = pytest.mark.skipif(os.environ.get("RUN_LM_STUDIO") != "1",
                                 reason="prova reale: impostare RUN_LM_STUDIO=1")
 
+DUE_PARTI = "Che ore sono a Tokyo e che giorno è oggi a New York?"
+
 
 # grafo vero: modelli di LM Studio e ambito del file config/ambito.toml
 @pytest.fixture(scope="module")
 def grafo_e_ambito():
     from app.config import load_ambito, load_settings
     from app.graph import build_graph
-    from app.llm import build_llm, build_router_llm
+    from app.llm import build_llm, build_revisore_llm, build_router_llm
     s = load_settings()
     ambito = load_ambito(s.ambito_file)
-    return build_graph(build_llm(s), build_router_llm(s), ambito, s.max_steps), ambito
+    grafo = build_graph(build_llm(s), build_router_llm(s), build_revisore_llm(s), ambito,
+                        s.max_steps, s.max_revisioni)
+    return grafo, ambito
 
 
+# solo il modello del revisore, per provarlo su risposte scritte nel test
+@pytest.fixture(scope="module")
+def revisore_llm():
+    from app.config import load_settings
+    from app.llm import build_revisore_llm
+    return build_revisore_llm(load_settings())
+
+
+# esegue il grafo vero con una domanda
+def _chiedi(grafo, domanda):
+    return grafo.invoke({"messages": [HumanMessage(domanda)], "steps": 0, "revisioni": 0})
+
+
+# Verifica con gemma: domanda sull'ora a Tokyo -> router in ambito e tooltime eseguito.
 def test_prova_reale_in_ambito(grafo_e_ambito):
     grafo, _ = grafo_e_ambito
-    out = grafo.invoke({"messages": [HumanMessage("Che ore sono a Tokyo?")], "steps": 0})
+    out = _chiedi(grafo, "Che ore sono a Tokyo?")
     assert out["categoria"] == "conversazione"
     assert any(isinstance(m, ToolMessage) and m.name == "tooltime" for m in out["messages"])
 
 
+# Verifica con gemma: ricetta -> rifiuto fisso del file dell'ambito.
 def test_prova_reale_fuori_ambito(grafo_e_ambito):
     grafo, ambito = grafo_e_ambito
-    out = grafo.invoke({"messages": [HumanMessage("Dammi la ricetta della carbonara")],
-                        "steps": 0})
+    out = _chiedi(grafo, "Dammi la ricetta della carbonara")
     assert out["categoria"] == "fuori_ambito"
     assert out["messages"][-1].content == ambito.rifiuto
+
+
+# Verifica con gemma: una risposta che copre solo Tokyo e' giudicata non coerente.
+def test_prova_reale_revisore_risposta_parziale(revisore_llm):
+    from app.revisore import valuta
+    decisione = valuta(revisore_llm, DUE_PARTI, "A Tokyo sono le ore 20 in punto.")
+    assert decisione.coerente is False, decisione.motivo
+
+
+# Verifica con gemma: una risposta che copre entrambe le parti e' giudicata coerente.
+def test_prova_reale_revisore_risposta_completa(revisore_llm):
+    from app.revisore import valuta
+    decisione = valuta(revisore_llm, DUE_PARTI, "A Tokyo sono le ore 20 in punto. A New York "
+                       "oggi è il 9 novembre del 2026.")
+    assert decisione.coerente is True, decisione.motivo

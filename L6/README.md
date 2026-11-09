@@ -1,11 +1,15 @@
 # Lezione 6 · Chat con agente LangGraph
 
-Applicazione di chat con agente basata su LangGraph, costruita per step. Stato attuale: **step 1**
-(router). L'agente risponde da terminale; un nodo router decide prima se la domanda rientra
-nell'ambito dichiarato in configurazione.
+Applicazione di chat con agente basata su LangGraph, costruita per step. Stato attuale: **step 2**
+(router e revisore). L'agente risponde da terminale; un nodo router decide prima se la domanda
+rientra nell'ambito dichiarato in configurazione; un nodo revisore controlla poi che la risposta
+risponda a tutta la domanda.
 
 ```
-START → router ─(conversazione)→ modello ⇄ strumenti → END
+START → router ─(conversazione)→ modello ⇄ strumenti
+                │                   ├→ revisore ─(coerente)→ pulizia → END
+                │                   │      └─(non coerente)→ modello  (al massimo MAX_REVISIONI volte)
+                │                   └→ limite / risposta vuota → pulizia → END
                 └─(fuori_ambito)→ rifiuto → END
 ```
 
@@ -14,6 +18,12 @@ START → router ─(conversazione)→ modello ⇄ strumenti → END
 - `rifiuto`: frase fissa letta da `config/ambito.toml`, nessuna chiamata al modello.
 - `modello` / `strumenti` / `limite`: l'agente come nella lezione 5, con lo strumento `tooltime`.
 - Se il router restituisce un output non valido, la domanda passa all'agente (avviso nei log).
+- `revisore`: stesso modello, nessuno strumento, output `motivo` + `coerente`; vede solo domanda e
+  risposta. Se la risposta non copre tutte le parti, torna all'agente con un messaggio `[Revisore]`
+  (al massimo `MAX_REVISIONI` volte, poi si consegna l'ultima risposta con un avviso). Output non
+  valido del revisore: la risposta si approva.
+- `pulizia`: a fine turno toglie dalla cronologia i messaggi `[Revisore]` e le bozze rifiutate; il
+  motivo resta solo nei log, l'utente vede solo la risposta finale.
 
 ## Requisiti
 
@@ -37,6 +47,7 @@ L'app legge solo variabili d'ambiente (elenco e valori di esempio in `.env.examp
 | `MAX_STEPS` | no | `5` |
 | `FUSO_PREDEFINITO` | no | `Europe/Rome` |
 | `AMBITO_FILE` | no | `config/ambito.toml` (relativo a `assistente-laboratorio/`) |
+| `MAX_REVISIONI` | no | `2` (0 = il revisore valuta ma non rimanda) |
 
 L'ambito dell'agente sta in `assistente-laboratorio/config/ambito.toml`: `descrizione`,
 `esempi_in_ambito`, `esempi_fuori_ambito` (facoltativi) e `rifiuto`. Si modifica senza toccare il
@@ -60,6 +71,9 @@ Log attesi:
 [agente] chiamata strumento tooltime con argomenti {'fuso': 'Asia/Tokyo', 'parte': 'ora'}
 [router] categoria=fuori_ambito motivo="..." → rifiuto
 [rifiuto] risposta fissa inviata
+[revisore] coerente motivo="ore a Tokyo: coperta" → fine
+[revisore] non coerente motivo="...: mancante" → agente (revisione 1 di 2)
+[revisore] pulizia: tolti 2 messaggi del revisore
 ```
 
 Nel percorso fuori ambito non compare `[agente] nodo modello`. I log si accendono e spengono con
@@ -71,7 +85,8 @@ Nel percorso fuori ambito non compare `[agente] nodo modello`. I log si accendon
 & ..\venv\Scripts\python.exe -m pytest -q
 ```
 
-I test usano modelli simulati e non richiedono LM Studio (2 prove reali saltate). Prova reale con
+I test usano modelli simulati e non richiedono LM Studio (4 prove reali saltate: router in e fuori
+ambito, revisore su risposta parziale e completa). Prova reale con
 LM Studio avviato:
 
 ```powershell

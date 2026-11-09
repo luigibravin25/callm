@@ -91,3 +91,24 @@ def test_configurazione_non_valida(monkeypatch):
     monkeypatch.delenv("LM_BASE_URL", raising=False)
     with pytest.raises(SystemExit, match="Configurazione non valida"):
         cli.avvia()
+
+
+# Verifica che dopo un rifiuto del revisore l'utente veda solo la risposta finale e che il turno
+# successivo non riceva il messaggio [Revisore] ne' la bozza.
+def test_turno_successivo_senza_revisore():
+    no = DecisioneRevisore(motivo="parziale", coerente=False)
+    agente = ModelloFinto([AIMessage("bozza"), AIMessage("completa"), AIMessage("prego")])
+    out = _chat(["domanda", "grazie", "esci"], agente, RouterFinto([IN_AMBITO]),
+                RevisoreFinto([no, OK, OK]))
+    assert "Assistente: completa" in out
+    assert "[Revisore]" not in out and "bozza" not in out
+    secondo_turno = agente.chiamate[2]
+    assert all(getattr(m, "name", None) != "revisore" for m in secondo_turno)
+    assert "bozza" not in [m.content for m in secondo_turno]
+
+
+# Verifica che i log del revisore siano accesi con LOG_GRAFO.
+def test_imposta_log_accende_il_revisore():
+    import logging
+    cli.imposta_log()
+    assert logging.getLogger("revisore").level == logging.INFO

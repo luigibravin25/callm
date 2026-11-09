@@ -17,6 +17,13 @@ FRASE_TUTTE_LE_PARTI = ("Controlla che la risposta risponda a tutte le parti del
 FRASE_NON_I_DATI = ("Non controllare se i dati sono veri: l'assistente li ha presi dai suoi "
                     "strumenti.")
 FRASE_SALUTI = "Una risposta breve a un saluto o a un ringraziamento è coerente."
+# ritocco 1 (prova reale con gemma): il modello scriveva "false" nel motivo e bocciava anche
+# le risposte complete; il motivo deve elencare le parti coperte e quelle mancanti
+FRASE_MOTIVO = ("Nel motivo elenca le parti della domanda e, per ognuna, se la risposta la "
+                "copre; coerente è true se la risposta copre tutte le parti.")
+# ritocco 2: con la sola regola il modello scriveva ancora "false" nel motivo; un esempio
+# concreto mostra cosa va nei due campi
+ESEMPIO_OUTPUT = ('Esempio per "Che ore sono a Roma e che tempo fa a Milano?" con risposta "A Roma sono le 10.": {"motivo": "ora a Roma: coperta; tempo a Milano: mancante", "coerente": false}')
 
 # indicazione per l'agente quando la risposta non e' coerente (entra nella cronologia)
 MSG_REVISORE = ("[Revisore] La risposta precedente non è coerente con la domanda dell'utente: "
@@ -27,8 +34,8 @@ MSG_REVISORE = ("[Revisore] La risposta precedente non è coerente con la domand
 class DecisioneRevisore(BaseModel):
     # motivo per primo: il modello scrive i campi in quest'ordine, cosi' ragiona prima di
     # decidere (lezione dello step 1 con il router)
-    motivo: str = Field(description="motivo breve della decisione, in italiano")
-    coerente: bool = Field(description="true se la risposta risponde a tutta la domanda")
+    motivo: str = Field(description="parti della domanda e se la risposta le copre, in italiano")
+    coerente: bool = Field(description="true se la risposta copre tutte le parti della domanda")
 
 
 # prompt di sistema del revisore
@@ -39,7 +46,8 @@ def prompt_revisore() -> str:
         FRASE_TUTTE_LE_PARTI,
         FRASE_NON_I_DATI,
         FRASE_SALUTI,
-        "Rispondi con un motivo breve in italiano e coerente (true o false).",
+        FRASE_MOTIVO,
+        ESEMPIO_OUTPUT,
     ])
 
 

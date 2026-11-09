@@ -5,7 +5,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from app.revisore import (FRASE_NON_I_DATI, FRASE_SALUTI, FRASE_TUTTE_LE_PARTI,
+from app.revisore import (ESEMPIO_OUTPUT, FRASE_MOTIVO, FRASE_NON_I_DATI, FRASE_SALUTI, FRASE_TUTTE_LE_PARTI,
                           DecisioneRevisore, messaggi_per_revisore, prompt_revisore, valuta)
 from tests.finti import RevisoreFinto
 
@@ -16,7 +16,8 @@ RISPOSTA = "A Tokyo sono le 10."
 # Verifica che il prompt del revisore contenga le tre regole e non parli di strumenti.
 def test_prompt_contiene_le_regole():
     prompt = prompt_revisore()
-    for frase in (FRASE_TUTTE_LE_PARTI, FRASE_NON_I_DATI, FRASE_SALUTI):
+    for frase in (FRASE_TUTTE_LE_PARTI, FRASE_NON_I_DATI, FRASE_SALUTI, FRASE_MOTIVO,
+                  ESEMPIO_OUTPUT):
         assert frase in prompt
     assert "tooltime" not in prompt
 
