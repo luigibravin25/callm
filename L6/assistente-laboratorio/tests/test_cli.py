@@ -67,6 +67,15 @@ def test_uscita_con_exit_e_eof(righe):
     assert agente.chiamate == []
 
 
+def test_log_http_spegne_httpx_e_httpx2():
+    # il client OpenAI scrive le richieste dal logger httpx2 (visto con LM Studio vero)
+    import logging
+    cli.imposta_log(log_http=False, log_grafo=True)
+    assert logging.getLogger("httpx").level == logging.CRITICAL
+    assert logging.getLogger("httpx2").level == logging.CRITICAL
+    cli.imposta_log()  # rimette i valori predefiniti
+
+
 def test_configurazione_non_valida(monkeypatch):
     monkeypatch.delenv("LM_BASE_URL", raising=False)
     with pytest.raises(SystemExit, match="Configurazione non valida"):

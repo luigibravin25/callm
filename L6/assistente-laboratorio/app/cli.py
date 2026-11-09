@@ -93,7 +93,9 @@ def imposta_log(log_http: bool = LOG_HTTP, log_grafo: bool = LOG_GRAFO) -> None:
     # formato: nome del logger tra parentesi quadre, poi il messaggio
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     # un logger spento resta muto (CRITICAL); acceso mostra il livello INFO
-    logging.getLogger("httpx").setLevel(logging.INFO if log_http else logging.CRITICAL)
+    # richieste HTTP verso LM Studio: il client OpenAI usa httpx o httpx2 secondo la versione
+    for nome in ("httpx", "httpx2"):
+        logging.getLogger(nome).setLevel(logging.INFO if log_http else logging.CRITICAL)
     for nome in ("router", "agente", "rifiuto"):
         logging.getLogger(nome).setLevel(logging.INFO if log_grafo else logging.CRITICAL)
 
