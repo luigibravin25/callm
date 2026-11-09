@@ -14,7 +14,10 @@ class ModelloFinto:
     def invoke(self, messaggi):
         self.chiamate.append(list(messaggi))
         # finite le risposte preparate si ripete l'ultima (utile per i test del limite)
-        return self.risposte.pop(0) if len(self.risposte) > 1 else self.risposte[0]
+        risposta = self.risposte.pop(0) if len(self.risposte) > 1 else self.risposte[0]
+        # copia nuova a ogni chiamata: add_messages assegna un id al messaggio e, se lo stesso
+        # oggetto tornasse due volte, lo sostituirebbe invece di aggiungerlo (come un modello vero)
+        return risposta.model_copy(deep=True)
 
 
 # finto router: ogni elemento e' una DecisioneRouter, None oppure un'eccezione da sollevare
