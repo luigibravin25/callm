@@ -57,7 +57,8 @@ def test_cronologia_passata_al_turno_successivo():
     assert "Che ore sono?" in testi and "Sono le 10" in testi and "grazie" in testi
 
 
-# Verifica LM Studio spento durante il router: messaggio, domanda fuori dalla cronologia, chat aperta.
+# Verifica LM Studio spento durante il router: messaggio, domanda fuori dalla cronologia,
+# chat aperta.
 def test_connessione_assente_durante_il_router():
     errore = APIConnectionError(request=httpx.Request("POST", "http://x"))
     agente = ModelloFinto([AIMessage("Risposta a b")])

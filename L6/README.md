@@ -24,6 +24,8 @@ START → router ─(conversazione)→ modello ⇄ strumenti
   valido del revisore: la risposta si approva.
 - `pulizia`: a fine turno toglie dalla cronologia i messaggi `[Revisore]` e le bozze rifiutate; il
   motivo resta solo nei log, l'utente vede solo la risposta finale.
+  Se dopo una revisione l'agente finisce i token o i passaggi con gli strumenti, l'utente riceve
+  l'ultima bozza (che risponde almeno in parte) invece del messaggio fisso, con un avviso nei log.
 
 ## Requisiti
 
@@ -73,7 +75,7 @@ Log attesi:
 [rifiuto] risposta fissa inviata
 [revisore] coerente motivo="ore a Tokyo: coperta" → fine
 [revisore] non coerente motivo="...: mancante" → agente (revisione 1 di 2)
-[revisore] pulizia: tolti 2 messaggi del revisore
+[revisore] pulizia: tolti 2 messaggi (indicazioni del revisore e bozze rifiutate)
 ```
 
 Nel percorso fuori ambito non compare `[agente] nodo modello`. I log si accendono e spengono con

@@ -12,7 +12,7 @@ from langgraph.prebuilt import ToolNode
 # parti del progetto: ambito, prompt dell'agente, decisione del router, strumenti
 from app.config import Ambito
 from app.llm import SYSTEM_PROMPT
-from app.revisore import MSG_REVISORE, valuta
+from app.revisore import MSG_REVISORE, REVISORE, valuta
 from app.router import decidi
 from app.tools import STRUMENTI
 
@@ -22,7 +22,8 @@ log_agente = logging.getLogger("agente")
 log_rifiuto = logging.getLogger("rifiuto")
 log_revisore = logging.getLogger("revisore")
 
-REVISORE = "revisore"  # name dei messaggi del revisore nella cronologia
+# name delle risposte fisse del programma (risposta vuota, limite): non sono del modello
+PROGRAMMA = "programma"
 
 # risposta usata quando il modello non restituisce ne' testo ne' chiamate
 MSG_VUOTO = (
@@ -116,7 +117,7 @@ def build_graph(llm, router_llm, revisore_llm, ambito: Ambito, max_steps: int = 
         risposta = llm.invoke([SystemMessage(system_prompt)] + state["messages"])
         # niente testo e niente chiamate: i token sono finiti nel ragionamento, lo si dice
         if not risposta.tool_calls and not str(risposta.content).strip():
-            return {"messages": [AIMessage(MSG_VUOTO)]}
+            return {"messages": [AIMessage(MSG_VUOTO, name=PROGRAMMA)]}
         return {"messages": [risposta]}
 
     # nodo "strumenti": esegue le chiamate chieste dal modello
@@ -138,7 +139,7 @@ def build_graph(llm, router_llm, revisore_llm, ambito: Ambito, max_steps: int = 
                   for c in state["messages"][-1].tool_calls]
         testo = (f"Ho raggiunto il limite di {max_steps} passaggi con gli strumenti "
                  "e mi fermo qui senza una risposta completa.")
-        return {"messages": chiuse + [AIMessage(testo)]}
+        return {"messages": chiuse + [AIMessage(testo, name=PROGRAMMA)]}
 
     # nodo "revisore": la risposta risponde a tutta la domanda? se no, torna all'agente
     def revisore(state: State) -> dict:
@@ -161,11 +162,24 @@ def build_graph(llm, router_llm, revisore_llm, ambito: Ambito, max_steps: int = 
 
     # nodo "pulizia": a fine turno toglie indicazioni del revisore e bozze rifiutate
     def pulizia(state: State) -> dict:
-        ids = messaggi_da_pulire(state["messages"])
+        messaggi = state["messages"]
+        ids = messaggi_da_pulire(messaggi)
         if ids:
-            log_revisore.info("pulizia: tolti %d messaggi del revisore", len(ids))
+            log_revisore.info("pulizia: tolti %d messaggi (indicazioni del revisore e bozze "
+                              "rifiutate)", len(ids))
+        nuovi = []
+        ultimo = messaggi[-1]
+        bozze = [m for m in messaggi if m.id in ids and isinstance(m, AIMessage)]
+        # dopo una revisione l'agente ha finito i token o i passaggi: invece della risposta
+        # fissa del programma l'utente riceve l'ultima bozza, che risponde almeno in parte
+        if bozze and isinstance(ultimo, AIMessage) and ultimo.name == PROGRAMMA:
+            log_revisore.warning("risposta finale non disponibile (%s): restituisco l'ultima "
+                                 "bozza", ultimo.content[:40])
+            ids.append(ultimo.id)
+            # copia in fondo: dopo eventuali ToolMessage, cosi' la cronologia resta valida
+            nuovi = [AIMessage(bozze[-1].content)]
         # RemoveMessage: add_messages toglie dallo stato il messaggio con quell'id
-        return {"messages": [RemoveMessage(id=i) for i in ids]}
+        return {"messages": [RemoveMessage(id=i) for i in ids] + nuovi}
 
     # montaggio del grafo
     g = StateGraph(State)

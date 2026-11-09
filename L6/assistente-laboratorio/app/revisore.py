@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger("revisore")
 
 MAX_ERRORE = 100  # caratteri massimi dell'errore riportato nel motivo e nel log
+REVISORE = "revisore"  # name dei messaggi del revisore nella cronologia (grafo e router)
 
 # regole del revisore (costanti: i test controllano che siano nel prompt)
 FRASE_TUTTE_LE_PARTI = ("Controlla che la risposta risponda a tutte le parti della domanda "
@@ -23,7 +24,9 @@ FRASE_MOTIVO = ("Nel motivo elenca le parti della domanda e, per ognuna, se la r
                 "copre; coerente è true se la risposta copre tutte le parti.")
 # ritocco 2: con la sola regola il modello scriveva ancora "false" nel motivo; un esempio
 # concreto mostra cosa va nei due campi
-ESEMPIO_OUTPUT = ('Esempio per "Che ore sono a Roma e che tempo fa a Milano?" con risposta "A Roma sono le 10.": {"motivo": "ora a Roma: coperta; tempo a Milano: mancante", "coerente": false}')
+ESEMPIO_OUTPUT = ('Esempio per "Che ore sono a Roma e che tempo fa a Milano?" con risposta '
+                  '"A Roma sono le 10.": {"motivo": "ora a Roma: coperta; tempo a Milano: '
+                  'mancante", "coerente": false}')
 
 # indicazione per l'agente quando la risposta non e' coerente (entra nella cronologia)
 MSG_REVISORE = ("[Revisore] La risposta precedente non è coerente con la domanda dell'utente: "

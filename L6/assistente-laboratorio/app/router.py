@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 # ambito dell'agente letto da config/ambito.toml
 from app.config import Ambito
+from app.revisore import REVISORE
 
 # logger del router: i suoi messaggi compaiono come "[router] ..."
 logger = logging.getLogger("router")
@@ -68,7 +69,7 @@ def messaggi_per_router(ambito: Ambito, messages: list) -> list:
     contesto (cosi' "e a Londra?" dopo l'ora di Tokyo resta in ambito). Niente ToolMessage."""
     # posizione dell'ultima domanda vera dell'utente (i messaggi del revisore non contano)
     indice = max(i for i, m in enumerate(messages)
-                 if isinstance(m, HumanMessage) and m.name != "revisore")
+                 if isinstance(m, HumanMessage) and m.name != REVISORE)
     domanda = str(messages[indice].content)
     # ultima risposta finale dell'assistente prima della domanda (testo, senza tool_calls)
     precedente = next((m for m in reversed(messages[:indice])

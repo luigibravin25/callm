@@ -17,7 +17,7 @@ SYSTEM_PROMPT = (
     # il terminale non interpreta il Markdown: gli asterischi resterebbero visibili
     "Rispondi in testo semplice, senza asterischi e senza grassetto. " + FRASE_REVISORE)
 LOG_HTTP = True  # True = mostra nel terminale le richieste HTTP verso LM Studio
-LOG_GRAFO = True  # True = mostra nel terminale i log di router, agente e rifiuto
+LOG_GRAFO = True  # True = mostra nel terminale i log di router, agente, rifiuto e revisore
 
 
 # crea il modello di LM Studio con i parametri comuni ad agente e router
@@ -28,7 +28,8 @@ def _chat(settings: Settings, temperature: float, max_tokens: int) -> ChatOpenAI
         api_key="lm-studio",  # LM Studio ignora la chiave: valore fittizio, non un segreto
         temperature=temperature,
         timeout=300,  # secondi di attesa massima: un modello locale puo' essere lento
-        max_tokens=max_tokens,  # il modello ragiona prima di rispondere: servono token a sufficienza
+        # il modello ragiona prima di rispondere: servono token a sufficienza
+        max_tokens=max_tokens,
     )
 
 

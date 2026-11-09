@@ -144,7 +144,8 @@ PARZIALE = "A Tokyo sono le 10."
 COMPLETA = "A Tokyo sono le 10, a New York è il 1 marzo."
 
 
-# Verifica la risposta parziale: rifiuto motivato, messaggio [Revisore] all'agente, risposta completa.
+# Verifica la risposta parziale: rifiuto motivato, messaggio [Revisore] all'agente,
+# risposta completa.
 def test_risposta_parziale_torna_all_agente(log):
     agente = ModelloFinto([AIMessage(PARZIALE), AIMessage(COMPLETA)])
     revisore = RevisoreFinto([NO("manca New York"), OK])
@@ -183,7 +184,7 @@ def test_pulizia_toglie_revisore_e_bozze(log):
                   revisore=RevisoreFinto([NO(), OK]))
     assert [(type(m), m.content) for m in out["messages"]] == \
         [(HumanMessage, DUE_PARTI), (AIMessage, COMPLETA)]
-    assert "pulizia: tolti 2 messaggi del revisore" in log.text
+    assert "pulizia: tolti 2 messaggi (indicazioni del revisore e bozze rifiutate)" in log.text
 
 
 # Verifica che la pulizia non tocchi le coppie chiamata-strumento e risultato.
@@ -213,13 +214,40 @@ def test_risposta_vuota_salta_il_revisore():
     assert out["messages"][-1].content == MSG_VUOTO
 
 
-# Verifica che dopo una revisione il limite di strumenti porti alla pulizia dei [Revisore].
-def test_limite_dopo_revisione_pulisce():
+# Verifica che dopo una revisione il limite di strumenti non nasconda la bozza parziale:
+# i [Revisore] spariscono, le coppie strumenti restano e l'utente vede l'ultima bozza.
+def test_limite_dopo_revisione_mostra_la_bozza(log):
     agente = ModelloFinto([AIMessage("bozza"), AIMessage("", tool_calls=[_chiamata()])])
     out = _esegui(agente, RouterFinto([IN_AMBITO]), revisore=RevisoreFinto([NO()]),
                   max_steps=1)
     assert _del_revisore(out) == []
-    assert "limite di 1 passaggi" in out["messages"][-1].content
+    assert out["messages"][-1].content == "bozza"
+    assert "limite di 1 passaggi" not in [m.content for m in out["messages"]]
+    chiamate = {c["id"] for m in out["messages"] if isinstance(m, AIMessage)
+                for c in m.tool_calls}
+    risposte = {m.tool_call_id for m in out["messages"] if isinstance(m, ToolMessage)}
+    assert chiamate == risposte
+    assert "restituisco l'ultima bozza" in log.text
+
+
+# Verifica che dopo una revisione una risposta vuota non nasconda la bozza parziale.
+def test_risposta_vuota_dopo_revisione_mostra_la_bozza():
+    agente = ModelloFinto([AIMessage("bozza parziale"), AIMessage("")])
+    out = _esegui(agente, RouterFinto([IN_AMBITO]), revisore=RevisoreFinto([NO()]))
+    assert out["messages"][-1].content == "bozza parziale"
+    assert MSG_VUOTO not in [m.content for m in out["messages"]]
+    assert _del_revisore(out) == []
+
+
+# Verifica la catena bozza -> [Revisore] -> strumento -> risposta finale: la coppia resta, la
+# bozza e il [Revisore] spariscono.
+def test_strumenti_dopo_la_revisione():
+    agente = ModelloFinto([AIMessage("bozza"), AIMessage("", tool_calls=[_chiamata()]),
+                           AIMessage("completa")])
+    out = _esegui(agente, RouterFinto([IN_AMBITO]), revisore=RevisoreFinto([NO(), OK]))
+    tipi = [type(m) for m in out["messages"]]
+    assert tipi == [HumanMessage, AIMessage, ToolMessage, AIMessage]
+    assert out["messages"][1].tool_calls and out["messages"][-1].content == "completa"
 
 
 # Verifica MAX_REVISIONI=0: il revisore valuta e scrive il limite, ma non rimanda all'agente.
