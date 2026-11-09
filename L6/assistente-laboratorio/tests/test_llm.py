@@ -32,3 +32,9 @@ def test_revisore_llm_senza_strumenti():
 def test_system_prompt_spiega_il_revisore():
     from app.llm import FRASE_REVISORE, SYSTEM_PROMPT
     assert FRASE_REVISORE in SYSTEM_PROMPT
+
+
+# Verifica che il modello del riassunto non riceva strumenti.
+def test_riassunto_llm_senza_strumenti():
+    from app.llm import build_riassunto_llm
+    assert "tooltime" not in repr(build_riassunto_llm(IMPOSTAZIONI))

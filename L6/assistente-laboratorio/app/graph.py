@@ -13,6 +13,7 @@ from langgraph.prebuilt import ToolNode
 from app.config import Ambito
 from app.llm import SYSTEM_PROMPT
 from app.revisore import MSG_REVISORE, REVISORE, valuta
+from app.riassunto import indice_di_taglio, riassumi
 from app.router import decidi
 from app.tools import STRUMENTI
 
@@ -21,9 +22,12 @@ log_router = logging.getLogger("router")
 log_agente = logging.getLogger("agente")
 log_rifiuto = logging.getLogger("rifiuto")
 log_revisore = logging.getLogger("revisore")
+log_riassunto = logging.getLogger("riassunto")
 
 # name delle risposte fisse del programma (risposta vuota, limite): non sono del modello
 PROGRAMMA = "programma"
+# blocco aggiunto in fondo al prompt di sistema dell'agente quando c'e' un riassunto
+BLOCCO_RIASSUNTO = "\n\nRiassunto della conversazione precedente: "
 
 # risposta usata quando il modello non restituisce ne' testo ne' chiamate
 MSG_VUOTO = (
@@ -40,6 +44,7 @@ class State(TypedDict):
     categoria: str  # decisione del router: conversazione o fuori_ambito
     motivo: str  # motivo della decisione del router (solo per i log, mai all'utente)
     revisioni: int  # quante volte il revisore ha gia' rimandato la risposta all'agente
+    riassunto: str  # riassunto dei messaggi tolti dalla cronologia (sostituito, non accumulato)
 
 
 # e' un messaggio del revisore? (HumanMessage con name="revisore")
@@ -91,11 +96,35 @@ def dopo_router(state: State) -> Literal["modello", "rifiuto"]:
 
 
 # costruisce il grafo: router, rifiuto e i nodi dell'agente (modello, strumenti, limite)
-def build_graph(llm, router_llm, revisore_llm, ambito: Ambito, max_steps: int = 5,
-                max_revisioni: int = 2, strumenti=STRUMENTI, system_prompt: str = SYSTEM_PROMPT):
+def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
+                max_steps: int = 5, max_revisioni: int = 2, soglia_riassunto: int = 16,
+                messaggi_recenti: int = 6, strumenti=STRUMENTI,
+                system_prompt: str = SYSTEM_PROMPT):
     """`llm`: modello dell'agente con gli strumenti; `router_llm` e `revisore_llm`: modelli con
-    output strutturato. Input: {"messages": [...], "steps": 0, "revisioni": 0}."""
+    output strutturato; `riassunto_llm`: modello che riassume in testo. Input:
+    {"messages": [...], "steps": 0, "revisioni": 0, "riassunto": "..."}."""
     nodo_strumenti = ToolNode(strumenti)
+
+    # nodo "riassunto": oltre la soglia sostituisce i messaggi vecchi con un riassunto
+    def riassunto(state: State) -> dict:
+        messaggi = state["messages"]
+        n = len(messaggi)
+        if n <= soglia_riassunto:
+            # sotto la soglia: nessuna chiamata al modello
+            log_riassunto.info("%d messaggi, soglia %d: nessun riassunto", n, soglia_riassunto)
+            return {}
+        taglio = indice_di_taglio(messaggi, messaggi_recenti)
+        if taglio == 0:
+            return {}  # nessun confine di turno valido: niente da riassumere
+        testo = riassumi(riassunto_llm, state.get("riassunto", ""), messaggi[:taglio])
+        if testo is None:
+            return {}  # riassunto fallito: i messaggi restano (avviso gia' nel log)
+        log_riassunto.info("messaggi prima %d, dopo %d (riassunti %d)", n, n - taglio, taglio)
+        # il testo nel log: si vede cosa ricevera' l'agente (evidenza dello step 3)
+        log_riassunto.info('nuovo riassunto: "%s"', testo)
+        # i messaggi riassunti escono dalla cronologia; il riassunto nuovo sostituisce il vecchio
+        return {"messages": [RemoveMessage(id=m.id) for m in messaggi[:taglio]],
+                "riassunto": testo}
 
     # nodo "router": decide se la domanda e' in ambito; non valuta gli strumenti
     def router(state: State) -> dict:
@@ -113,8 +142,12 @@ def build_graph(llm, router_llm, revisore_llm, ambito: Ambito, max_steps: int = 
     # nodo "modello": chiede al modello la prossima mossa (risposta o chiamata a strumenti)
     def modello(state: State) -> dict:
         log_agente.info("nodo modello")
-        # il prompt di sistema viene anteposto a ogni richiesta, non entra nella cronologia
-        risposta = llm.invoke([SystemMessage(system_prompt)] + state["messages"])
+        # il prompt di sistema viene anteposto a ogni richiesta, non entra nella cronologia;
+        # il riassunto (se c'e') va in fondo allo stesso SystemMessage: gemma ne vuole uno solo
+        sistema = system_prompt
+        if state.get("riassunto", "").strip():
+            sistema += BLOCCO_RIASSUNTO + state["riassunto"]
+        risposta = llm.invoke([SystemMessage(sistema)] + state["messages"])
         # niente testo e niente chiamate: i token sono finiti nel ragionamento, lo si dice
         if not risposta.tool_calls and not str(risposta.content).strip():
             return {"messages": [AIMessage(MSG_VUOTO, name=PROGRAMMA)]}
@@ -183,6 +216,7 @@ def build_graph(llm, router_llm, revisore_llm, ambito: Ambito, max_steps: int = 
 
     # montaggio del grafo
     g = StateGraph(State)
+    g.add_node("riassunto", riassunto)
     g.add_node("router", router)
     g.add_node("rifiuto", rifiuto)
     g.add_node("modello", modello)
@@ -190,8 +224,9 @@ def build_graph(llm, router_llm, revisore_llm, ambito: Ambito, max_steps: int = 
     g.add_node("limite", limite)
     g.add_node("revisore", revisore)
     g.add_node("pulizia", pulizia)
-    # si parte sempre dal router
-    g.add_edge(START, "router")
+    # si parte dal riassunto della cronologia, poi il router
+    g.add_edge(START, "riassunto")
+    g.add_edge("riassunto", "router")
     # conversazione -> agente; fuori ambito -> rifiuto
     g.add_conditional_edges("router", dopo_router, {"modello": "modello", "rifiuto": "rifiuto"})
     g.add_edge("rifiuto", END)

@@ -12,7 +12,8 @@ RIFIUTO = "Posso aiutarti solo con ora, data e fusi orari. Questa domanda è fuo
 def ambiente(monkeypatch):
     monkeypatch.setenv("LM_BASE_URL", "http://127.0.0.1:1234/v1")
     monkeypatch.setenv("LM_MODEL", "google/gemma-4-e2b")
-    for nome in ("MAX_STEPS", "FUSO_PREDEFINITO", "AMBITO_FILE", "MAX_REVISIONI"):
+    for nome in ("MAX_STEPS", "FUSO_PREDEFINITO", "AMBITO_FILE", "MAX_REVISIONI",
+                 "SOGLIA_RIASSUNTO", "MESSAGGI_RECENTI"):
         monkeypatch.delenv(nome, raising=False)
     return monkeypatch
 
@@ -125,4 +126,26 @@ def test_max_revisioni_zero_ammesso(ambiente):
 def test_max_revisioni_non_valido(ambiente, valore):
     ambiente.setenv("MAX_REVISIONI", valore)
     with pytest.raises(ValueError, match="MAX_REVISIONI"):
+        load_settings()
+
+
+# Verifica i valori predefiniti del riassunto: soglia 16 messaggi, ultimi 6 conservati.
+def test_riassunto_predefiniti(ambiente):
+    s = load_settings()
+    assert (s.soglia_riassunto, s.messaggi_recenti) == (16, 6)
+
+
+# Verifica che una soglia non numerica o zero sia rifiutata.
+@pytest.mark.parametrize("valore", ["tanti", "0"])
+def test_soglia_non_valida(ambiente, valore):
+    ambiente.setenv("SOGLIA_RIASSUNTO", valore)
+    with pytest.raises(ValueError, match="SOGLIA_RIASSUNTO"):
+        load_settings()
+
+
+# Verifica che i messaggi recenti siano almeno 1 e meno della soglia.
+@pytest.mark.parametrize("valore", ["0", "16", "20"])
+def test_recenti_non_validi(ambiente, valore):
+    ambiente.setenv("MESSAGGI_RECENTI", valore)
+    with pytest.raises(ValueError, match="MESSAGGI_RECENTI"):
         load_settings()

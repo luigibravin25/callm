@@ -21,6 +21,8 @@ class Settings:
     fuso_predefinito: str  # fuso dell'orologio quando l'utente non indica un luogo
     ambito_file: Path  # file TOML con l'ambito dell'agente
     max_revisioni: int = 2  # quante volte il revisore puo' rimandare la risposta all'agente
+    soglia_riassunto: int = 16  # oltre questi messaggi si riassumono i piu' vecchi
+    messaggi_recenti: int = 6  # messaggi recenti (almeno) conservati interi dal riassunto
 
 
 # ambito dell'agente letto da config/ambito.toml: entra nel prompt del router
@@ -79,9 +81,28 @@ def load_settings() -> Settings:
         max_revisioni = -1  # un testo non numerico cade nel controllo qui sotto
     if max_revisioni < 0:
         raise ValueError(f"MAX_REVISIONI deve essere un intero >= 0, trovato: {grezzo!r}")
+    # riassunto della cronologia: soglia >= 1, messaggi recenti tra 1 e soglia - 1
+    soglia = _intero_minimo("SOGLIA_RIASSUNTO", 16, 1)
+    recenti = _intero_minimo("MESSAGGI_RECENTI", 6, 1)
+    if recenti >= soglia:
+        raise ValueError(f"MESSAGGI_RECENTI ({recenti}) deve essere minore di "
+                         f"SOGLIA_RIASSUNTO ({soglia})")
     return Settings(base_url=base_url, model=model, max_steps=max_steps,
                     fuso_predefinito=fuso, ambito_file=ambito_file,
-                    max_revisioni=max_revisioni)
+                    max_revisioni=max_revisioni, soglia_riassunto=soglia,
+                    messaggi_recenti=recenti)
+
+
+# legge una variabile intera facoltativa con un valore minimo
+def _intero_minimo(nome: str, predefinito: int, minimo: int) -> int:
+    grezzo = os.environ.get(nome, str(predefinito)).strip()
+    try:
+        valore = int(grezzo)
+    except ValueError:
+        valore = minimo - 1  # un testo non numerico cade nel controllo qui sotto
+    if valore < minimo:
+        raise ValueError(f"{nome} deve essere un intero >= {minimo}, trovato: {grezzo!r}")
+    return valore
 
 
 # controlla un campo di testo obbligatorio del file dell'ambito

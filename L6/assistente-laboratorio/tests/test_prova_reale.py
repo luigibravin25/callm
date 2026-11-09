@@ -16,11 +16,12 @@ DUE_PARTI = "Che ore sono a Tokyo e che giorno è oggi a New York?"
 def grafo_e_ambito():
     from app.config import load_ambito, load_settings
     from app.graph import build_graph
-    from app.llm import build_llm, build_revisore_llm, build_router_llm
+    from app.llm import build_llm, build_revisore_llm, build_riassunto_llm, build_router_llm
     s = load_settings()
     ambito = load_ambito(s.ambito_file)
-    grafo = build_graph(build_llm(s), build_router_llm(s), build_revisore_llm(s), ambito,
-                        s.max_steps, s.max_revisioni)
+    grafo = build_graph(build_llm(s), build_router_llm(s), build_revisore_llm(s),
+                        build_riassunto_llm(s), ambito, s.max_steps, s.max_revisioni,
+                        s.soglia_riassunto, s.messaggi_recenti)
     return grafo, ambito
 
 
@@ -34,7 +35,8 @@ def revisore_llm():
 
 # esegue il grafo vero con una domanda
 def _chiedi(grafo, domanda):
-    return grafo.invoke({"messages": [HumanMessage(domanda)], "steps": 0, "revisioni": 0})
+    return grafo.invoke({"messages": [HumanMessage(domanda)], "steps": 0, "revisioni": 0,
+                         "riassunto": ""})
 
 
 # Verifica con gemma: domanda sull'ora a Tokyo -> router in ambito e tooltime eseguito.
@@ -66,3 +68,16 @@ def test_prova_reale_revisore_risposta_completa(revisore_llm):
     decisione = valuta(revisore_llm, DUE_PARTI, "A Tokyo sono le ore 20 in punto. A New York "
                        "oggi è il 9 novembre del 2026.")
     assert decisione.coerente is True, decisione.motivo
+
+
+# Verifica con gemma: il riassunto di una conversazione conserva il nome detto dall'utente.
+def test_prova_reale_riassunto_conserva_il_nome():
+    from langchain_core.messages import AIMessage
+    from app.config import load_settings
+    from app.llm import build_riassunto_llm
+    from app.riassunto import riassumi
+    messaggi = [HumanMessage("Ciao, mi chiamo Luigi"), AIMessage("Piacere Luigi! Come posso "
+                "aiutarti?"), HumanMessage("Che ore sono a Tokyo?"),
+                AIMessage("A Tokyo sono le ore 20 in punto.")]
+    testo = riassumi(build_riassunto_llm(load_settings()), "", messaggi)
+    assert testo is not None and "Luigi" in testo, testo
