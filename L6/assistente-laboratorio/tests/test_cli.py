@@ -10,7 +10,7 @@ from app.config import Ambito
 from app.graph import build_graph
 from app.router import DecisioneRouter
 from app.revisore import DecisioneRevisore
-from tests.finti import ModelloFinto, RevisoreFinto, RouterFinto
+from tests.finti import ModelloFinto, RevisoreFinto, RiassuntoFinto, RouterFinto
 
 AMBITO = Ambito(descrizione="Solo ora.", rifiuto="Fuori dal mio ambito.")
 IN_AMBITO = DecisioneRouter(categoria="conversazione", motivo="ora")
@@ -31,7 +31,8 @@ def _chat(righe, agente, router, revisore=None):
 
     stampato = []
     revisore = revisore or RevisoreFinto([OK])
-    main(build_graph(agente, router, revisore, AMBITO), input_fn=leggi,
+    main(build_graph(agente, router, revisore, RiassuntoFinto(["riassunto"]), AMBITO),
+         input_fn=leggi,
          output_fn=stampato.append)
     return "\n".join(stampato)
 

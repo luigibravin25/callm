@@ -1,17 +1,19 @@
 # test del grafo: router prima dell'agente, rifiuto fisso, ciclo agente-strumenti, limite,
-# revisore dopo l'agente e pulizia a fine turno
+# revisore dopo l'agente e pulizia a fine turno, riassunto della cronologia prima del router
 import logging
 from datetime import datetime, timezone
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+import httpx
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from openai import APIConnectionError
 
 from app import tools
 from app.config import Ambito
 from app.graph import MSG_VUOTO, build_graph, messaggi_da_pulire
 from app.revisore import DecisioneRevisore
 from app.router import DecisioneRouter
-from tests.finti import ModelloFinto, RevisoreFinto, RouterFinto
+from tests.finti import ModelloFinto, RevisoreFinto, RiassuntoFinto, RouterFinto
 
 AMBITO = Ambito(descrizione="Solo ora, data e fusi orari.", rifiuto="Fuori dal mio ambito.")
 IN_AMBITO = DecisioneRouter(categoria="conversazione", motivo="chiede l'ora")
@@ -27,7 +29,7 @@ def NO(motivo="incompleta"):
 # tutti i log di router, agente e rifiuto finiscono in caplog
 @pytest.fixture(autouse=True)
 def log(caplog):
-    for nome in ("router", "agente", "rifiuto", "revisore"):
+    for nome in ("router", "agente", "rifiuto", "revisore", "riassunto"):
         caplog.set_level(logging.INFO, logger=nome)
     return caplog
 
@@ -46,12 +48,17 @@ def _chiamata(id_="c1"):
 
 # esegue il grafo con una domanda e restituisce lo stato finale
 # (revisore predefinito: approva sempre)
+# (revisore predefinito: approva sempre; riassunto predefinito: testo fisso "riassunto")
 def _esegui(agente, router, domanda="Che ore sono?", max_steps=5, revisore=None,
-            max_revisioni=2):
+            max_revisioni=2, cronologia=(), riassunto="", riassunto_llm=None, soglia=16,
+            recenti=6):
     revisore = revisore or RevisoreFinto([OK])
-    grafo = build_graph(agente, router, revisore, AMBITO, max_steps=max_steps,
-                        max_revisioni=max_revisioni)
-    return grafo.invoke({"messages": [HumanMessage(domanda)], "steps": 0, "revisioni": 0})
+    riassunto_llm = riassunto_llm or RiassuntoFinto(["riassunto"])
+    grafo = build_graph(agente, router, revisore, riassunto_llm, AMBITO, max_steps=max_steps,
+                        max_revisioni=max_revisioni, soglia_riassunto=soglia,
+                        messaggi_recenti=recenti)
+    return grafo.invoke({"messages": list(cronologia) + [HumanMessage(domanda)], "steps": 0,
+                         "revisioni": 0, "riassunto": riassunto})
 
 
 # messaggi del revisore rimasti nello stato
@@ -277,3 +284,77 @@ def test_messaggi_da_pulire():
                 HumanMessage("[Revisore] manca", name="revisore", id="r1"),
                 AIMessage("completa", id="a3")]
     assert messaggi_da_pulire(messaggi) == ["a2", "r1"]
+
+
+# cronologia di n turni da 2 messaggi (domanda e risposta)
+def _turni(n):
+    messaggi = []
+    for i in range(n):
+        messaggi += [HumanMessage(f"domanda {i}"), AIMessage(f"risposta {i}")]
+    return messaggi
+
+
+# Verifica che sotto la soglia il nodo non chiami il modello del riassunto e lo scriva nel log.
+def test_sotto_la_soglia_nessuna_chiamata(log):
+    riassunto_llm = RiassuntoFinto(["x"])
+    _esegui(ModelloFinto([AIMessage("ok")]), RouterFinto([IN_AMBITO]), cronologia=_turni(2),
+            riassunto_llm=riassunto_llm)
+    assert riassunto_llm.chiamate == []
+    assert "5 messaggi, soglia 16: nessun riassunto" in log.text
+
+
+# Verifica che sopra la soglia i messaggi vecchi diventino il riassunto (log prima e dopo).
+def test_sopra_la_soglia_riassume(log):
+    out = _esegui(ModelloFinto([AIMessage("ok")]), RouterFinto([IN_AMBITO]),
+                  cronologia=_turni(9), riassunto_llm=RiassuntoFinto(["nuovo riassunto"]))
+    assert "messaggi prima 19, dopo 7 (riassunti 12)" in log.text
+    assert out["riassunto"] == "nuovo riassunto"
+    assert out["messages"][0].content == "domanda 6"  # i turni 0-5 sono stati riassunti
+
+
+# Verifica che il nuovo riassunto parta dal vecchio e lo sostituisca, senza accumularli.
+def test_secondo_riassunto_parte_dal_vecchio():
+    riassunto_llm = RiassuntoFinto(["Si chiama Luigi e ha chiesto l'ora."])
+    out = _esegui(ModelloFinto([AIMessage("ok")]), RouterFinto([IN_AMBITO]),
+                  cronologia=_turni(9), riassunto="Si chiama Luigi.",
+                  riassunto_llm=riassunto_llm)
+    assert "Riassunto precedente: Si chiama Luigi." in riassunto_llm.chiamate[0][1].content
+    assert out["riassunto"] == "Si chiama Luigi e ha chiesto l'ora."
+
+
+# Verifica che il nome detto al primo turno arrivi all'agente dopo la compressione: un solo
+# SystemMessage con il riassunto e nessun messaggio del primo turno.
+def test_nome_usato_dopo_la_compressione():
+    cronologia = [HumanMessage("Mi chiamo Luigi"), AIMessage("Piacere Luigi!")] + _turni(8)
+    agente = ModelloFinto([AIMessage("Luigi, sono le 10")])
+    _esegui(agente, RouterFinto([IN_AMBITO]), cronologia=cronologia,
+            riassunto_llm=RiassuntoFinto(["L'utente si chiama Luigi."]))
+    ricevuti = agente.chiamate[0]
+    sistema = [m for m in ricevuti if isinstance(m, SystemMessage)]
+    assert len(sistema) == 1 and "L'utente si chiama Luigi." in sistema[0].content
+    assert "Riassunto della conversazione precedente: " in sistema[0].content
+    assert "Mi chiamo Luigi" not in [m.content for m in ricevuti]
+
+
+# Verifica che un riassunto vuoto non tolga nessun messaggio.
+def test_riassunto_vuoto_conserva_i_messaggi(log):
+    out = _esegui(ModelloFinto([AIMessage("ok")]), RouterFinto([IN_AMBITO]),
+                  cronologia=_turni(9), riassunto_llm=RiassuntoFinto([""]))
+    assert out["messages"][0].content == "domanda 0"
+    assert "riassunto non riuscito (risposta vuota): messaggi conservati" in log.text
+
+
+# Verifica che il riassunto si faccia anche prima di una domanda fuori ambito.
+def test_riassunto_anche_prima_di_un_rifiuto():
+    out = _esegui(ModelloFinto([AIMessage("x")]), RouterFinto([FUORI]), cronologia=_turni(9),
+                  riassunto_llm=RiassuntoFinto(["riassunto"]))
+    assert out["riassunto"] == "riassunto"
+    assert out["messages"][-1].content == AMBITO.rifiuto
+
+
+# Verifica che LM Studio irraggiungibile durante il riassunto salga al chiamante.
+def test_errore_di_connessione_nel_riassunto_sale():
+    errore = APIConnectionError(request=httpx.Request("POST", "http://x"))
+    with pytest.raises(APIConnectionError):
+        _esegui(ModelloFinto([AIMessage("x")]), RouterFinto([IN_AMBITO]),
+                cronologia=_turni(9), riassunto_llm=RiassuntoFinto([errore]))
