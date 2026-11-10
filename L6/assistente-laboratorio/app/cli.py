@@ -7,6 +7,11 @@ from openai import APIConnectionError, APIError, APIStatusError
 
 # interruttori dei log (app/llm.py)
 from app.llm import LOG_GRAFO, LOG_HTTP
+# preferenze dell'utente in uso nella sessione (step 4)
+from app.preferenze import Preferenze
+
+# logger della CLI: avvisi dell'avvio (server MCP non disponibile)
+log = logging.getLogger("mcp")
 
 # messaggi fissi della chat
 MSG_CONNESSIONE = (
@@ -100,19 +105,34 @@ def imposta_log(log_http: bool = LOG_HTTP, log_grafo: bool = LOG_GRAFO) -> None:
     # richieste HTTP verso LM Studio: il client OpenAI usa httpx o httpx2 secondo la versione
     for nome in ("httpx", "httpx2"):
         logging.getLogger(nome).setLevel(logging.INFO if log_http else logging.CRITICAL)
-    for nome in ("router", "agente", "rifiuto", "revisore", "riassunto"):
+    for nome in ("router", "agente", "rifiuto", "revisore", "riassunto", "mcp", "preferenze"):
         logging.getLogger(nome).setLevel(logging.INFO if log_grafo else logging.CRITICAL)
 
 
+# all'avvio della sessione: strumenti del server MCP e preferenze lette una volta (step 4)
+def prepara_agente(fuso_riserva: str) -> tuple[list, Preferenze]:
+    """tools/list e resources/read una volta; server che non parte: nessuno strumento e
+    preferenze predefinite, con avvisi nei log."""
+    # import qui: adattatore_mcp si legge come modulo, cosi' i test lo possono sostituire
+    from app import adattatore_mcp
+    from app.preferenze import valida
+    try:
+        strumenti = adattatore_mcp.carica_strumenti()
+    except adattatore_mcp.ErroreMCP as errore:
+        log.warning("server MCP non disponibile (%s): nessuno strumento", errore)
+        # la resource sta sullo stesso server: niente lettura, valida(None) usa i predefiniti
+        return [], valida(None, fuso_riserva)
+    return strumenti, valida(adattatore_mcp.leggi_preferenze(), fuso_riserva)
+
+
 # avvio del programma (python -m app.cli)
-def avvia() -> None:
-    """Legge configurazione e ambito, costruisce i modelli (agente, router, revisore,
-    riassunto) e il grafo,
-    avvia la chat."""
+def avvia(input_fn=input, output_fn=print) -> None:
+    """Legge configurazione e ambito, avvia il server MCP (strumenti e preferenze), costruisce
+    i modelli (agente, router, revisore, riassunto) e il grafo, avvia la chat."""
     # import qui dentro: servono solo all'avvio vero, non quando i test importano il modulo
+    from app import llm
     from app.config import load_ambito, load_settings
     from app.graph import build_graph
-    from app.llm import build_llm, build_revisore_llm, build_riassunto_llm, build_router_llm
 
     imposta_log()
     try:
@@ -121,11 +141,17 @@ def avvia() -> None:
     except ValueError as errore:
         # SystemExit chiude il programma mostrando solo il messaggio, senza traceback
         raise SystemExit(f"Configurazione non valida: {errore}")
-    grafo = build_graph(build_llm(impostazioni), build_router_llm(impostazioni),
-                        build_revisore_llm(impostazioni), build_riassunto_llm(impostazioni),
+    # una sola lettura delle preferenze per sessione, prima di chiamare il modello
+    strumenti, preferenze = prepara_agente(impostazioni.fuso_predefinito)
+    grafo = build_graph(llm.build_llm(impostazioni, strumenti), llm.build_router_llm(impostazioni),
+                        llm.build_revisore_llm(impostazioni),
+                        llm.build_riassunto_llm(impostazioni),
                         ambito, impostazioni.max_steps, impostazioni.max_revisioni,
-                        impostazioni.soglia_riassunto, impostazioni.messaggi_recenti)
-    main(grafo)
+                        impostazioni.soglia_riassunto, impostazioni.messaggi_recenti,
+                        strumenti=strumenti,
+                        system_prompt=llm.prompt_agente(preferenze, bool(strumenti)),
+                        fuso_predefinito=preferenze.fuso)
+    main(grafo, input_fn=input_fn, output_fn=output_fn)
 
 
 if __name__ == "__main__":
