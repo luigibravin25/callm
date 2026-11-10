@@ -11,18 +11,29 @@ pytestmark = pytest.mark.skipif(os.environ.get("RUN_LM_STUDIO") != "1",
 DUE_PARTI = "Che ore sono a Tokyo e che giorno è oggi a New York?"
 
 
-# grafo vero: modelli di LM Studio e ambito del file config/ambito.toml
-@pytest.fixture(scope="module")
-def grafo_e_ambito():
+# grafo vero: modelli di LM Studio, strumenti del server MCP, preferenze date dal test
+def _grafo_vero(preferenze=None):
+    from app.adattatore_mcp import carica_strumenti
     from app.config import load_ambito, load_settings
     from app.graph import build_graph
-    from app.llm import build_llm, build_revisore_llm, build_riassunto_llm, build_router_llm
+    from app.llm import (build_llm, build_revisore_llm, build_riassunto_llm, build_router_llm,
+                         prompt_agente)
+    from app.preferenze import predefinite
     s = load_settings()
     ambito = load_ambito(s.ambito_file)
-    grafo = build_graph(build_llm(s), build_router_llm(s), build_revisore_llm(s),
+    strumenti = carica_strumenti()
+    p = preferenze or predefinite(s.fuso_predefinito)
+    grafo = build_graph(build_llm(s, strumenti), build_router_llm(s), build_revisore_llm(s),
                         build_riassunto_llm(s), ambito, s.max_steps, s.max_revisioni,
-                        s.soglia_riassunto, s.messaggi_recenti)
+                        s.soglia_riassunto, s.messaggi_recenti, strumenti=strumenti,
+                        system_prompt=prompt_agente(p, True), fuso_predefinito=p.fuso)
     return grafo, ambito
+
+
+# grafo vero con le preferenze predefinite (italiano, fuso di riserva, sintetico)
+@pytest.fixture(scope="module")
+def grafo_e_ambito():
+    return _grafo_vero()
 
 
 # solo il modello del revisore, per provarlo su risposte scritte nel test
@@ -81,3 +92,29 @@ def test_prova_reale_riassunto_conserva_il_nome():
                 AIMessage("A Tokyo sono le ore 20 in punto.")]
     testo = riassumi(build_riassunto_llm(load_settings()), "", messaggi)
     assert testo is not None and "Luigi" in testo, testo
+
+
+# Verifica con gemma (evidenza 1): "Che ore sono?" senza luogo usa il fuso delle preferenze,
+# America/New_York, senza chiederlo all'utente.
+def test_prova_reale_fuso_delle_preferenze():
+    from app.config import load_settings
+    from app.preferenze import valida
+    p = valida('{"fuso": "America/New_York"}', load_settings().fuso_predefinito)
+    grafo, _ = _grafo_vero(p)
+    out = _chiedi(grafo, "Che ore sono?")
+    risultati = [m for m in out["messages"] if isinstance(m, ToolMessage)]
+    assert risultati and risultati[0].content.startswith("New York:")
+    assert "New York" in out["messages"][-1].content
+
+
+# Verifica con gemma (evidenza 2): con lingua inglese la risposta e' in inglese, anche se il
+# risultato di tooltime e' in italiano.
+def test_prova_reale_lingua_inglese():
+    from app.config import load_settings
+    from app.preferenze import valida
+    p = valida('{"lingua": "inglese", "stile": "sintetico"}', load_settings().fuso_predefinito)
+    grafo, _ = _grafo_vero(p)
+    risposta = str(_chiedi(grafo, "Che ore sono a Tokyo?")["messages"][-1].content)
+    testo = risposta.lower()
+    assert "sono le ore" not in testo
+    assert any(parola in testo for parola in ("it is", "it's", "time", "o'clock")), risposta

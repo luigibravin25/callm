@@ -1,13 +1,17 @@
-# librerie standard: date e ore, tipi con valori fissi, fusi orari IANA
+"""Logica dell'orologio di tooltime (server MCP mcp_assistente): data e ora a parole."""
+# librerie standard: variabili d'ambiente, date e ore, fusi orari IANA
+import os
 from datetime import datetime, timezone
-from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-# tool: trasforma una funzione in uno strumento che il modello puo' chiamare
-from langchain_core.tools import tool
+FUSO_DI_RISERVA = "Europe/Rome"  # usato se FUSO_PREDEFINITO non e' impostata
 
-# fuso da usare quando l'utente non indica un luogo (variabile FUSO_PREDEFINITO o Europe/Rome)
-from app.config import fuso_predefinito
+
+# fuso da usare quando tooltime non riceve un fuso (l'host di solito lo completa da solo)
+def _fuso_predefinito() -> str:
+    # una variabile vuota o fatta di spazi diventa "" e "or" passa alla riserva
+    return os.environ.get("FUSO_PREDEFINITO", "").strip() or FUSO_DI_RISERVA
+
 
 # nomi dei mesi scritti a mano: cosi' non dipendono dalla lingua impostata nel sistema
 MESI = ("gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio",
@@ -46,25 +50,11 @@ def _adesso() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# strumento orologio: il decoratore @tool lo rende chiamabile dal modello con il nome "tooltime"
-@tool("tooltime")
-def ora_corrente(fuso: str = "", parte: Literal["ora", "data", "entrambe"] = "entrambe") -> str:
-    """Restituisce data e/o ora attuali in un fuso orario.
-
-    Usala ogni volta che serve sapere che ora e' o che giorno e' in una citta' o
-    in un paese. L'argomento `fuso` e' il nome IANA del fuso orario, ad esempio
-    "Europe/Rome", "Asia/Tokyo" o "America/New_York" (non il nome della citta' da sola).
-    Se l'utente non indica una citta' o un paese, ometti `fuso`: lo strumento usa il fuso
-    predefinito. Non usare "UTC" o "GMT" se l'utente non li chiede.
-    Il risultato inizia con il nome del luogo: nella risposta usa quel nome (per esempio
-    "a New York"), mai il nome IANA con la barra (come "America/New_York").
-    Riporta l'ora esattamente come scritta nel risultato, a parole ("sono le ore 10 e 32 minuti"):
-    non convertirla in cifre con i due punti (come "10:32") e non aggiungere i secondi.
-    L'argomento `parte` dice cosa restituire: "ora" se l'utente chiede solo l'ora,
-    "data" se chiede solo il giorno o la data, "entrambe" negli altri casi.
-    """
+# data e/o ora attuali in un fuso: e' il corpo del tool MCP tooltime
+def ora_corrente(fuso: str = "", parte: str = "entrambe") -> str:
+    """Testo come "Tokyo: 1 marzo del 2026, sono le ore 20 in punto" (parte: ora, data, entrambe)."""
     # fuso vuoto: il modello non ha indicato un luogo, si usa quello predefinito
-    fuso = fuso.strip() or fuso_predefinito()
+    fuso = fuso.strip() or _fuso_predefinito()
     try:
         zona = ZoneInfo(fuso)
     except (ZoneInfoNotFoundError, ValueError, OSError):
@@ -79,7 +69,3 @@ def ora_corrente(fuso: str = "", parte: Literal["ora", "data", "entrambe"] = "en
     if parte == "data":
         return f"{_luogo(zona)}: {_data(locale)}"
     return f"{_luogo(zona)}: {_data(locale)}, {_ora(locale)}"
-
-
-# strumenti dell'agente: lo step 1 ha solo l'orologio (ambito: ora, data e fusi orari)
-STRUMENTI = [ora_corrente]

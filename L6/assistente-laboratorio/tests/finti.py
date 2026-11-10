@@ -55,3 +55,17 @@ class RiassuntoFinto:
         if isinstance(testo, Exception):
             raise testo
         return AIMessage(testo)
+
+
+# finto tooltime: registra gli argomenti ricevuti e usa la logica vera dell'orologio (senza MCP)
+def tooltime_finto(registro: list):
+    # import qui: servono solo a chi usa questo finto strumento
+    from langchain_core.tools import tool
+    from mcp_assistente import orologio
+
+    @tool("tooltime")
+    def tooltime(fuso: str = "", parte: str = "entrambe") -> str:
+        """Orologio finto per i test: restituisce data e ora nel fuso indicato."""
+        registro.append({"fuso": fuso, "parte": parte})
+        return orologio.ora_corrente(fuso, parte)
+    return tooltime

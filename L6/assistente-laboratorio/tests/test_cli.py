@@ -134,3 +134,74 @@ def test_imposta_log_accende_il_riassunto():
     import logging
     cli.imposta_log()
     assert logging.getLogger("riassunto").level == logging.INFO
+
+
+# sostituisce server MCP e modelli di LM Studio per provare avvia() e prepara_agente();
+# restituisce il contatore delle letture della resource
+def _finti_per_avvio(monkeypatch, testo='{"lingua": "inglese", "fuso": "America/New_York"}',
+                     server_ok=True):
+    from app import adattatore_mcp, llm
+    from tests.finti import tooltime_finto
+    letture = []
+
+    # discovery finta: un tooltime finto, oppure il server che non parte
+    def carica():
+        if not server_ok:
+            raise adattatore_mcp.ErroreMCP("mcp_assistente.server: non parte")
+        return [tooltime_finto([])]
+
+    # lettura finta della resource: conta le chiamate
+    def leggi():
+        letture.append(1)
+        return testo
+
+    monkeypatch.setattr(adattatore_mcp, "carica_strumenti", carica)
+    monkeypatch.setattr(adattatore_mcp, "leggi_preferenze", leggi)
+    monkeypatch.setattr(llm, "build_llm", lambda s, strumenti: ModelloFinto([AIMessage("ok")]))
+    monkeypatch.setattr(llm, "build_router_llm", lambda s: RouterFinto([IN_AMBITO]))
+    monkeypatch.setattr(llm, "build_revisore_llm", lambda s: RevisoreFinto([OK]))
+    monkeypatch.setattr(llm, "build_riassunto_llm", lambda s: RiassuntoFinto(["riassunto"]))
+    monkeypatch.setenv("LM_BASE_URL", "http://127.0.0.1:1234/v1")
+    monkeypatch.setenv("LM_MODEL", "google/gemma-4-e2b")
+    return letture
+
+
+# Verifica che prepara_agente legga la resource una volta e restituisca strumenti e preferenze.
+def test_prepara_agente_legge_le_preferenze_una_volta(monkeypatch):
+    letture = _finti_per_avvio(monkeypatch)
+    strumenti, preferenze = cli.prepara_agente("Europe/Rome")
+    assert [t.name for t in strumenti] == ["tooltime"]
+    assert (preferenze.lingua, preferenze.fuso) == ("inglese", "America/New_York")
+    assert len(letture) == 1
+
+
+# Verifica che senza server MCP la chat parta con zero strumenti, predefiniti e 2 avvisi.
+def test_prepara_agente_server_non_disponibile(monkeypatch, caplog):
+    import logging
+    from app.preferenze import predefinite
+    letture = _finti_per_avvio(monkeypatch, server_ok=False)
+    with caplog.at_level(logging.WARNING):
+        strumenti, preferenze = cli.prepara_agente("Europe/Rome")
+    assert strumenti == [] and preferenze == predefinite("Europe/Rome")
+    avvisi = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("nessuno strumento" in a for a in avvisi)
+    assert any("preferenze predefinite" in a for a in avvisi)
+    assert letture == []  # il server non parte: la resource non si legge
+
+
+# Verifica che in una sessione con piu' turni la resource si legga una sola volta.
+def test_una_lettura_in_piu_turni(monkeypatch):
+    letture = _finti_per_avvio(monkeypatch)
+    righe = iter(["Che ore sono?", "E adesso?", "Grazie", "esci"])
+    stampato = []
+    cli.avvia(input_fn=lambda _p="": next(righe), output_fn=stampato.append)
+    assert len(letture) == 1
+    assert stampato.count("Assistente: ok") == 3
+
+
+# Verifica che i log di MCP e delle preferenze siano accesi con LOG_GRAFO.
+def test_imposta_log_accende_mcp_e_preferenze():
+    import logging
+    cli.imposta_log()
+    assert logging.getLogger("mcp").level == logging.INFO
+    assert logging.getLogger("preferenze").level == logging.INFO

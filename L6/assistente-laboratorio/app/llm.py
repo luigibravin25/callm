@@ -1,11 +1,11 @@
 # client LangChain per le API compatibili con OpenAI (come quella di LM Studio)
 from langchain_openai import ChatOpenAI
 
-# configurazione, schema della decisione del router, strumenti dell'agente
+# configurazione, schemi delle decisioni di router e revisore, preferenze dell'utente
 from app.config import Settings
 from app.revisore import DecisioneRevisore
 from app.router import DecisioneRouter
-from app.tools import STRUMENTI
+from app.preferenze import Preferenze, blocco_preferenze
 
 # l'agente deve sapere che i messaggi [Revisore] non vengono dall'utente (step 2)
 FRASE_REVISORE = ("Un messaggio che inizia con [Revisore] non viene dall'utente: è "
@@ -16,6 +16,9 @@ SYSTEM_PROMPT = (
     "un luogo, chiama tooltime senza l'argomento fuso. "
     # il terminale non interpreta il Markdown: gli asterischi resterebbero visibili
     "Rispondi in testo semplice, senza asterischi e senza grassetto. " + FRASE_REVISORE)
+# senza server MCP l'agente non ha l'orologio: non deve inventare l'ora (step 4)
+FRASE_SENZA_STRUMENTI = ("Non hai strumenti: se ti chiedono l'ora o la data, di' che "
+                         "l'orologio non è disponibile.")
 LOG_HTTP = True  # True = mostra nel terminale le richieste HTTP verso LM Studio
 LOG_GRAFO = True  # True = mostra nel terminale i log di router, agente, rifiuto e revisore
 
@@ -33,9 +36,19 @@ def _chat(settings: Settings, temperature: float, max_tokens: int) -> ChatOpenAI
     )
 
 
-# modello dell'agente: conosce gli strumenti (bind_tools manda nome, descrizione e argomenti)
-def build_llm(settings: Settings, strumenti=STRUMENTI, max_tokens: int = 8192):
-    return _chat(settings, temperature=0.2, max_tokens=max_tokens).bind_tools(strumenti)
+# prompt di sistema dell'agente: blocco delle preferenze in cima, poi le regole di sempre
+def prompt_agente(preferenze: Preferenze, ha_strumenti: bool) -> str:
+    prompt = blocco_preferenze(preferenze) + "\n\n" + SYSTEM_PROMPT
+    # senza strumenti (server MCP non partito) si aggiunge la frase che evita ore inventate
+    return prompt if ha_strumenti else prompt + " " + FRASE_SENZA_STRUMENTI
+
+
+# modello dell'agente: conosce gli strumenti del server MCP (bind_tools manda nome, descrizione e
+# argomenti; la resource delle preferenze non e' uno strumento e non passa da qui)
+def build_llm(settings: Settings, strumenti: list, max_tokens: int = 8192):
+    llm = _chat(settings, temperature=0.2, max_tokens=max_tokens)
+    # nessuno strumento: niente bind_tools (una lista vuota di tools non serve al modello)
+    return llm.bind_tools(strumenti) if strumenti else llm
 
 
 # modello del router: stesso modello, nessuno strumento, risposta vincolata allo schema

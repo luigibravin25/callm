@@ -8,12 +8,15 @@ import httpx
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from openai import APIConnectionError
 
-from app import tools
 from app.config import Ambito
 from app.graph import MSG_VUOTO, build_graph, messaggi_da_pulire
 from app.revisore import DecisioneRevisore
 from app.router import DecisioneRouter
-from tests.finti import ModelloFinto, RevisoreFinto, RiassuntoFinto, RouterFinto
+from app.graph import completa_fuso
+from app.llm import SYSTEM_PROMPT, prompt_agente
+from app.preferenze import Preferenze
+from mcp_assistente import orologio as modulo_orologio
+from tests.finti import ModelloFinto, RevisoreFinto, RiassuntoFinto, RouterFinto, tooltime_finto
 
 AMBITO = Ambito(descrizione="Solo ora, data e fusi orari.", rifiuto="Fuori dal mio ambito.")
 IN_AMBITO = DecisioneRouter(categoria="conversazione", motivo="chiede l'ora")
@@ -37,7 +40,7 @@ def log(caplog):
 # orologio fisso: 1 marzo 2026 11:00 UTC
 @pytest.fixture(autouse=True)
 def orologio(monkeypatch):
-    monkeypatch.setattr(tools, "_adesso",
+    monkeypatch.setattr(modulo_orologio, "_adesso",
                         lambda: datetime(2026, 3, 1, 11, 0, tzinfo=timezone.utc))
 
 
@@ -50,12 +53,15 @@ def _chiamata(id_="c1"):
 # (revisore predefinito: approva sempre; riassunto predefinito: testo fisso "riassunto")
 def _esegui(agente, router, domanda="Che ore sono?", max_steps=5, revisore=None,
             max_revisioni=2, cronologia=(), riassunto="", riassunto_llm=None, soglia=16,
-            recenti=6):
+            recenti=6, registro=None, fuso="Europe/Rome", system_prompt=SYSTEM_PROMPT):
     revisore = revisore or RevisoreFinto([OK])
+    # strumento finto: registro raccoglie gli argomenti di ogni chiamata
+    strumenti = [tooltime_finto(registro if registro is not None else [])]
     riassunto_llm = riassunto_llm or RiassuntoFinto(["riassunto"])
     grafo = build_graph(agente, router, revisore, riassunto_llm, AMBITO, max_steps=max_steps,
                         max_revisioni=max_revisioni, soglia_riassunto=soglia,
-                        messaggi_recenti=recenti)
+                        messaggi_recenti=recenti, strumenti=strumenti,
+                        system_prompt=system_prompt, fuso_predefinito=fuso)
     return grafo.invoke({"messages": list(cronologia) + [HumanMessage(domanda)], "steps": 0,
                          "revisioni": 0, "riassunto": riassunto})
 
@@ -358,3 +364,63 @@ def test_errore_di_connessione_nel_riassunto_sale():
     with pytest.raises(APIConnectionError):
         _esegui(ModelloFinto([AIMessage("x")]), RouterFinto([IN_AMBITO]),
                 cronologia=_turni(9), riassunto_llm=RiassuntoFinto([errore]))
+
+
+# Verifica che completa_fuso riempia il fuso assente, vuoto o di soli spazi, con lo stesso id.
+@pytest.mark.parametrize("argomenti", [{}, {"fuso": ""}, {"fuso": "  "}, {"fuso": None},
+                                       {"parte": "ora"}])
+def test_completa_fuso_vuoto_e_spazi(argomenti):
+    msg = AIMessage("", tool_calls=[{"name": "tooltime", "args": argomenti, "id": "c1"}], id="m1")
+    nuovo = completa_fuso(msg, "America/New_York")
+    assert nuovo.id == "m1"
+    assert nuovo.tool_calls[0]["args"]["fuso"] == "America/New_York"
+    # gli altri argomenti restano
+    assert all(nuovo.tool_calls[0]["args"][k] == v for k, v in argomenti.items() if k != "fuso")
+
+
+# Verifica che un fuso esplicito resti com'e' (nessuna copia).
+def test_completa_fuso_esplicito_invariato():
+    msg = AIMessage("", tool_calls=[_chiamata()], id="m1")
+    assert completa_fuso(msg, "America/New_York") is None
+
+
+# Verifica l'evidenza: tooltime senza fuso riceve il fuso delle preferenze, scritto nel log.
+def test_tooltime_senza_fuso_usa_le_preferenze(log):
+    registro = []
+    chiamata = {"name": "tooltime", "args": {}, "id": "c1"}
+    agente = ModelloFinto([AIMessage("", tool_calls=[chiamata]), AIMessage("Sono le 6 a New York")])
+    out = _esegui(agente, RouterFinto([IN_AMBITO]), registro=registro, fuso="America/New_York")
+    assert registro[0]["fuso"] == "America/New_York"
+    assert "tooltime senza fuso: uso America/New_York (preferenze)" in log.text
+    # nella cronologia la chiamata ha il fuso completato e un solo ToolMessage la segue
+    chiamate = [m for m in out["messages"] if isinstance(m, AIMessage) and m.tool_calls]
+    assert len(chiamate) == 1 and chiamate[0].tool_calls[0]["args"]["fuso"] == "America/New_York"
+    risultati = [m for m in out["messages"] if isinstance(m, ToolMessage)]
+    assert len(risultati) == 1 and risultati[0].content.startswith("New York: ")
+
+
+# Verifica che l'agente riceva un solo SystemMessage: blocco in cima, riassunto in fondo.
+def test_un_solo_system_message_con_blocco_e_riassunto():
+    agente = ModelloFinto([AIMessage("Ciao")])
+    prompt = prompt_agente(Preferenze("inglese", "America/New_York", "sintetico"), True)
+    _esegui(agente, RouterFinto([IN_AMBITO]), riassunto="L'utente si chiama Luigi.",
+            system_prompt=prompt)
+    sistemi = [m for m in agente.chiamate[0] if isinstance(m, SystemMessage)]
+    assert len(sistemi) == 1
+    assert sistemi[0].content.startswith("Preferenze dell'utente")
+    assert sistemi[0].content.endswith("L'utente si chiama Luigi.")
+
+
+# Verifica che senza strumenti (server MCP non partito) una chiamata del modello non faccia
+# cadere la chat: riceve un ToolMessage d'errore e il modello risponde.
+def test_chiamata_senza_strumenti_non_cade():
+    agente = ModelloFinto([AIMessage("", tool_calls=[_chiamata()]),
+                           AIMessage("L'orologio non è disponibile.")])
+    grafo = build_graph(agente, RouterFinto([IN_AMBITO]), RevisoreFinto([OK]),
+                        RiassuntoFinto(["riassunto"]), AMBITO, strumenti=())
+    out = grafo.invoke({"messages": [HumanMessage("Che ore sono?")], "steps": 0,
+                        "revisioni": 0, "riassunto": ""})
+    errori = [m for m in out["messages"] if isinstance(m, ToolMessage)]
+    assert len(errori) == 1 and errori[0].status == "error"
+    assert "non disponibile" in errori[0].content
+    assert out["messages"][-1].content == "L'orologio non è disponibile."

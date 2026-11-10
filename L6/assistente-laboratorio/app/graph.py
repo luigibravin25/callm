@@ -9,13 +9,12 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
-# parti del progetto: ambito, prompt dell'agente, decisione del router, strumenti
+# parti del progetto: ambito, prompt dell'agente, revisore, riassunto, router
 from app.config import Ambito
 from app.llm import SYSTEM_PROMPT
 from app.revisore import MSG_REVISORE, REVISORE, valuta
 from app.riassunto import indice_di_taglio, riassumi
 from app.router import decidi
-from app.tools import STRUMENTI
 
 # un logger per ruolo: nel terminale compaiono come [router], [agente], [rifiuto], [revisore]
 log_router = logging.getLogger("router")
@@ -58,6 +57,21 @@ def _ultima_domanda(messages: list) -> int:
                and not _del_revisore(m))
 
 
+# completa il fuso di tooltime con quello delle preferenze (decisione C dello step 4)
+def completa_fuso(messaggio: AIMessage, fuso: str) -> AIMessage | None:
+    """Copia del messaggio (stesso id) con `fuso` riempito nelle chiamate a tooltime che non lo
+    hanno o lo hanno vuoto (anche null); None se non c'e' nulla da completare."""
+    chiamate, cambiato = [], False
+    for c in messaggio.tool_calls:
+        if c["name"] == "tooltime" and not str(c["args"].get("fuso") or "").strip():
+            # copia della chiamata con il fuso aggiunto, gli altri argomenti restano
+            c = {**c, "args": {**c["args"], "fuso": fuso}}
+            cambiato = True
+        chiamate.append(c)
+    # stesso id: add_messages sostituisce il messaggio nello stato invece di aggiungerne uno
+    return messaggio.model_copy(update={"tool_calls": chiamate}) if cambiato else None
+
+
 # dopo il modello: strumenti, limite, revisore oppure pulizia
 def instrada(state: State, max_steps: int = 5) -> Literal["strumenti", "limite", "revisore",
                                                            "pulizia"]:
@@ -98,12 +112,15 @@ def dopo_router(state: State) -> Literal["modello", "rifiuto"]:
 # costruisce il grafo: router, rifiuto e i nodi dell'agente (modello, strumenti, limite)
 def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
                 max_steps: int = 5, max_revisioni: int = 2, soglia_riassunto: int = 16,
-                messaggi_recenti: int = 6, strumenti=STRUMENTI,
-                system_prompt: str = SYSTEM_PROMPT):
+                messaggi_recenti: int = 6, strumenti=(),
+                system_prompt: str = SYSTEM_PROMPT, fuso_predefinito: str = "Europe/Rome"):
     """`llm`: modello dell'agente con gli strumenti; `router_llm` e `revisore_llm`: modelli con
     output strutturato; `riassunto_llm`: modello che riassume in testo. Input:
-    {"messages": [...], "steps": 0, "revisioni": 0, "riassunto": "..."}."""
-    nodo_strumenti = ToolNode(strumenti)
+    {"messages": [...], "steps": 0, "revisioni": 0, "riassunto": "..."}. `strumenti`: tool del
+    server MCP; `system_prompt`: blocco delle preferenze + regole; `fuso_predefinito`: fuso delle
+    preferenze per tooltime senza fuso."""
+    # ToolNode solo se ci sono strumenti (senza server MCP la lista e' vuota)
+    nodo_strumenti = ToolNode(list(strumenti)) if strumenti else None
 
     # nodo "riassunto": oltre la soglia sostituisce i messaggi vecchi con un riassunto
     def riassunto(state: State) -> dict:
@@ -155,13 +172,30 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
 
     # nodo "strumenti": esegue le chiamate chieste dal modello
     def strumenti_(state: State, config) -> dict:
-        for c in state["messages"][-1].tool_calls:
+        richiesta = state["messages"][-1]
+        # tooltime senza fuso: l'host lo completa con il fuso delle preferenze, prima di tools/call
+        completata = completa_fuso(richiesta, fuso_predefinito)
+        if completata is not None:
+            log_agente.info("tooltime senza fuso: uso %s (preferenze)", fuso_predefinito)
+            richiesta = completata
+            state = {**state, "messages": state["messages"][:-1] + [richiesta]}
+        for c in richiesta.tool_calls:
             log_agente.info("chiamata strumento %s con argomenti %s", c["name"], c["args"])
-        out = nodo_strumenti.invoke(state, config)
+        if nodo_strumenti is None:
+            # server MCP non partito: ogni chiamata riceve un errore, cosi' la chat non cade
+            # e la cronologia resta valida (una risposta per ogni tool_call)
+            out = {"messages": [ToolMessage("Strumento non disponibile: il server MCP non è "
+                                            "partito.", tool_call_id=c["id"], name=c["name"],
+                                            status="error")
+                                for c in richiesta.tool_calls]}
+        else:
+            out = nodo_strumenti.invoke(state, config)
         for m in out["messages"]:
             log_agente.info("risultato strumento %s: %s", m.name, m.content)
+        # il messaggio completato (stesso id) sostituisce quello vecchio nella cronologia
+        nuovi = ([completata] if completata is not None else []) + out["messages"]
         # un passaggio in piu': serve a instrada per fermarsi a max_steps
-        return {"messages": out["messages"], "steps": state["steps"] + 1}
+        return {"messages": nuovi, "steps": state["steps"] + 1}
 
     # nodo "limite": il modello chiede ancora strumenti ma i passaggi sono finiti
     def limite(state: State) -> dict:
