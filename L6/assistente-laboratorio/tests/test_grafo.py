@@ -367,7 +367,8 @@ def test_errore_di_connessione_nel_riassunto_sale():
 
 
 # Verifica che completa_fuso riempia il fuso assente, vuoto o di soli spazi, con lo stesso id.
-@pytest.mark.parametrize("argomenti", [{}, {"fuso": ""}, {"fuso": "  "}, {"parte": "ora"}])
+@pytest.mark.parametrize("argomenti", [{}, {"fuso": ""}, {"fuso": "  "}, {"fuso": None},
+                                       {"parte": "ora"}])
 def test_completa_fuso_vuoto_e_spazi(argomenti):
     msg = AIMessage("", tool_calls=[{"name": "tooltime", "args": argomenti, "id": "c1"}], id="m1")
     nuovo = completa_fuso(msg, "America/New_York")
@@ -408,3 +409,18 @@ def test_un_solo_system_message_con_blocco_e_riassunto():
     assert len(sistemi) == 1
     assert sistemi[0].content.startswith("Preferenze dell'utente")
     assert sistemi[0].content.endswith("L'utente si chiama Luigi.")
+
+
+# Verifica che senza strumenti (server MCP non partito) una chiamata del modello non faccia
+# cadere la chat: riceve un ToolMessage d'errore e il modello risponde.
+def test_chiamata_senza_strumenti_non_cade():
+    agente = ModelloFinto([AIMessage("", tool_calls=[_chiamata()]),
+                           AIMessage("L'orologio non è disponibile.")])
+    grafo = build_graph(agente, RouterFinto([IN_AMBITO]), RevisoreFinto([OK]),
+                        RiassuntoFinto(["riassunto"]), AMBITO, strumenti=())
+    out = grafo.invoke({"messages": [HumanMessage("Che ore sono?")], "steps": 0,
+                        "revisioni": 0, "riassunto": ""})
+    errori = [m for m in out["messages"] if isinstance(m, ToolMessage)]
+    assert len(errori) == 1 and errori[0].status == "error"
+    assert "non disponibile" in errori[0].content
+    assert out["messages"][-1].content == "L'orologio non è disponibile."

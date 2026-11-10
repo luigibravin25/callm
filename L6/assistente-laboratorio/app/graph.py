@@ -60,10 +60,10 @@ def _ultima_domanda(messages: list) -> int:
 # completa il fuso di tooltime con quello delle preferenze (decisione C dello step 4)
 def completa_fuso(messaggio: AIMessage, fuso: str) -> AIMessage | None:
     """Copia del messaggio (stesso id) con `fuso` riempito nelle chiamate a tooltime che non lo
-    hanno o lo hanno vuoto; None se non c'e' nulla da completare."""
+    hanno o lo hanno vuoto (anche null); None se non c'e' nulla da completare."""
     chiamate, cambiato = [], False
     for c in messaggio.tool_calls:
-        if c["name"] == "tooltime" and not str(c["args"].get("fuso", "")).strip():
+        if c["name"] == "tooltime" and not str(c["args"].get("fuso") or "").strip():
             # copia della chiamata con il fuso aggiunto, gli altri argomenti restano
             c = {**c, "args": {**c["args"], "fuso": fuso}}
             cambiato = True
@@ -181,7 +181,15 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
             state = {**state, "messages": state["messages"][:-1] + [richiesta]}
         for c in richiesta.tool_calls:
             log_agente.info("chiamata strumento %s con argomenti %s", c["name"], c["args"])
-        out = nodo_strumenti.invoke(state, config)
+        if nodo_strumenti is None:
+            # server MCP non partito: ogni chiamata riceve un errore, cosi' la chat non cade
+            # e la cronologia resta valida (una risposta per ogni tool_call)
+            out = {"messages": [ToolMessage("Strumento non disponibile: il server MCP non è "
+                                            "partito.", tool_call_id=c["id"], name=c["name"],
+                                            status="error")
+                                for c in richiesta.tool_calls]}
+        else:
+            out = nodo_strumenti.invoke(state, config)
         for m in out["messages"]:
             log_agente.info("risultato strumento %s: %s", m.name, m.content)
         # il messaggio completato (stesso id) sostituisce quello vecchio nella cronologia
