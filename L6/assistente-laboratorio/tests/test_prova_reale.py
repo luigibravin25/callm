@@ -92,3 +92,29 @@ def test_prova_reale_riassunto_conserva_il_nome():
                 AIMessage("A Tokyo sono le ore 20 in punto.")]
     testo = riassumi(build_riassunto_llm(load_settings()), "", messaggi)
     assert testo is not None and "Luigi" in testo, testo
+
+
+# Verifica con gemma (evidenza 1): "Che ore sono?" senza luogo usa il fuso delle preferenze,
+# America/New_York, senza chiederlo all'utente.
+def test_prova_reale_fuso_delle_preferenze():
+    from app.config import load_settings
+    from app.preferenze import valida
+    p = valida('{"fuso": "America/New_York"}', load_settings().fuso_predefinito)
+    grafo, _ = _grafo_vero(p)
+    out = _chiedi(grafo, "Che ore sono?")
+    risultati = [m for m in out["messages"] if isinstance(m, ToolMessage)]
+    assert risultati and risultati[0].content.startswith("New York:")
+    assert "New York" in out["messages"][-1].content
+
+
+# Verifica con gemma (evidenza 2): con lingua inglese la risposta e' in inglese, anche se il
+# risultato di tooltime e' in italiano.
+def test_prova_reale_lingua_inglese():
+    from app.config import load_settings
+    from app.preferenze import valida
+    p = valida('{"lingua": "inglese", "stile": "sintetico"}', load_settings().fuso_predefinito)
+    grafo, _ = _grafo_vero(p)
+    risposta = str(_chiedi(grafo, "Che ore sono a Tokyo?")["messages"][-1].content)
+    testo = risposta.lower()
+    assert "sono le ore" not in testo
+    assert any(parola in testo for parola in ("it is", "it's", "time", "o'clock")), risposta
