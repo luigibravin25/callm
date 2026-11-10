@@ -63,6 +63,7 @@ def preferenze() -> str:
         raise ResourceError(f"File delle preferenze non trovato: {percorso}") from None
 
 
-# avvio come processo: il client MCP parla con il server su stdin/stdout
+# avvio come processo: il client MCP parla con il server su stdin/stdout;
+# show_banner=False: niente riquadro di FastMCP nel terminale della chat (come L5)
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="stdio", show_banner=False)

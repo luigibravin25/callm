@@ -107,3 +107,15 @@ def test_tooltime_via_mcp(monkeypatch):
     risultato = _con_client(
         lambda c: c.call_tool("tooltime", {"fuso": "Asia/Tokyo", "parte": "ora"}))
     assert risultato.content[0].text == "Tokyo: sono le ore 20 in punto"
+
+
+# Verifica che il server avviato come processo non scriva il banner di FastMCP: comparirebbe nel
+# terminale della chat a ogni avvio e a ogni tools/call (visto nella CLI vera).
+def test_server_senza_banner():
+    import subprocess
+    import sys
+    # stdin vuoto: il server legge la fine dell'input e si chiude da solo
+    finito = subprocess.run([sys.executable, "-m", "mcp_assistente.server"], input="",
+                            capture_output=True, text=True, encoding="utf-8", timeout=60,
+                            cwd=CARTELLA_PROGETTO)
+    assert "FastMCP" not in finito.stderr and "FastMCP" not in finito.stdout
