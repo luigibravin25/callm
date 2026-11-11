@@ -147,8 +147,10 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
     def router(state: State) -> dict:
         decisione = decidi(router_llm, ambito, state["messages"])
         destinazione = "rifiuto" if decisione.categoria == "fuori_ambito" else "agente"
-        log_router.info('categoria=%s motivo="%s" → %s',
-                        decisione.categoria, decisione.motivo, destinazione)
+        # argomento scelto dal modello (step 5); vuoto con un output non valido
+        argomento = f" (argomento {decisione.argomento})" if decisione.argomento else ""
+        log_router.info('categoria=%s motivo="%s" → %s%s',
+                        decisione.categoria, decisione.motivo, destinazione, argomento)
         return {"categoria": decisione.categoria, "motivo": decisione.motivo}
 
     # nodo "rifiuto": risposta fissa dal file dell'ambito, nessuna chiamata al modello

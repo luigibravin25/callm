@@ -25,6 +25,17 @@ class Settings:
     messaggi_recenti: int = 6  # messaggi recenti (almeno) conservati interi dal riassunto
 
 
+# nome riservato: argomento del router per tutto cio' che e' fuori ambito
+ALTRO = "altro"
+
+
+# argomento dell'ambito: il router sceglie uno di questi nomi (o "altro")
+@dataclass(frozen=True)
+class Argomento:
+    nome: str  # nome mandato al modello nello schema (es. ora_data_fusi)
+    descrizione: str  # cosa comprende, scritto nel prompt del router
+
+
 # ambito dell'agente letto da config/ambito.toml: entra nel prompt del router
 @dataclass(frozen=True)
 class Ambito:
@@ -32,6 +43,7 @@ class Ambito:
     rifiuto: str  # risposta fissa per le domande fuori ambito
     esempi_in_ambito: tuple[str, ...] = ()  # esempi di domande accettate
     esempi_fuori_ambito: tuple[str, ...] = ()  # esempi di domande rifiutate
+    argomenti: tuple[Argomento, ...] = ()  # argomenti in ambito (step 5: router per argomento)
 
 
 # fuso da usare quando l'utente non indica un luogo (usato anche da tooltime)
@@ -121,6 +133,27 @@ def _esempi(dati: dict, campo: str, percorso: Path) -> tuple[str, ...]:
     return tuple(e.strip() for e in valore if e.strip())
 
 
+# controlla gli argomenti dell'ambito ([[argomenti]]): almeno uno, testi non vuoti, nomi unici,
+# "altro" riservato
+def _argomenti(dati: dict, percorso: Path) -> tuple[Argomento, ...]:
+    valore = dati.get("argomenti")
+    if not isinstance(valore, list) or not valore:
+        raise ValueError(f"{percorso.name}: servono uno o piu' [[argomenti]] con nome e descrizione")
+    argomenti = []
+    for voce in valore:
+        if not isinstance(voce, dict):
+            raise ValueError(f"{percorso.name}: ogni voce di [[argomenti]] vuole nome e descrizione")
+        # stessi controlli dei campi di testo obbligatori, con il nome del campo nell'errore
+        nome = _testo(voce, "nome", percorso)
+        descrizione = _testo(voce, "descrizione", percorso)
+        if nome == ALTRO:
+            raise ValueError(f"{percorso.name}: l'argomento '{ALTRO}' e' riservato (fuori ambito)")
+        if any(a.nome == nome for a in argomenti):
+            raise ValueError(f"{percorso.name}: argomento '{nome}' ripetuto")
+        argomenti.append(Argomento(nome, descrizione))
+    return tuple(argomenti)
+
+
 # legge e controlla il file TOML dell'ambito
 def load_ambito(percorso: Path) -> Ambito:
     """Ambito dal file TOML; ogni problema diventa un ValueError con file e campo."""
@@ -137,4 +170,5 @@ def load_ambito(percorso: Path) -> Ambito:
         rifiuto=_testo(dati, "rifiuto", percorso),
         esempi_in_ambito=_esempi(dati, "esempi_in_ambito", percorso),
         esempi_fuori_ambito=_esempi(dati, "esempi_fuori_ambito", percorso),
+        argomenti=_argomenti(dati, percorso),
     )

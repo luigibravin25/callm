@@ -192,7 +192,7 @@ def avvia(input_fn=input, output_fn=print) -> None:
         raise SystemExit(f"Configurazione non valida: {errore}")
     # una sola lettura delle preferenze per sessione, prima di chiamare il modello
     strumenti, preferenze, prompts = prepara_agente(impostazioni.fuso_predefinito)
-    grafo = build_graph(llm.build_llm(impostazioni, strumenti), llm.build_router_llm(impostazioni),
+    grafo = build_graph(llm.build_llm(impostazioni, strumenti), llm.build_router_llm(impostazioni, ambito),
                         llm.build_revisore_llm(impostazioni),
                         llm.build_riassunto_llm(impostazioni),
                         ambito, impostazioni.max_steps, impostazioni.max_revisioni,

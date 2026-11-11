@@ -186,7 +186,7 @@ def _finti_per_avvio(monkeypatch, testo='{"lingua": "inglese", "fuso": "America/
 
     monkeypatch.setattr(adattatore_mcp, "elenca_prompt", elenca)
     monkeypatch.setattr(llm, "build_llm", lambda s, strumenti: ModelloFinto([AIMessage("ok")]))
-    monkeypatch.setattr(llm, "build_router_llm", lambda s: RouterFinto([IN_AMBITO]))
+    monkeypatch.setattr(llm, "build_router_llm", lambda s, a: RouterFinto([IN_AMBITO]))
     monkeypatch.setattr(llm, "build_revisore_llm", lambda s: RevisoreFinto([OK]))
     monkeypatch.setattr(llm, "build_riassunto_llm", lambda s: RiassuntoFinto(["riassunto"]))
     monkeypatch.setenv("LM_BASE_URL", "http://127.0.0.1:1234/v1")

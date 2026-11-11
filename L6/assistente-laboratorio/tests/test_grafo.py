@@ -441,3 +441,11 @@ def test_messaggio_di_prompt_passa_da_router_agente_e_revisore(log):
     assert len(agente.chiamate) == 1 and agente.chiamate[0][-1].content == testo
     # il revisore controlla la risposta contro il testo del prompt
     assert len(revisore.chiamate) == 1 and testo in revisore.chiamate[0][-1].content
+
+
+
+# Verifica che il log del router mostri anche l'argomento scelto.
+def test_log_del_router_con_argomento(log):
+    decisione = DecisioneRouter(categoria="conversazione", motivo="ora", argomento="ora_data_fusi")
+    _esegui(ModelloFinto([AIMessage("Sono le 10")]), RouterFinto([decisione]))
+    assert 'categoria=conversazione motivo="ora" → agente (argomento ora_data_fusi)' in log.text

@@ -81,7 +81,9 @@ def test_ambito_vero_si_carica():
 # Verifica che l'ambito vero comprenda i concetti della lezione e la conversazione (step 5).
 def test_ambito_versionato_con_concetti_e_conversazione():
     a = load_ambito(CARTELLA_PROGETTO / "config" / "ambito.toml")
-    assert "Model Context Protocol" in a.descrizione and "conversazione" in a.descrizione
+    # dallo step 5 i concetti stanno negli argomenti (router per argomento)
+    testi = " ".join(x.descrizione for x in a.argomenti)
+    assert "Model Context Protocol" in testi and "conversazione" in testi
     assert "Spiegami cos'è il Model Context Protocol" in a.esempi_in_ambito
     assert "Riassumi la nostra conversazione" in a.esempi_in_ambito
     assert "Spiegami la storia dell'Impero romano" in a.esempi_fuori_ambito
@@ -160,3 +162,38 @@ def test_recenti_non_validi(ambiente, valore):
     ambiente.setenv("MESSAGGI_RECENTI", valore)
     with pytest.raises(ValueError, match="MESSAGGI_RECENTI"):
         load_settings()
+
+
+# --- argomenti dell'ambito (step 5, router per argomento) ---
+
+# testo minimo valido dell'ambito, a cui si aggiungono gli argomenti del test
+BASE = 'descrizione = "ora"\nrifiuto = "no"\n'
+
+
+# Verifica che il file vero contenga i 4 argomenti, in ordine, con la descrizione.
+def test_argomenti_del_file_vero():
+    from app.config import Argomento
+    a = load_ambito(CARTELLA_PROGETTO / "config" / "ambito.toml")
+    assert [x.nome for x in a.argomenti] == ["ora_data_fusi", "concetti_lezione",
+                                             "conversazione_in_corso", "saluti"]
+    assert all(isinstance(x, Argomento) and x.descrizione for x in a.argomenti)
+
+
+# Verifica gli errori sugli argomenti: assenti, nome o descrizione vuoti, nome ripetuto, "altro".
+@pytest.mark.parametrize("argomenti,messaggio", [
+    ("", "argomenti"),
+    ('[[argomenti]]\nnome = " "\ndescrizione = "x"\n', "nome"),
+    ('[[argomenti]]\nnome = "ora"\ndescrizione = ""\n', "descrizione"),
+    ('[[argomenti]]\nnome = "ora"\ndescrizione = "x"\n[[argomenti]]\nnome = "ora"\n'
+     'descrizione = "y"\n', "ripetuto"),
+    ('[[argomenti]]\nnome = "altro"\ndescrizione = "x"\n', "riservato"),
+])
+def test_argomenti_non_validi(tmp_path, argomenti, messaggio):
+    with pytest.raises(ValueError, match=messaggio):
+        load_ambito(_toml(tmp_path, BASE + argomenti))
+
+
+# Verifica un file valido con un argomento: nome e descrizione senza spazi ai bordi.
+def test_argomenti_validi(tmp_path):
+    a = load_ambito(_toml(tmp_path, BASE + '[[argomenti]]\nnome = " ora "\ndescrizione = " ore "\n'))
+    assert [(x.nome, x.descrizione) for x in a.argomenti] == [("ora", "ore")]
