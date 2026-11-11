@@ -1,7 +1,7 @@
 # test dei collegamenti a LM Studio: l'agente conosce gli strumenti MCP, il router nessuno
 from pathlib import Path
 
-from app.config import Settings
+from app.config import Ambito, Argomento, Settings
 from app.llm import build_llm, build_router_llm
 from app.preferenze import Preferenze
 from tests.finti import tooltime_finto
@@ -10,6 +10,9 @@ from tests.finti import tooltime_finto
 IMPOSTAZIONI = Settings(base_url="http://127.0.0.1:1234/v1", model="google/gemma-4-e2b",
                         max_steps=5, fuso_predefinito="Europe/Rome",
                         ambito_file=Path("config/ambito.toml"))
+# ambito di prova con un argomento (lo schema del router dipende dagli argomenti)
+AMBITO = Ambito(descrizione="Prova.", rifiuto="No.",
+                argomenti=(Argomento("ora_data_fusi", "ora e data"),))
 # preferenze di prova per il prompt dell'agente
 PREFERENZE = Preferenze("inglese", "America/New_York", "sintetico")
 
@@ -42,7 +45,7 @@ def test_prompt_agente_senza_strumenti():
 
 # Verifica che il modello del router non riceva strumenti.
 def test_router_llm_senza_strumenti():
-    router_llm = build_router_llm(IMPOSTAZIONI)
+    router_llm = build_router_llm(IMPOSTAZIONI, AMBITO)
     assert "tooltime" not in repr(router_llm)
 
 
@@ -62,3 +65,12 @@ def test_system_prompt_spiega_il_revisore():
 def test_riassunto_llm_senza_strumenti():
     from app.llm import build_riassunto_llm
     assert "tooltime" not in repr(build_riassunto_llm(IMPOSTAZIONI))
+
+
+
+# Verifica che il router riceva lo schema costruito dagli argomenti dell'ambito.
+def test_router_llm_usa_lo_schema_dell_ambito():
+    # response_format e' la classe dello schema: i valori ammessi stanno nel suo json_schema
+    schema = build_router_llm(IMPOSTAZIONI, AMBITO).first.kwargs["response_format"]
+    enum = schema.model_json_schema()["properties"]["argomento"]["enum"]
+    assert enum == ["ora_data_fusi", "altro"]

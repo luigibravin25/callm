@@ -23,7 +23,7 @@ def _grafo_vero(preferenze=None):
     ambito = load_ambito(s.ambito_file)
     strumenti = carica_strumenti()
     p = preferenze or predefinite(s.fuso_predefinito)
-    grafo = build_graph(build_llm(s, strumenti), build_router_llm(s), build_revisore_llm(s),
+    grafo = build_graph(build_llm(s, strumenti), build_router_llm(s, ambito), build_revisore_llm(s),
                         build_riassunto_llm(s), ambito, s.max_steps, s.max_revisioni,
                         s.soglia_riassunto, s.messaggi_recenti, strumenti=strumenti,
                         system_prompt=prompt_agente(p, True), fuso_predefinito=p.fuso)
@@ -118,3 +118,45 @@ def test_prova_reale_lingua_inglese():
     testo = risposta.lower()
     assert "sono le ore" not in testo
     assert any(parola in testo for parola in ("it is", "it's", "time", "o'clock")), risposta
+
+
+# --- prompt MCP (step 5): messaggi ottenuti dal server vero, poi grafo vero ---
+
+# messaggi di un prompt chiesti al server vero (prompts/get)
+def _prompt(nome, **argomenti):
+    from app.adattatore_mcp import ottieni_prompt
+    return ottieni_prompt(nome, argomenti)
+
+
+# Verifica con gemma (evidenza 1): spiega su MCP a livello base passa il router e ha risposta.
+def test_prova_reale_prompt_spiega_in_ambito(grafo_e_ambito):
+    grafo, _ = grafo_e_ambito
+    out = grafo.invoke({"messages": _prompt("spiega", argomento="Model Context Protocol",
+                                            livello="base"),
+                        "steps": 0, "revisioni": 0, "riassunto": ""})
+    assert out["categoria"] == "conversazione", out.get("motivo")
+    assert str(out["messages"][-1].content).strip()
+
+
+# Verifica con gemma (evidenza 2): riassumi_conversazione dopo due turni passa il router e
+# riassume la sessione (cita Tokyo).
+def test_prova_reale_prompt_riassumi(grafo_e_ambito):
+    grafo, _ = grafo_e_ambito
+    stato = {"messages": [], "riassunto": ""}
+    for domanda in ("Ciao, mi chiamo Luigi", "Che ore sono a Tokyo?"):
+        stato = grafo.invoke({"messages": stato["messages"] + [HumanMessage(domanda)],
+                              "steps": 0, "revisioni": 0, "riassunto": stato["riassunto"]})
+    out = grafo.invoke({"messages": stato["messages"] + _prompt("riassumi_conversazione"),
+                        "steps": 0, "revisioni": 0, "riassunto": stato["riassunto"]})
+    assert out["categoria"] == "conversazione", out.get("motivo")
+    assert "Tokyo" in str(out["messages"][-1].content)
+
+
+# Verifica con gemma: spiega su un argomento fuori tema riceve il rifiuto fisso.
+def test_prova_reale_spiega_fuori_ambito(grafo_e_ambito):
+    grafo, ambito = grafo_e_ambito
+    out = grafo.invoke({"messages": _prompt("spiega",
+                                            argomento="la storia dell'Impero romano"),
+                        "steps": 0, "revisioni": 0, "riassunto": ""})
+    assert out["categoria"] == "fuori_ambito"
+    assert out["messages"][-1].content == ambito.rifiuto

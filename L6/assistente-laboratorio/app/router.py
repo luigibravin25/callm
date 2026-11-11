@@ -5,10 +5,10 @@ from typing import Literal
 # messaggi della conversazione; errori di LM Studio (connessione, HTTP); schema dell'output
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from openai import APIError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
-# ambito dell'agente letto da config/ambito.toml
-from app.config import Ambito
+# ambito dell'agente letto da config/ambito.toml; nome riservato per il fuori ambito
+from app.config import ALTRO, Ambito
 from app.revisore import REVISORE
 
 # logger del router: i suoi messaggi compaiono come "[router] ..."
@@ -23,12 +23,12 @@ FRASE_SOLO_ARGOMENTO = (
     "rispondere: l'assistente ha strumenti per l'ora di qualunque città e usa un fuso "
     "predefinito se il luogo manca.")
 # un output in dubbio deve far passare la domanda, come l'output non valido
-FRASE_NEL_DUBBIO = "Nel dubbio scegli conversazione."
+FRASE_NEL_DUBBIO = "Nel dubbio scegli l'argomento più vicino, non altro."
 
 MAX_ERRORE = 100  # caratteri massimi dell'errore riportato nel motivo e nel log
 
 
-# output strutturato del router: LM Studio lo riceve come json_schema
+# decisione del router usata dal grafo: la categoria la ricava decidi() dall'argomento
 class DecisioneRouter(BaseModel):
     # motivo per primo: il modello scrive i campi in quest'ordine, cosi' ragiona prima di
     # decidere (con categoria per prima gemma scriveva "rientra" e poi fuori_ambito)
@@ -36,6 +36,18 @@ class DecisioneRouter(BaseModel):
     # Literal: ogni altro valore e' un errore di validazione (output non valido)
     categoria: Literal["conversazione", "fuori_ambito"] = Field(
         description="conversazione se la domanda rientra nell'ambito, altrimenti fuori_ambito")
+    # argomento scelto dal modello (vuoto se la decisione non viene dallo schema per argomento)
+    argomento: str = ""
+
+
+# schema mandato a LM Studio (json_schema): motivo, poi un argomento tra quelli dell'ambito o
+# "altro". Con gemma e2b l'elenco chiuso decide meglio di conversazione/fuori_ambito (step 5)
+def schema_router(ambito: Ambito) -> type[BaseModel]:
+    nomi = tuple(a.nome for a in ambito.argomenti) + (ALTRO,)
+    return create_model(
+        "DecisioneArgomento",
+        motivo=(str, Field(description="motivo breve della decisione, in italiano")),
+        argomento=(Literal[nomi], Field(description="argomento della domanda")))
 
 
 # costruisce il prompt di sistema del router a partire dall'ambito
@@ -46,20 +58,18 @@ def prompt_router(ambito: Ambito) -> str:
         "rientra nell'ambito dell'assistente.",
         "Ambito dell'assistente:",
         ambito.descrizione,
-        "Saluti, ringraziamenti e domande sull'assistente stesso sono sempre conversazione.",
-        FRASE_SOLO_ARGOMENTO,
-        FRASE_NO_STRUMENTI,
-        FRASE_NEL_DUBBIO,
+        "Argomenti dell'assistente:",
     ]
+    # un argomento per riga, poi "altro" per tutto cio' che e' fuori ambito
+    righe += [f"- {a.nome}: {a.descrizione}" for a in ambito.argomenti]
+    righe += [f"- {ALTRO}: tutto il resto (fuori ambito)",
+              FRASE_SOLO_ARGOMENTO, FRASE_NO_STRUMENTI, FRASE_NEL_DUBBIO]
     # gli esempi sono facoltativi: si aggiungono solo se il file li contiene
     if ambito.esempi_in_ambito:
-        righe.append("Esempi in ambito (conversazione): "
-                     + "; ".join(ambito.esempi_in_ambito))
+        righe.append("Esempi di argomenti dell'assistente: " + "; ".join(ambito.esempi_in_ambito))
     if ambito.esempi_fuori_ambito:
-        righe.append("Esempi fuori ambito (fuori_ambito): "
-                     + "; ".join(ambito.esempi_fuori_ambito))
-    righe.append("Rispondi con categoria (conversazione oppure fuori_ambito) e un motivo breve "
-                 "in italiano.")
+        righe.append(f"Esempi di {ALTRO}: " + "; ".join(ambito.esempi_fuori_ambito))
+    righe.append("Rispondi con un motivo breve in italiano e l'argomento della domanda.")
     return "\n".join(righe)
 
 
@@ -96,6 +106,12 @@ def decidi(router_llm, ambito: Ambito, messages: list) -> DecisioneRouter:
     else:
         if isinstance(decisione, DecisioneRouter):
             return decisione
+        # output dello schema per argomento: "altro" = fuori ambito, ogni altro = conversazione
+        argomento = getattr(decisione, "argomento", None)
+        if isinstance(argomento, str) and isinstance(getattr(decisione, "motivo", None), str):
+            categoria = "fuori_ambito" if argomento == ALTRO else "conversazione"
+            return DecisioneRouter(motivo=decisione.motivo, categoria=categoria,
+                                   argomento=argomento)
         # None: il modello non ha prodotto la risposta (per esempio token finiti nel ragionamento)
         problema = f"risposta {type(decisione).__name__}"[:MAX_ERRORE]
     logger.warning("output non valido (%s): la domanda passa all'agente", problema)

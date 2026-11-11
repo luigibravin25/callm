@@ -424,3 +424,28 @@ def test_chiamata_senza_strumenti_non_cade():
     assert len(errori) == 1 and errori[0].status == "error"
     assert "non disponibile" in errori[0].content
     assert out["messages"][-1].content == "L'orologio non è disponibile."
+
+
+# Verifica che il messaggio di un prompt MCP (step 5) passi dal grafo come una domanda:
+# router, agente e revisore lo ricevono, e la risposta dell'agente chiude il turno.
+def test_messaggio_di_prompt_passa_da_router_agente_e_revisore(log):
+    from mcp_assistente.server import LIVELLI
+    testo = f"Spiegami MCP. {LIVELLI['base']}"
+    agente = ModelloFinto([AIMessage("MCP collega un modello agli strumenti.")])
+    router = RouterFinto([IN_AMBITO])
+    revisore = RevisoreFinto([OK])
+    out = _esegui(agente, router, testo, revisore=revisore)
+    assert out["messages"][-1].content == "MCP collega un modello agli strumenti."
+    # il router riceve il testo del prompt come ultima domanda
+    assert router.chiamate[0][-1].content == testo
+    assert len(agente.chiamate) == 1 and agente.chiamate[0][-1].content == testo
+    # il revisore controlla la risposta contro il testo del prompt
+    assert len(revisore.chiamate) == 1 and testo in revisore.chiamate[0][-1].content
+
+
+
+# Verifica che il log del router mostri anche l'argomento scelto.
+def test_log_del_router_con_argomento(log):
+    decisione = DecisioneRouter(categoria="conversazione", motivo="ora", argomento="ora_data_fusi")
+    _esegui(ModelloFinto([AIMessage("Sono le 10")]), RouterFinto([decisione]))
+    assert 'categoria=conversazione motivo="ora" → agente (argomento ora_data_fusi)' in log.text

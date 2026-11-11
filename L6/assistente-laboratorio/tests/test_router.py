@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from openai import APIConnectionError
 from pydantic import ValidationError
 
-from app.config import Ambito
+from app.config import Ambito, Argomento
 from app.router import (FRASE_NEL_DUBBIO, FRASE_NO_STRUMENTI, FRASE_SOLO_ARGOMENTO,
                         DecisioneRouter, decidi, messaggi_per_router, prompt_router)
 from tests.finti import RouterFinto
@@ -92,11 +92,14 @@ def test_eccezione_di_validazione_va_all_agente(caplog):
     assert "json rotto" in caplog.text
 
 
-# Verifica l'ordine dei campi dello schema: prima il motivo, poi la categoria.
-def test_motivo_prima_della_categoria():
+# Verifica l'ordine dei campi dello schema mandato al modello: prima il motivo, poi la decisione.
+def test_motivo_prima_della_decisione():
     # il modello genera i campi nell'ordine dello schema: prima ragiona (motivo), poi decide.
-    # Con categoria per prima gemma scriveva "rientra nell'ambito" e categoria fuori_ambito
-    assert list(DecisioneRouter.model_json_schema()["properties"]) == ["motivo", "categoria"]
+    # Con la decisione per prima gemma scriveva "rientra nell'ambito" e poi fuori_ambito.
+    # Dallo step 5 la decisione e' l'argomento (schema_router); DecisioneRouter resta al grafo
+    from app.router import schema_router
+    schema = schema_router(AMBITO).model_json_schema()
+    assert list(schema["properties"]) == ["motivo", "argomento"]
 
 
 # Verifica che lo schema rifiuti una categoria diversa dalle due ammesse.
@@ -118,3 +121,37 @@ def test_router_ignora_i_messaggi_del_revisore():
     cronologia = [HumanMessage("Che ore sono?"), AIMessage("bozza"),
                   HumanMessage("[Revisore] manca una parte", name=REVISORE)]
     assert messaggi_per_router(AMBITO, cronologia)[1].content == "Che ore sono?"
+
+
+# --- router per argomento (step 5) ---
+
+AMBITO_ARG = Ambito(descrizione="Assistente di prova.", rifiuto="No.",
+                    argomenti=(Argomento("ora_data_fusi", "ora e data"),
+                               Argomento("saluti", "saluti e ringraziamenti")))
+
+
+# Verifica lo schema mandato a LM Studio: motivo prima, argomento tra i nomi del file e "altro".
+def test_schema_router_dall_ambito():
+    from app.router import ALTRO, schema_router
+    schema = schema_router(AMBITO_ARG).model_json_schema()
+    assert list(schema["properties"]) == ["motivo", "argomento"]
+    assert schema["properties"]["argomento"]["enum"] == ["ora_data_fusi", "saluti", ALTRO]
+
+
+# Verifica che il prompt elenchi gli argomenti e "altro" come fuori ambito.
+def test_prompt_elenca_gli_argomenti():
+    prompt = prompt_router(AMBITO_ARG)
+    assert "- ora_data_fusi: ora e data" in prompt
+    assert "- saluti: saluti e ringraziamenti" in prompt
+    assert "- altro: tutto il resto (fuori ambito)" in prompt
+
+
+# Verifica la conversione: "altro" -> fuori_ambito, ogni altro argomento -> conversazione.
+@pytest.mark.parametrize("argomento,categoria", [("altro", "fuori_ambito"),
+                                                 ("ora_data_fusi", "conversazione"),
+                                                 ("saluti", "conversazione")])
+def test_decidi_ricava_la_categoria(argomento, categoria):
+    from app.router import schema_router
+    uscita = schema_router(AMBITO_ARG)(motivo="m", argomento=argomento)
+    decisione = decidi(RouterFinto([uscita]), AMBITO_ARG, [HumanMessage("x")])
+    assert decisione == DecisioneRouter(motivo="m", categoria=categoria, argomento=argomento)

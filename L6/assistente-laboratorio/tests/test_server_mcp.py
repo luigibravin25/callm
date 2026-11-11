@@ -1,8 +1,9 @@
-# Test del server MCP mcp_assistente: tooltime e resource utente://preferenze.
+# Test del server MCP mcp_assistente: tooltime, resource utente://preferenze e prompt (step 5).
 # Il client di FastMCP parla con il server in memoria (nessun sottoprocesso, nessun LM Studio).
-# librerie standard: codice asincrono, JSON, istanti fissi
+# librerie standard: codice asincrono, JSON, espressioni regolari, istanti fissi
 import asyncio
 import json
+import re
 from datetime import datetime, timezone
 
 import pytest
@@ -10,7 +11,9 @@ import pytest
 from fastmcp import Client
 
 from mcp_assistente import orologio
-from mcp_assistente.server import CARTELLA_PROGETTO, URI_PREFERENZE, mcp, percorso_preferenze
+from mcp_assistente.server import (CARTELLA_PROGETTO, DESCRIZIONE_RIASSUMI, DESCRIZIONE_SPIEGA,
+                                    LIVELLI, STILI, TESTO_RIASSUMI, URI_PREFERENZE, mcp,
+                                    percorso_preferenze)
 
 
 # esegue una funzione asincrona che riceve il client collegato al server
@@ -119,3 +122,62 @@ def test_server_senza_banner():
                             capture_output=True, text=True, encoding="utf-8", timeout=60,
                             cwd=CARTELLA_PROGETTO)
     assert "FastMCP" not in finito.stderr and "FastMCP" not in finito.stdout
+
+
+# --- prompt (step 5) ---
+
+# testo dell'unico messaggio restituito da un prompt (prompts/get)
+def _testo_prompt(nome, argomenti):
+    risultato = _con_client(lambda c: c.get_prompt(nome, argomenti))
+    # un solo messaggio, dell'utente: e' la "domanda" che entra nella cronologia
+    assert len(risultato.messages) == 1 and risultato.messages[0].role == "user"
+    return risultato.messages[0].content.text
+
+
+# Verifica che i due prompt siano pubblicati con descrizioni e argomenti, e che non siano tool.
+def test_prompt_pubblicati_e_non_tool():
+    prompts = _con_client(lambda c: c.list_prompts())
+    assert [p.name for p in prompts] == ["spiega", "riassumi_conversazione"]
+    assert prompts[0].description == DESCRIZIONE_SPIEGA
+    assert prompts[1].description == DESCRIZIONE_RIASSUMI
+    assert [(a.name, a.required) for a in prompts[0].arguments] == [("argomento", True),
+                                                                    ("livello", False)]
+    assert [(a.name, a.required) for a in prompts[1].arguments] == [("stile", False)]
+    # argomenti senza descrizione: FastMCP vi aggiungerebbe "Provide as a JSON string..."
+    assert all(a.description is None for p in prompts for a in p.arguments)
+    assert [t.name for t in _lista_tool()] == ["tooltime"]
+
+
+# Verifica il testo di spiega per ogni livello: domanda fissa piu' la frase del livello.
+@pytest.mark.parametrize("livello", ["base", "intermedio", "avanzato"])
+def test_spiega_per_livello(livello):
+    testo = _testo_prompt("spiega", {"argomento": "MCP", "livello": livello})
+    assert testo == f"Spiegami MCP. {LIVELLI[livello]}"
+
+
+# Verifica che senza livello si usi base e che maiuscole e spazi del livello non contino.
+def test_spiega_livello_predefinito_e_normalizzato():
+    assert _testo_prompt("spiega", {"argomento": " MCP "}) == f"Spiegami MCP. {LIVELLI['base']}"
+    assert (_testo_prompt("spiega", {"argomento": "MCP", "livello": " Avanzato "})
+            == f"Spiegami MCP. {LIVELLI['avanzato']}")
+
+
+# Verifica il testo di riassumi_conversazione per ogni stile e lo stile predefinito.
+@pytest.mark.parametrize("stile", ["sintetico", "dettagliato"])
+def test_riassumi_per_stile(stile):
+    assert _testo_prompt("riassumi_conversazione", {"stile": stile}) == \
+        f"{TESTO_RIASSUMI} {STILI[stile]}"
+    assert _testo_prompt("riassumi_conversazione", {}) == f"{TESTO_RIASSUMI} {STILI['sintetico']}"
+
+
+# Verifica che valori non ammessi e argomento vuoto diano un errore con il messaggio italiano.
+@pytest.mark.parametrize("prompt,argomenti,messaggio", [
+    ("spiega", {"argomento": "MCP", "livello": "pippo"},
+     "livello non valido: 'pippo' (ammessi: base, intermedio, avanzato)"),
+    ("riassumi_conversazione", {"stile": "lungo"},
+     "stile non valido: 'lungo' (ammessi: sintetico, dettagliato)"),
+    ("spiega", {"argomento": "  "}, "argomento vuoto: scrivi cosa spiegare"),
+])
+def test_valori_non_validi(prompt, argomenti, messaggio):
+    with pytest.raises(Exception, match=re.escape(messaggio)):
+        _con_client(lambda c: c.get_prompt(prompt, argomenti))

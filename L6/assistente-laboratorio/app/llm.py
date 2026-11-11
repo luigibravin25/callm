@@ -4,7 +4,7 @@ from langchain_openai import ChatOpenAI
 # configurazione, schemi delle decisioni di router e revisore, preferenze dell'utente
 from app.config import Settings
 from app.revisore import DecisioneRevisore
-from app.router import DecisioneRouter
+from app.router import schema_router
 from app.preferenze import Preferenze, blocco_preferenze
 
 # l'agente deve sapere che i messaggi [Revisore] non vengono dall'utente (step 2)
@@ -52,10 +52,11 @@ def build_llm(settings: Settings, strumenti: list, max_tokens: int = 8192):
 
 
 # modello del router: stesso modello, nessuno strumento, risposta vincolata allo schema
-def build_router_llm(settings: Settings, max_tokens: int = 2048):
-    # json_schema: LM Studio riceve lo schema come response_format e vincola l'output
+def build_router_llm(settings: Settings, ambito, max_tokens: int = 2048):
+    # json_schema: LM Studio riceve lo schema come response_format e vincola l'output; lo schema
+    # elenca gli argomenti dell'ambito (step 5)
     return _chat(settings, temperature=0, max_tokens=max_tokens).with_structured_output(
-        DecisioneRouter, method="json_schema")
+        schema_router(ambito), method="json_schema")
 
 
 # modello del revisore: stesso modello, nessuno strumento, risposta vincolata allo schema
