@@ -1,7 +1,7 @@
 # Lezione 6 · Chat con agente LangGraph
 
-Applicazione di chat con agente basata su LangGraph, costruita per step. Stato attuale: **step 4**
-(preferenze via resource MCP, riassunto, router e revisore). L'agente risponde da terminale; un nodo router decide prima se la domanda
+Applicazione di chat con agente basata su LangGraph, costruita per step. Stato attuale: **step 5**
+(prompt MCP con i comandi della CLI, preferenze via resource MCP, riassunto, router e revisore). L'agente risponde da terminale; un nodo router decide prima se la domanda
 rientra nell'ambito dichiarato in configurazione; un nodo revisore controlla poi che la risposta
 risponda a tutta la domanda.
 
@@ -18,8 +18,11 @@ START → riassunto → router ─(conversazione)→ modello ⇄ strumenti
   `MESSAGGI_RECENTI` messaggi; il taglio cade sempre all'inizio di un turno). Il riassunto va in
   fondo al prompt di sistema dell'agente. Sotto la soglia non chiama il modello; se il riassunto
   fallisce i messaggi restano.
-- `router`: stesso modello, nessuno strumento, output strutturato `motivo` + `categoria`
-  (`conversazione` o `fuori_ambito`). Non sceglie gli strumenti: lo fa l'agente.
+- `router`: stesso modello, nessuno strumento, output strutturato `motivo` + `argomento`, scelto
+  dall'elenco `[[argomenti]]` di `config/ambito.toml` oppure `altro`. Il codice ricava la
+  categoria: `altro` = `fuori_ambito`, ogni altro argomento = `conversazione` (dallo step 5: con
+  l'ambito più largo gemma e2b decideva male con la sola scelta conversazione/fuori ambito). Non
+  sceglie gli strumenti: lo fa l'agente.
 - `rifiuto`: frase fissa letta da `config/ambito.toml`, nessuna chiamata al modello.
 - `modello` / `strumenti` / `limite`: l'agente come nella lezione 5, con lo strumento `tooltime` del
   server MCP `mcp_assistente`. Se il modello chiama `tooltime` senza fuso, il nodo `strumenti` lo
@@ -61,6 +64,35 @@ Per provare preferenze diverse senza modificare il file versionato:
 $env:PREFERENZE_FILE = "$env:TEMP\prefs.json"
 ```
 
+## Prompt e comandi della CLI (step 5)
+
+Lo stesso server pubblica due prompt MCP, modelli di istruzioni che richiama l'utente:
+
+- `spiega(argomento, livello)`: `livello` = `base`, `intermedio` o `avanzato` (predefinito `base`);
+- `riassumi_conversazione(stile)`: `stile` = `sintetico` o `dettagliato` (predefinito `sintetico`);
+  riassume la sessione corrente (la cronologia la vede già l'agente: il server non la riceve).
+
+Comandi (ogni riga che inizia con `/` è un comando):
+
+```
+/prompts
+/prompt spiega argomento="Model Context Protocol" livello=base
+/prompt riassumi_conversazione stile=dettagliato
+```
+
+Gli argomenti si scrivono `chiave=valore`; un valore con spazi va tra virgolette (doppie o singole).
+L'host controlla gli argomenti rispetto a `prompts/list` (obbligatori mancanti, sconosciuti,
+virgolette non chiuse) e il server controlla i valori (`livello`, `stile`): in caso di errore la
+CLI mostra un messaggio e non chiama il modello. I messaggi ottenuti dal server entrano nella
+cronologia e passano dal grafo come una domanda: riassunto, router, agente, strumenti, revisore.
+Per questo l'ambito comprende anche i concetti della lezione e la conversazione in corso.
+
+| Primitiva | Chi la attiva | Quando | Log |
+|---|---|---|---|
+| Tool (`tooltime`) | il modello | durante il ciclo agente ⇄ strumenti | `[mcp] tools/call ...` |
+| Resource (`utente://preferenze`) | l'host | una volta all'avvio | `[mcp] resources/read ...` |
+| Prompt (`spiega`, `riassumi_conversazione`) | l'utente | quando scrive `/prompt` | `[mcp] prompts/get ...` |
+
 ## Requisiti
 
 - Python 3.14 e LM Studio sull'host con `google/gemma-4-e2b` caricato (Context Length almeno 16384).
@@ -89,7 +121,8 @@ L'app legge solo variabili d'ambiente (elenco e valori di esempio in `.env.examp
 | `PREFERENZE_FILE` | no | `config/preferenze.json` (relativo a `assistente-laboratorio/`) |
 
 L'ambito dell'agente sta in `assistente-laboratorio/config/ambito.toml`: `descrizione`,
-`esempi_in_ambito`, `esempi_fuori_ambito` (facoltativi) e `rifiuto`. Si modifica senza toccare il
+`esempi_in_ambito`, `esempi_fuori_ambito` (facoltativi), `rifiuto` e, in fondo al file, uno o più
+`[[argomenti]]` con `nome` e `descrizione` (il nome `altro` è riservato al fuori ambito). Si modifica senza toccare il
 codice; un file mancante o non valido ferma l'avvio con un messaggio chiaro.
 
 ## Avvio (da `L6\assistente-laboratorio`)
@@ -100,23 +133,27 @@ $env:LM_MODEL = "google/gemma-4-e2b"
 & ..\venv\Scripts\python.exe -m app.cli
 ```
 
-`esci` (o `exit`) chiude la chat. La cronologia resta solo in memoria per la sessione.
+`esci` (o `exit`) chiude la chat; `/prompts` elenca i prompt. La cronologia resta solo in memoria
+per la sessione.
 
 Log attesi:
 
 ```
 [mcp] tools/list: tooltime
 [mcp] resources/read utente://preferenze
+[mcp] prompts/list: spiega, riassumi_conversazione
+[mcp] prompts/get spiega {'argomento': 'Model Context Protocol', 'livello': 'base'}
+[mcp] prompts/get spiega: 1 messaggio: human: Spiegami Model Context Protocol. Livello base: ...
 [preferenze] in uso: lingua=italiano fuso=America/New_York stile=sintetico
 [riassunto] 3 messaggi, soglia 16: nessun riassunto
 [riassunto] messaggi prima 17, dopo 7 (riassunti 10)
 [riassunto] nuovo riassunto: "L'utente si chiama Luigi. ..."
-[router] categoria=conversazione motivo="..." → agente
+[router] categoria=conversazione motivo="..." → agente (argomento ora_data_fusi)
 [agente] nodo modello
 [agente] tooltime senza fuso: uso America/New_York (preferenze)
 [agente] chiamata strumento tooltime con argomenti {'fuso': 'America/New_York', 'parte': 'ora'}
 [mcp] tools/call tooltime {'fuso': 'America/New_York', 'parte': 'ora'}
-[router] categoria=fuori_ambito motivo="..." → rifiuto
+[router] categoria=fuori_ambito motivo="..." → rifiuto (argomento altro)
 [rifiuto] risposta fissa inviata
 [revisore] coerente motivo="ore a Tokyo: coperta" → fine
 [revisore] non coerente motivo="...: mancante" → agente (revisione 1 di 2)
@@ -133,8 +170,9 @@ Nel percorso fuori ambito non compare `[agente] nodo modello`. I log si accendon
 ```
 
 I test usano modelli simulati e non richiedono LM Studio; il server MCP gira in memoria o come
-sottoprocesso (7 prove reali saltate: router in e fuori ambito, revisore su risposta parziale e
-completa, riassunto che conserva il nome, fuso delle preferenze, risposta in inglese). Prova reale con
+sottoprocesso (10 prove reali saltate: router in e fuori ambito, revisore su risposta parziale e
+completa, riassunto che conserva il nome, fuso delle preferenze, risposta in inglese, prompt `spiega`
+in ambito e fuori ambito, prompt `riassumi_conversazione`). Prova reale con
 LM Studio avviato:
 
 ```powershell
@@ -154,6 +192,9 @@ $env:LM_MODEL = "google/gemma-4-e2b"
   non installate?); la chat risponde senza orologio.
 - `[preferenze] campo 'fuso' non valido (...)`: correggere il file delle preferenze; nel frattempo
   vale il predefinito.
+- «Il server non ha restituito il prompt: livello non valido ...»: valore non ammesso; i valori
+  ammessi sono nella descrizione del prompt (`/prompts`).
+- Con la pipe di PowerShell il BOM iniziale viene tolto: `esci` e `/prompts` funzionano anche così.
 - Per vedere il riassunto in pochi turni: `$env:SOGLIA_RIASSUNTO = "6"`, `$env:MESSAGGI_RECENTI = "2"`.
 - Con gemma e2b il router può sbagliare su domande al confine dell'ambito (per esempio «Che
   differenza di orario c'è tra Roma e Londra?» viene rifiutata).
