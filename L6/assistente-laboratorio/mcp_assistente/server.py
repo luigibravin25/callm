@@ -1,16 +1,17 @@
 """Server MCP dell'assistente (FastMCP, trasporto stdio).
 
-Tool `tooltime` (lo chiama il modello: tools/call) e resource `utente://preferenze` (la legge
-l'host all'avvio della sessione: resources/read). Avvio: python -m mcp_assistente.server
+Tool `tooltime` (lo chiama il modello: tools/call), resource `utente://preferenze` (la legge
+l'host all'avvio della sessione: resources/read) e prompt `spiega` e `riassumi_conversazione` (li
+richiama l'utente con /prompt: prompts/get). Avvio: python -m mcp_assistente.server
 """
 # librerie standard: variabili d'ambiente, percorsi, tipi con valori fissi
 import os
 from pathlib import Path
 from typing import Literal
 
-# FastMCP crea il server MCP; ResourceError e' l'errore restituito al client per una resource
+# FastMCP crea il server MCP; ResourceError e PromptError sono gli errori restituiti al client
 from fastmcp import FastMCP
-from fastmcp.exceptions import ResourceError
+from fastmcp.exceptions import PromptError, ResourceError
 
 # logica dell'orologio (data e ora a parole)
 from mcp_assistente.orologio import ora_corrente
@@ -61,6 +62,60 @@ def preferenze() -> str:
         return percorso.read_text(encoding="utf-8-sig")
     except FileNotFoundError:
         raise ResourceError(f"File delle preferenze non trovato: {percorso}") from None
+
+
+# --- prompt (step 5): modelli di istruzioni richiamati dall'utente ---
+
+# descrizioni pubblicate in prompts/list: elencano i valori ammessi (gli argomenti non hanno
+# descrizione propria, perche' FastMCP vi aggiungerebbe "Provide as a JSON string...")
+DESCRIZIONE_SPIEGA = ("Spiega un argomento al livello scelto. livello: base, intermedio o avanzato "
+                      "(predefinito base).")
+DESCRIZIONE_RIASSUMI = ("Riassume la conversazione della sessione corrente. stile: sintetico o "
+                        "dettagliato (predefinito sintetico).")
+
+# una frase fissa per ogni livello di spiega
+LIVELLI = {
+    "base": ("Livello base: usa parole semplici, niente gergo tecnico, un esempio concreto di "
+             "tutti i giorni, al massimo 5 frasi."),
+    "intermedio": ("Livello intermedio: spiega i termini tecnici principali, come funziona e fai "
+                   "un esempio."),
+    "avanzato": ("Livello avanzato: entra nei dettagli tecnici, nei componenti, nel funzionamento "
+                 "interno e nei limiti."),
+}
+
+# istruzione del riassunto: la conversazione la vede gia' l'agente nella cronologia
+TESTO_RIASSUMI = ("Riassumi la conversazione che abbiamo avuto finora in questa sessione, senza "
+                  "chiamare strumenti. Se non c'è ancora nulla da riassumere, dillo.")
+# una frase fissa per ogni stile del riassunto
+STILI = {
+    "sintetico": "Stile sintetico: 3-5 punti brevi.",
+    "dettagliato": ("Stile dettagliato: per ogni argomento trattato, cosa ho chiesto e cosa hai "
+                    "risposto."),
+}
+
+
+# controlla un valore contro quelli ammessi; maiuscole e spazi non contano (come lo stile delle
+# preferenze); un valore non ammesso diventa un errore leggibile per il client
+def _ammesso(nome: str, valore: str, ammessi: dict) -> str:
+    normale = valore.strip().lower()
+    if normale not in ammessi:
+        raise PromptError(f"{nome} non valido: {valore!r} (ammessi: {', '.join(ammessi)})")
+    return normale
+
+
+# prompt spiega: una domanda fissa con la frase del livello
+@mcp.prompt(name="spiega", description=DESCRIZIONE_SPIEGA)
+def spiega(argomento: str, livello: str = "base") -> str:
+    # argomento vuoto: niente da spiegare (l'host lo blocca gia', qui e' una seconda sicurezza)
+    if not argomento.strip():
+        raise PromptError("argomento vuoto: scrivi cosa spiegare")
+    return f"Spiegami {argomento.strip()}. " + LIVELLI[_ammesso("livello", livello, LIVELLI)]
+
+
+# prompt riassumi_conversazione: solo l'istruzione, il server non conosce la cronologia
+@mcp.prompt(name="riassumi_conversazione", description=DESCRIZIONE_RIASSUMI)
+def riassumi_conversazione(stile: str = "sintetico") -> str:
+    return f"{TESTO_RIASSUMI} " + STILI[_ammesso("stile", stile, STILI)]
 
 
 # avvio come processo: il client MCP parla con il server su stdin/stdout;
