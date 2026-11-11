@@ -4,7 +4,10 @@ import sys
 
 import pytest
 
-from app.adattatore_mcp import ErroreMCP, carica_strumenti, configurazione_server, leggi_preferenze
+from langchain_core.messages import HumanMessage
+
+from app.adattatore_mcp import (ErroreMCP, InfoArgomento, carica_strumenti, configurazione_server,
+                                elenca_prompt, leggi_preferenze, ottieni_prompt)
 
 
 # messaggi del logger "mcp" registrati da caplog
@@ -76,3 +79,50 @@ def test_leggi_preferenze_server_inesistente(caplog):
     with caplog.at_level(logging.INFO, logger="mcp"):
         assert leggi_preferenze("modulo_che_non_esiste") is None
     assert any(r.levelno == logging.WARNING for r in caplog.records if r.name == "mcp")
+
+
+# --- prompt (step 5) ---
+
+# Verifica la discovery dei prompt (prompts/list): nomi, descrizione, argomenti e log.
+def test_elenca_prompt(caplog):
+    with caplog.at_level(logging.INFO, logger="mcp"):
+        prompts = elenca_prompt()
+    assert [p.nome for p in prompts] == ["spiega", "riassumi_conversazione"]
+    assert prompts[0].argomenti == (InfoArgomento("argomento", True),
+                                    InfoArgomento("livello", False))
+    assert prompts[1].argomenti == (InfoArgomento("stile", False),)
+    assert prompts[0].descrizione.startswith("Spiega un argomento")
+    assert "prompts/list: spiega, riassumi_conversazione" in _log_mcp(caplog)
+
+
+# Verifica prompts/get: messaggi LangChain dal server e log con argomenti e testo ottenuto.
+def test_ottieni_prompt_con_log(caplog):
+    with caplog.at_level(logging.INFO, logger="mcp"):
+        messaggi = ottieni_prompt("spiega", {"argomento": "Model Context Protocol",
+                                             "livello": "base"})
+    assert len(messaggi) == 1 and isinstance(messaggi[0], HumanMessage)
+    assert messaggi[0].content.startswith("Spiegami Model Context Protocol.")
+    log = _log_mcp(caplog)
+    assert any(r.startswith("prompts/get spiega {'argomento': 'Model Context Protocol'")
+               for r in log)
+    assert any(r.startswith("prompts/get spiega: 1 messaggio: human: Spiegami") for r in log)
+
+
+# Verifica che un valore rifiutato dal server diventi ErroreMCP con il motivo del server.
+def test_ottieni_prompt_valore_non_valido():
+    with pytest.raises(ErroreMCP, match="livello non valido"):
+        ottieni_prompt("spiega", {"argomento": "MCP", "livello": "pippo"})
+
+
+# Verifica che senza server l'elenco dei prompt sia vuoto, con un avviso.
+def test_elenca_prompt_server_inesistente(caplog):
+    with caplog.at_level(logging.INFO, logger="mcp"):
+        assert elenca_prompt("modulo_che_non_esiste") == []
+    assert any(r.levelno == logging.WARNING and "prompts/list non riuscita" in r.getMessage()
+               for r in caplog.records if r.name == "mcp")
+
+
+# Verifica che senza server prompts/get dia ErroreMCP.
+def test_ottieni_prompt_server_inesistente():
+    with pytest.raises(ErroreMCP):
+        ottieni_prompt("spiega", {"argomento": "MCP"}, "modulo_che_non_esiste")

@@ -1,7 +1,8 @@
 """Adattatore MCP (come L5): collega l'host al server mcp_assistente (trasporto stdio).
 
-All'avvio: discovery dei tool (tools/list) e lettura della resource delle preferenze
-(resources/read), una volta. Ogni chiamata di un tool (tools/call) apre una sessione nuova.
+All'avvio: discovery dei tool (tools/list), lettura della resource delle preferenze
+(resources/read) ed elenco dei prompt (prompts/list), una volta. Ogni chiamata di un tool
+(tools/call) e ogni prompt richiamato dall'utente con /prompt (prompts/get) apre una sessione nuova.
 Il grafo resta sincrono: il codice asincrono del client MCP passa da _esegui (asyncio.run).
 """
 # librerie standard: codice asincrono, log, ambiente, interprete in uso, thread, percorsi
@@ -10,11 +11,14 @@ import logging
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
-# classi degli strumenti LangChain e client MCP
+# classi dei messaggi e degli strumenti LangChain, client MCP, conversione dei prompt in messaggi
+from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool, StructuredTool, ToolException
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.prompts import load_mcp_prompt
 
 # logger delle operazioni MCP: nel terminale compare come [mcp]
 log = logging.getLogger("mcp")
@@ -151,3 +155,69 @@ def leggi_preferenze(modulo: str = MODULO_SERVER) -> str | None:
     except Exception as errore:
         log.warning("resources/read %s non riuscita: %s", URI_PREFERENZE, _motivo(errore))
         return None
+
+
+# --- prompt (step 5) ---
+
+# argomento di un prompt come lo pubblica prompts/list: nome e se e' obbligatorio
+@dataclass(frozen=True)
+class InfoArgomento:
+    nome: str
+    obbligatorio: bool
+
+
+# prompt pubblicato dal server: la CLI usa questo tipo, non gli oggetti di MCP
+@dataclass(frozen=True)
+class InfoPrompt:
+    nome: str
+    descrizione: str
+    argomenti: tuple[InfoArgomento, ...]
+
+
+# elenco dei prompt (prompts/list), chiesto una volta all'avvio della sessione
+def elenca_prompt(modulo: str = MODULO_SERVER) -> list[InfoPrompt]:
+    """Una sessione MCP breve; ogni errore diventa un elenco vuoto con un avviso."""
+    client = _client(modulo)
+
+    # apre una sessione con il server e chiede l'elenco
+    async def elenca():
+        async with client.session("server") as sessione:
+            return (await sessione.list_prompts()).prompts
+
+    try:
+        pubblicati = _esegui(elenca)
+    except Exception as errore:
+        log.warning("prompts/list non riuscita: %s", _motivo(errore))
+        return []
+    # descrizione o "required" assenti: stringa vuota e argomento facoltativo
+    prompts = [InfoPrompt(p.name, p.description or "",
+                          tuple(InfoArgomento(a.name, bool(a.required))
+                                for a in (p.arguments or [])))
+               for p in pubblicati]
+    log.info("prompts/list: %s", ", ".join(p.nome for p in prompts))
+    return prompts
+
+
+# un prompt richiamato dall'utente (prompts/get): messaggi LangChain pronti per la cronologia
+def ottieni_prompt(nome: str, argomenti: dict[str, str],
+                   modulo: str = MODULO_SERVER) -> list[BaseMessage]:
+    """Sessione nuova; ogni errore (valore rifiutato, server non disponibile) diventa ErroreMCP
+    con il motivo."""
+    client = _client(modulo)
+
+    # apre una sessione e converte i messaggi del prompt in messaggi LangChain
+    async def ottieni():
+        async with client.session("server") as sessione:
+            return await load_mcp_prompt(sessione, nome, arguments=argomenti)
+
+    # evidenza dello step 5: prompt richiamato e argomenti
+    log.info("prompts/get %s %s", nome, argomenti)
+    try:
+        messaggi = _esegui(ottieni)
+    except Exception as errore:
+        raise ErroreMCP(_motivo(errore)) from None
+    # evidenza dello step 5: messaggi ottenuti dal server, con tipo e testo
+    parola = "messaggio" if len(messaggi) == 1 else "messaggi"
+    testi = " | ".join(f"{m.type}: {m.content}" for m in messaggi)
+    log.info("prompts/get %s: %d %s: %s", nome, len(messaggi), parola, testi)
+    return messaggi
