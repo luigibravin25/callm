@@ -1,5 +1,6 @@
-# librerie standard: log nel terminale
+# librerie standard: log nel terminale, flussi del processo (stdin)
 import logging
+import sys
 
 # messaggio dell'utente; errori di LM Studio (connessione, HTTP, altri)
 from langchain_core.messages import HumanMessage
@@ -59,8 +60,9 @@ def _messaggio_errore_generico(errore: APIError) -> str:
 def _testo_valido(testo: str) -> str:
     # surrogateescape riporta i surrogati ai byte originali; "replace" mette U+FFFD sui non validi
     testo = testo.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
-    # BOM iniziale (pipe di PowerShell): senza toglierlo "esci" e "/prompts" non si riconoscono
-    return testo.removeprefix("\ufeff")
+    # BOM iniziali (pipe di PowerShell, anche due): senza toglierli "esci" e "/prompts" non si
+    # riconoscono
+    return testo.lstrip("\ufeff")
 
 
 # un turno del grafo: cronologia piu' i messaggi nuovi (domanda o prompt). Restituisce cronologia e
@@ -184,6 +186,12 @@ def avvia(input_fn=input, output_fn=print) -> None:
     from app.graph import build_graph
 
     imposta_log()
+    # input da una pipe (non da tastiera): letto sempre in UTF-8, cosi' il BOM e gli accenti
+    # arrivano giusti anche senza PYTHONIOENCODING (Windows altrimenti usa cp1252)
+    # (stdin senza reconfigure, come quello finto di pytest: si lascia com'e')
+    riconfigura = getattr(sys.stdin, "reconfigure", None)
+    if riconfigura is not None and not sys.stdin.isatty():
+        riconfigura(encoding="utf-8", errors="surrogateescape")
     try:
         impostazioni = load_settings()
         ambito = load_ambito(impostazioni.ambito_file)

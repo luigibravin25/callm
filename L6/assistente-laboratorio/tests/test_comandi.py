@@ -20,10 +20,23 @@ def test_prompt_con_virgolette_doppie():
                                                              "livello": "base"})
 
 
-# Verifica le virgolette singole e gli accenti nel valore.
-def test_virgolette_singole_e_accenti():
-    assert interpreta("/prompt spiega argomento='perché i fusi orari'", PROMPTS) == \
-        RichiestaPrompt("spiega", {"argomento": "perché i fusi orari"})
+# Verifica gli accenti e gli apostrofi dentro le virgolette doppie.
+def test_apostrofi_e_accenti_tra_virgolette_doppie():
+    assert interpreta('/prompt spiega argomento="perché l\'agente e l\'LLM"', PROMPTS) == \
+        RichiestaPrompt("spiega", {"argomento": "perché l'agente e l'LLM"})
+
+
+# Verifica che gli apostrofi senza virgolette restino nel valore e non si accoppino tra loro
+# (con shlex normale "dell'MCP livello=l'avanzato" diventava un solo valore, senza errori).
+@pytest.mark.parametrize("riga,argomenti", [
+    ("/prompt spiega argomento=l'agente", {"argomento": "l'agente"}),
+    ("/prompt spiega argomento=dell'MCP livello=avanzato",
+     {"argomento": "dell'MCP", "livello": "avanzato"}),
+    ("/prompt spiega argomento=dell'MCP livello=l'avanzato",
+     {"argomento": "dell'MCP", "livello": "l'avanzato"}),
+])
+def test_apostrofi_senza_virgolette(riga, argomenti):
+    assert interpreta(riga, PROMPTS) == RichiestaPrompt("spiega", argomenti)
 
 
 # Verifica che i comandi valgano anche in maiuscolo.
@@ -55,8 +68,9 @@ def test_riassumi_senza_argomenti():
      MSG_ARG_SCONOSCIUTO.format(argomento="colore", nome="spiega", ammessi="argomento, livello")),
     ("/prompt spiega Model Context Protocol",
      MSG_NON_LEGGIBILI.format(dettaglio="'Model' senza =")),
-    ("/prompt spiega argomento=l'agente",
+    ('/prompt spiega argomento="Model Context',
      MSG_NON_LEGGIBILI.format(dettaglio="virgolette non chiuse")),
+    ("/prompt spiega argomento=l'agente e l'LLM", MSG_NON_LEGGIBILI.format(dettaglio="'e' senza =")),
     ("/prompt spiega argomento=a argomento=b",
      MSG_NON_LEGGIBILI.format(dettaglio="chiave 'argomento' ripetuta")),
     ("/prompt spiega argomento=", MSG_NON_LEGGIBILI.format(dettaglio="valore vuoto per 'argomento'")),

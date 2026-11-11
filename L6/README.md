@@ -80,7 +80,8 @@ Comandi (ogni riga che inizia con `/` è un comando):
 /prompt riassumi_conversazione stile=dettagliato
 ```
 
-Gli argomenti si scrivono `chiave=valore`; un valore con spazi va tra virgolette (doppie o singole).
+Gli argomenti si scrivono `chiave=valore`; un valore con spazi va tra virgolette doppie
+(`argomento="l'agente e l'LLM"`); l'apostrofo è un carattere normale (`argomento=dell'MCP`).
 L'host controlla gli argomenti rispetto a `prompts/list` (obbligatori mancanti, sconosciuti,
 virgolette non chiuse) e il server controlla i valori (`livello`, `stile`): in caso di errore la
 CLI mostra un messaggio e non chiama il modello. I messaggi ottenuti dal server entrano nella
@@ -194,7 +195,8 @@ $env:LM_MODEL = "google/gemma-4-e2b"
   vale il predefinito.
 - «Il server non ha restituito il prompt: livello non valido ...»: valore non ammesso; i valori
   ammessi sono nella descrizione del prompt (`/prompts`).
-- Con la pipe di PowerShell il BOM iniziale viene tolto: `esci` e `/prompts` funzionano anche così.
+- Con la pipe di PowerShell l'input si legge in UTF-8 e i BOM iniziali vengono tolti: `esci` e
+  `/prompts` funzionano anche così, con o senza `PYTHONIOENCODING`.
 - Per vedere il riassunto in pochi turni: `$env:SOGLIA_RIASSUNTO = "6"`, `$env:MESSAGGI_RECENTI = "2"`.
 - Con gemma e2b il router può sbagliare su domande al confine dell'ambito (per esempio «Che
   differenza di orario c'è tra Roma e Londra?» viene rifiutata).

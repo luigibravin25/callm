@@ -314,7 +314,23 @@ def test_server_non_avviato_nessun_prompt():
 # esci chiude la chat senza chiamare il modello.
 def test_bom_iniziale():
     agente = ModelloFinto([AIMessage("x")])
-    out = _chat(["﻿/prompts", "﻿esci", "Che ore sono?"], agente,
+    out = _chat(["\ufeff\ufeff/prompts", "\ufeffesci", "Che ore sono?"], agente,
                 RouterFinto([IN_AMBITO]), prompts=[SPIEGA], ottieni=OttieniFinto())
     assert elenco_prompt([SPIEGA]) in out
     assert agente.chiamate == []
+
+
+
+# Verifica la pipe di PowerShell senza PYTHONIOENCODING: stdin letto in cp1252 con il BOM in
+# testa. avvia legge la pipe in UTF-8, cosi' il BOM si riconosce e /prompts resta un comando.
+def test_pipe_in_cp1252_con_bom(monkeypatch):
+    import io
+    import sys
+    _finti_per_avvio(monkeypatch)
+    pipe = io.TextIOWrapper(io.BytesIO("\ufeff/prompts\nesci\n".encode("utf-8")),
+                            encoding="cp1252")
+    monkeypatch.setattr(sys, "stdin", pipe)
+    stampato = []
+    cli.avvia(output_fn=stampato.append)
+    assert elenco_prompt([SPIEGA]) in stampato
+    assert not any(s.startswith("Assistente:") for s in stampato)  # nessuna domanda al grafo

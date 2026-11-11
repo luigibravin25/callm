@@ -3,7 +3,7 @@
 Solo funzioni pure: leggono la riga e la confrontano con l'elenco di prompts/list, senza chiamare
 il server ne' il modello. Il server controlla poi i valori (livello, stile).
 """
-# librerie standard: divisione della riga come una shell (virgolette), classi di dati
+# librerie standard: divisione della riga come una shell (virgolette doppie), classi di dati
 import shlex
 from dataclasses import dataclass
 
@@ -18,7 +18,7 @@ MSG_PROMPT_SCONOSCIUTO = "Prompt sconosciuto: {nome}. Scrivi /prompts per l'elen
 MSG_MANCANTE = "Manca l'argomento obbligatorio '{argomento}' del prompt {nome}."
 MSG_ARG_SCONOSCIUTO = "Argomento sconosciuto '{argomento}'. Argomenti di {nome}: {ammessi}."
 MSG_NON_LEGGIBILI = ("Argomenti non leggibili ({dettaglio}): usa chiave=valore, con le virgolette "
-                     "se il valore ha spazi.")
+                     "doppie se il valore ha spazi.")
 MSG_NESSUN_PROMPT = "Nessun prompt disponibile: server MCP non avviato."
 MSG_ERRORE_PROMPT = "Il server non ha restituito il prompt: {motivo}."  # usato dalla CLI
 
@@ -40,6 +40,17 @@ def elenco_prompt(prompts: list[InfoPrompt]) -> str:
                               for a in p.argomenti)
         righe.append(f"  argomenti: {argomenti or 'nessuno'}")
     return "\n".join(righe)
+
+
+# divide gli argomenti come una shell, ma solo le virgolette doppie tengono insieme un valore:
+# l'apostrofo resta un carattere normale (con shlex.split "dell'MCP livello=l'avanzato" diventava
+# un solo valore senza errori)
+def _dividi(testo: str) -> list[str]:
+    lettore = shlex.shlex(testo, posix=True)
+    lettore.whitespace_split = True  # pezzi divisi solo dagli spazi, come shlex.split
+    lettore.quotes = '"'  # solo virgolette doppie
+    lettore.commenters = ""  # "#" e' un carattere normale
+    return list(lettore)
 
 
 # trasforma i pezzi "chiave=valore" in un dizionario; un errore diventa il suo messaggio
@@ -90,8 +101,7 @@ def interpreta(riga: str, prompts: list[InfoPrompt]) -> str | RichiestaPrompt:
     if info is None:
         return MSG_PROMPT_SCONOSCIUTO.format(nome=nome)
     try:
-        # shlex: le virgolette tengono insieme i valori con spazi
-        pezzi = shlex.split(testo_argomenti)
+        pezzi = _dividi(testo_argomenti)
     except ValueError:
         return MSG_NON_LEGGIBILI.format(dettaglio="virgolette non chiuse")
     argomenti = leggi_argomenti(pezzi)
