@@ -7,12 +7,17 @@ descrizione = """
 Assistente che risponde su:
 - ora e data correnti, in Italia o in qualunque luogo del mondo;
 - fusi orari (che fuso usa una città, differenza di orario tra due luoghi);
+- spiegazioni dei concetti della lezione: Model Context Protocol (MCP), LangGraph, agenti, LLM,
+  fusi orari;
+- richieste sulla conversazione in corso (riassumerla, ricordare cosa ci siamo detti);
 - saluti, ringraziamenti e domande sull'assistente stesso (cosa sa fare, come si usa).
 """
 
 # esempi che aiutano il modello piccolo a decidere (facoltativi)
-esempi_in_ambito = ["Che ore sono a Tokyo?", "Che giorno è oggi?", "Ciao, cosa sai fare?"]
-esempi_fuori_ambito = ["Dammi la ricetta della carbonara", "Quanti km sono 10 miglia?", "Scrivi una funzione Python"]
+esempi_in_ambito = ["Che ore sono a Tokyo?", "Che giorno è oggi?", "Ciao, cosa sai fare?",
+                    "Spiegami cos'è il Model Context Protocol", "Riassumi la nostra conversazione"]
+esempi_fuori_ambito = ["Dammi la ricetta della carbonara", "Quanti km sono 10 miglia?", "Scrivi una funzione Python",
+                       "Spiegami la storia dell'Impero romano"]
 
 # risposta fissa del nodo rifiuto (nessuna chiamata al modello)
-rifiuto = "Posso aiutarti solo con ora, data e fusi orari. Questa domanda è fuori dal mio ambito."
+rifiuto = "Posso aiutarti solo con ora, data e fusi orari, con i concetti della lezione (MCP, LangGraph, agenti, LLM) e con la nostra conversazione. Questa domanda è fuori dal mio ambito."

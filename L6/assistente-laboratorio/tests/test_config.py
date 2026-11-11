@@ -4,7 +4,9 @@ import pytest
 from app.config import CARTELLA_PROGETTO, load_ambito, load_settings
 
 # frase di rifiuto attesa nel file vero dell'ambito
-RIFIUTO = "Posso aiutarti solo con ora, data e fusi orari. Questa domanda è fuori dal mio ambito."
+RIFIUTO = ("Posso aiutarti solo con ora, data e fusi orari, con i concetti della lezione (MCP, "
+           "LangGraph, agenti, LLM) e con la nostra conversazione. Questa domanda è fuori dal mio "
+           "ambito.")
 
 
 # imposta le due variabili obbligatorie e toglie le facoltative
@@ -74,6 +76,15 @@ def test_ambito_vero_si_carica():
     assert a.rifiuto == RIFIUTO
     assert "Che ore sono a Tokyo?" in a.esempi_in_ambito
     assert "Quanti km sono 10 miglia?" in a.esempi_fuori_ambito
+
+
+# Verifica che l'ambito vero comprenda i concetti della lezione e la conversazione (step 5).
+def test_ambito_versionato_con_concetti_e_conversazione():
+    a = load_ambito(CARTELLA_PROGETTO / "config" / "ambito.toml")
+    assert "Model Context Protocol" in a.descrizione and "conversazione" in a.descrizione
+    assert "Spiegami cos'è il Model Context Protocol" in a.esempi_in_ambito
+    assert "Riassumi la nostra conversazione" in a.esempi_in_ambito
+    assert "Spiegami la storia dell'Impero romano" in a.esempi_fuori_ambito
 
 
 # Verifica che un file dell'ambito inesistente dia un errore con il suo nome.
