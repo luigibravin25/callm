@@ -4,9 +4,12 @@ La CLI non costruisce piu' il grafo: parla con il servizio (python -m app.api) v
 Cronologia e riassunto stanno solo in memoria (mai su disco) e viaggiano a ogni turno; le righe
 che iniziano con "/" sono comandi dei prompt MCP, controllati qui con l'elenco di GET /prompts.
 """
-# librerie standard: ambiente, flussi del processo (stdin)
+# librerie standard: ambiente, flussi del processo (stdin), thread di lavoro per la chiamata
 import os
 import sys
+import threading
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as AttesaScaduta
 
 # client HTTP verso l'agente
 import httpx
@@ -92,6 +95,35 @@ def _testo_valido(testo: str) -> str:
     return testo.lstrip("﻿")
 
 
+# esegue funzione(*argomenti) in un thread daemon e restituisce il Future del risultato.
+# Daemon: all'uscita dopo un Ctrl+C Python non aspetta la chiamata ancora in corso (i thread di
+# ThreadPoolExecutor invece verrebbero attesi, e l'uscita arriverebbe solo con la risposta)
+def _in_sottofondo(funzione, *argomenti) -> Future:
+    # Future creato a mano (la documentazione lo riserva agli esecutori e ai test): qui serve
+    # solo a passare risultato o eccezione dal thread daemon al principale. Dopo un Ctrl+C la
+    # connessione verso l'agente resta aperta nel thread, e si chiude con l'uscita del processo
+    futuro = Future()
+
+    # corpo del thread: risultato o eccezione passati al Future
+    def esegui():
+        try:
+            futuro.set_result(funzione(*argomenti))
+        except BaseException as errore:
+            futuro.set_exception(errore)
+    threading.Thread(target=esegui, daemon=True).start()
+    return futuro
+
+
+# attende il risultato della chiamata a intervalli brevi: tra un intervallo e l'altro il thread
+# principale puo' ricevere Ctrl+C (su Windows una lettura di rete bloccata non lo riceve)
+def _attendi(futuro: Future, intervallo: float = 0.2):
+    while True:
+        try:
+            return futuro.result(timeout=intervallo)
+        except AttesaScaduta:
+            continue
+
+
 # avvio: stato dell'agente (avvisi per cio' che non e' pronto) ed elenco dei prompt
 def _avvio(client: ClientAgente, output_fn) -> list[InfoPrompt] | None:
     """Restituisce l'elenco dei prompt, o None se l'agente non risponde."""
@@ -132,6 +164,15 @@ def main(client: ClientAgente, input_fn=input, output_fn=print) -> None:
             continue  # riga vuota: si chiede di nuovo, senza disturbare l'agente
         corpo = {"cronologia": cronologia, "riassunto": riassunto}
         if testo.startswith("/"):
+            # elenco riletto a ogni comando: un agente riavviato (es. con il server MCP
+            # ripartito) si vede senza riavviare la CLI
+            try:
+                prompts = client.prompts()
+            except ErroreAgente as errore:
+                output_fn(errore.messaggio)  # agente spento: nessuna chiamata a /chat
+                continue
+            except KeyboardInterrupt:
+                break
             esito = interpreta(testo, prompts)
             if not isinstance(esito, RichiestaPrompt):
                 output_fn(esito)  # elenco o errore del comando: nessuna chiamata
@@ -142,12 +183,14 @@ def main(client: ClientAgente, input_fn=input, output_fn=print) -> None:
             corpo = {"messaggio": testo, **corpo}
         output_fn(MSG_ATTESA)
         try:
-            risposta = client.chat(corpo)
+            # la chiamata gira nel thread di lavoro; il principale attende e resta interrompibile
+            risposta = _attendi(_in_sottofondo(client.chat, corpo))
         except ErroreAgente as errore:
             # errore dell'agente o agente spento: cronologia invariata, la chat continua
             output_fn(errore.messaggio)
             continue
-        # Ctrl+C durante la chiamata: si esce senza traceback
+        # Ctrl+C durante la chiamata: si esce subito senza traceback; il turno in corso
+        # sull'agente finisce da solo e la risposta si scarta
         except KeyboardInterrupt:
             break
         cronologia, riassunto = risposta["cronologia"], risposta["riassunto"]

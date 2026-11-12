@@ -39,6 +39,7 @@ class AgenteFinto:
         self.corpi = []  # corpi ricevuti da POST /chat
         self.giu = False  # True = agente spento (connessione rifiutata)
         self.ctrl_c_su_stato = False  # True = Ctrl+C durante GET /stato
+        self.ctrl_c_su_prompts = False  # True = Ctrl+C durante GET /prompts
 
     def __call__(self, richiesta: httpx.Request) -> httpx.Response:
         if self.giu:
@@ -47,6 +48,8 @@ class AgenteFinto:
             raise KeyboardInterrupt
         if richiesta.url.path == "/stato":
             return httpx.Response(self.stato[0], json=self.stato[1])
+        if richiesta.url.path == "/prompts" and self.ctrl_c_su_prompts:
+            raise KeyboardInterrupt
         if richiesta.url.path == "/prompts":
             return httpx.Response(200, json=self.prompts)
         self.corpi.append(json.loads(richiesta.content))
@@ -234,3 +237,94 @@ def test_ctrl_c_durante_l_avvio():
     main(ClientAgente(URL, 5, transport=httpx.MockTransport(agente)),
          input_fn=lambda p="": letto.append(1) or "esci", output_fn=lambda s: None)
     assert letto == []
+
+
+# Verifica (minore 2 dello step 6) che l'elenco dei prompt si rilegga a ogni comando: l'agente
+# riavviato con il server MCP funzionante e' visto senza riavviare la CLI.
+def test_prompts_riletti_a_ogni_comando():
+    agente = AgenteFinto(prompts=[])
+    righe = iter(["/prompts", "esci"])
+    stampato = []
+
+    # finto input(): prima del comando l'agente "riavviato" ha i prompt
+    def leggi(_prompt=""):
+        agente.prompts = PROMPTS_JSON
+        return next(righe)
+    main(ClientAgente(URL, 5, transport=httpx.MockTransport(agente)), input_fn=leggi,
+         output_fn=stampato.append)
+    assert elenco_prompt([SPIEGA]) in stampato
+    assert MSG_NESSUN_PROMPT not in stampato
+
+
+# Verifica che un comando con l'agente spento mostri il messaggio, senza POST /chat, e che la
+# chat continui quando l'agente torna.
+def test_prompts_con_agente_spento():
+    agente = AgenteFinto([_ok("Eccomi")])
+    righe = iter(["/prompts", "Ci sei?", "esci"])
+    stampato = []
+
+    # finto input(): spento durante il comando, acceso per la domanda dopo
+    def leggi(_prompt=""):
+        riga = next(righe)
+        agente.giu = riga == "/prompts"
+        return riga
+    main(ClientAgente(URL, 5, transport=httpx.MockTransport(agente)), input_fn=leggi,
+         output_fn=stampato.append)
+    assert MSG_AGENTE_NON_RAGGIUNGIBILE.format(url=URL) in stampato
+    assert "Assistente: Eccomi" in stampato
+    assert [c["messaggio"] for c in agente.corpi] == ["Ci sei?"]
+
+
+# Verifica (minore 3 dello step 6) Ctrl+C durante l'attesa della risposta: la chiamata gira in un
+# thread di lavoro e l'attesa nel thread principale si puo' interrompere subito (su Windows un
+# Ctrl+C non interrompe una lettura di rete bloccata).
+def test_ctrl_c_durante_l_attesa(monkeypatch):
+    import threading
+    thread_chiamata = []
+
+    # agente che registra in quale thread arriva la richiesta
+    class AgenteThread(AgenteFinto):
+        def __call__(self, richiesta):
+            if richiesta.url.path == "/chat":
+                thread_chiamata.append((threading.get_ident(), threading.current_thread().daemon))
+            return super().__call__(richiesta)
+
+    # attesa interrotta da Ctrl+C mentre la risposta non e' ancora arrivata
+    def attesa_interrotta(futuro, intervallo=0.2):
+        futuro.result()  # la chiamata finta finisce subito: si aspetta per registrare il thread
+        raise KeyboardInterrupt
+    monkeypatch.setattr(cli, "_attendi", attesa_interrotta)
+    agente = AgenteThread([_ok("non mostrata")])
+    out = _chat(["Ciao", "non letta"], agente)
+    assert not any(s.startswith("Assistente:") for s in out)
+    assert len(agente.corpi) == 1
+    # thread diverso dal principale e daemon: all'uscita Python non aspetta la risposta
+    assert thread_chiamata and thread_chiamata[0][0] != threading.get_ident()
+    assert thread_chiamata[0][1] is True
+
+
+# Verifica che _attendi restituisca il risultato dopo piu' intervalli di attesa.
+def test_attendi_risultato_lento():
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=1) as esecutore:
+        futuro = esecutore.submit(lambda: time.sleep(0.5) or "fatto")
+        assert cli._attendi(futuro, intervallo=0.1) == "fatto"
+
+
+# Verifica (revisione finale, minore 9) Ctrl+C durante la rilettura dei prompt per un comando:
+# uscita pulita, nessuna chiamata a /chat, la riga dopo non viene letta.
+def test_ctrl_c_durante_la_rilettura_dei_prompt():
+    agente = AgenteFinto()
+    righe = iter(["/prompts", "non letta"])
+    lette = []
+
+    # finto input(): il Ctrl+C arriva durante GET /prompts del comando
+    def leggi(_prompt=""):
+        riga = next(righe)
+        lette.append(riga)
+        agente.ctrl_c_su_prompts = True
+        return riga
+    main(ClientAgente(URL, 5, transport=httpx.MockTransport(agente)), input_fn=leggi,
+         output_fn=lambda s: None)
+    assert lette == ["/prompts"] and agente.corpi == []

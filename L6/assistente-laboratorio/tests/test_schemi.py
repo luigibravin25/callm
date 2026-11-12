@@ -98,3 +98,57 @@ def test_content_null_e_a_blocchi():
     m = MessaggioOpenAI.model_validate({"role": "user",
                                         "content": [{"type": "text", "text": "ciao"}]})
     assert m.content == "ciao"
+
+
+# --- coerenza della cronologia (minore 1 dello step 6) ---
+
+# messaggi OpenAI di comodo per costruire le cronologie dei test
+def _utente(testo="domanda"):
+    return {"role": "user", "content": testo}
+
+
+def _chiamate(*ids):
+    return {"role": "assistant", "content": "", "tool_calls": [
+        {"id": i, "type": "function", "function": {"name": "tooltime", "arguments": "{}"}}
+        for i in ids]}
+
+
+def _strumento(id_chiamata):
+    return {"role": "tool", "content": "01:12", "tool_call_id": id_chiamata, "name": "tooltime"}
+
+
+def _risposta(testo="Sono le 01:12."):
+    return {"role": "assistant", "content": testo}
+
+
+# Verifica che un messaggio 'tool' senza la chiamata che lo ha chiesto sia rifiutato.
+def test_tool_orfano_rifiutato():
+    with pytest.raises(ValidationError) as errore:
+        RichiestaChat.model_validate({"messaggio": "a", "cronologia": [_utente(), _strumento("c1")]})
+    assert ("cronologia[1]: messaggio 'tool' senza una chiamata corrispondente "
+            "(tool_call_id 'c1')") in str(errore.value)
+
+
+# Verifica che una chiamata senza risposta dello strumento sia rifiutata, sia prima del messaggio
+# successivo sia a fine lista.
+@pytest.mark.parametrize("cronologia, testo", [
+    ([_utente(), _chiamate("c1"), _utente()],
+     "cronologia[2]: chiamata 'c1' senza risposta dello strumento"),
+    ([_utente(), _chiamate("c1")], "cronologia[1]: chiamata 'c1' senza risposta dello strumento"),
+])
+def test_tool_calls_senza_risposta_rifiutate(cronologia, testo):
+    with pytest.raises(ValidationError) as errore:
+        RichiestaChat.model_validate({"messaggio": "a", "cronologia": cronologia})
+    assert testo in str(errore.value)
+
+
+# Verifica che lo stesso id usato in due turni completi sia ammesso (LM Studio puo' riusarlo).
+def test_id_riusato_in_turno_successivo_ammesso():
+    turno = [_utente(), _chiamate("c1"), _strumento("c1"), _risposta()]
+    RichiestaChat.model_validate({"messaggio": "a", "cronologia": turno + turno})
+
+
+# Verifica due chiamate nello stesso messaggio con le risposte in ordine diverso.
+def test_cronologia_coerente_con_due_chiamate():
+    RichiestaChat.model_validate({"messaggio": "a", "cronologia": [
+        _utente(), _chiamate("c1", "c2"), _strumento("c2"), _strumento("c1"), _risposta()]})

@@ -20,7 +20,7 @@ from app.graph import build_graph
 from app.info_prompt import InfoArgomento, InfoPrompt
 from app.revisore import DecisioneRevisore
 from app.router import DecisioneRouter
-from app.schemi import StatoMCP, StatoModello
+from app.schemi import RichiestaChat, StatoMCP, StatoModello
 from mcp_assistente import orologio as modulo_orologio
 from tests.finti import ModelloFinto, RevisoreFinto, RiassuntoFinto, RouterFinto, tooltime_finto
 
@@ -366,3 +366,27 @@ def test_role_system_messaggio_dedicato(client_per):
         "/chat", json={"messaggio": "a", "cronologia": [{"role": "system", "content": "x"}]})
     assert r.status_code == 422
     assert "messaggi di sistema non ammessi" in r.json()["messaggio"]
+
+
+# Verifica (minore 1 dello step 6) l'andata e ritorno: la cronologia restituita dopo turni con
+# strumento (stesso id riusato), revisione e riassunto passa la validazione e si puo' ripassare.
+def test_cronologia_restituita_si_puo_ripassare(client_per):
+    no = DecisioneRevisore(motivo="parziale", coerente=False)
+    chiamata = AIMessage("", tool_calls=[{"name": "tooltime", "id": "c1",
+                                          "args": {"fuso": "Asia/Tokyo"}}])
+    modello = ModelloFinto([chiamata, AIMessage("bozza"), AIMessage("completa"),
+                            chiamata, AIMessage("r2"), chiamata, AIMessage("r3")])
+    grafo = build_graph(modello, RouterFinto([IN_AMBITO]), RevisoreFinto([no, OK]),
+                        RiassuntoFinto(["Riassunto."]), AMBITO, soglia_riassunto=4,
+                        messaggi_recenti=1, strumenti=[tooltime_finto([])])
+    c = client_per(Agente(grafo=grafo, prompts=[], mcp_partito=True, strumenti=("tooltime",),
+                          motivo_mcp=""))
+    cronologia, riassunto = [], ""
+    for domanda in ["Ore a Tokyo?", "E adesso?", "E ancora?"]:
+        r = c.post("/chat", json={"messaggio": domanda, "cronologia": cronologia,
+                                  "riassunto": riassunto})
+        assert r.status_code == 200, r.json()
+        cronologia, riassunto = r.json()["cronologia"], r.json()["riassunto"]
+    assert riassunto == "Riassunto."
+    RichiestaChat.model_validate({"messaggio": "x", "cronologia": cronologia,
+                                  "riassunto": riassunto})
