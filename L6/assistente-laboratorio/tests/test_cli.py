@@ -234,3 +234,39 @@ def test_ctrl_c_durante_l_avvio():
     main(ClientAgente(URL, 5, transport=httpx.MockTransport(agente)),
          input_fn=lambda p="": letto.append(1) or "esci", output_fn=lambda s: None)
     assert letto == []
+
+
+# Verifica (minore 2 dello step 6) che l'elenco dei prompt si rilegga a ogni comando: l'agente
+# riavviato con il server MCP funzionante e' visto senza riavviare la CLI.
+def test_prompts_riletti_a_ogni_comando():
+    agente = AgenteFinto(prompts=[])
+    righe = iter(["/prompts", "esci"])
+    stampato = []
+
+    # finto input(): prima del comando l'agente "riavviato" ha i prompt
+    def leggi(_prompt=""):
+        agente.prompts = PROMPTS_JSON
+        return next(righe)
+    main(ClientAgente(URL, 5, transport=httpx.MockTransport(agente)), input_fn=leggi,
+         output_fn=stampato.append)
+    assert elenco_prompt([SPIEGA]) in stampato
+    assert MSG_NESSUN_PROMPT not in stampato
+
+
+# Verifica che un comando con l'agente spento mostri il messaggio, senza POST /chat, e che la
+# chat continui quando l'agente torna.
+def test_prompts_con_agente_spento():
+    agente = AgenteFinto([_ok("Eccomi")])
+    righe = iter(["/prompts", "Ci sei?", "esci"])
+    stampato = []
+
+    # finto input(): spento durante il comando, acceso per la domanda dopo
+    def leggi(_prompt=""):
+        riga = next(righe)
+        agente.giu = riga == "/prompts"
+        return riga
+    main(ClientAgente(URL, 5, transport=httpx.MockTransport(agente)), input_fn=leggi,
+         output_fn=stampato.append)
+    assert MSG_AGENTE_NON_RAGGIUNGIBILE.format(url=URL) in stampato
+    assert "Assistente: Eccomi" in stampato
+    assert [c["messaggio"] for c in agente.corpi] == ["Ci sei?"]

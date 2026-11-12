@@ -132,6 +132,15 @@ def main(client: ClientAgente, input_fn=input, output_fn=print) -> None:
             continue  # riga vuota: si chiede di nuovo, senza disturbare l'agente
         corpo = {"cronologia": cronologia, "riassunto": riassunto}
         if testo.startswith("/"):
+            # elenco riletto a ogni comando: un agente riavviato (es. con il server MCP
+            # ripartito) si vede senza riavviare la CLI
+            try:
+                prompts = client.prompts()
+            except ErroreAgente as errore:
+                output_fn(errore.messaggio)  # agente spento: nessuna chiamata a /chat
+                continue
+            except KeyboardInterrupt:
+                break
             esito = interpreta(testo, prompts)
             if not isinstance(esito, RichiestaPrompt):
                 output_fn(esito)  # elenco o errore del comando: nessuna chiamata
