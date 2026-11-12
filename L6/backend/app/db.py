@@ -17,6 +17,7 @@ from sqlalchemy.orm import (DeclarativeBase, Mapped, Session, mapped_column, rel
                             sessionmaker)
 
 TITOLO_INIZIALE = "Nuova chat"
+TIMEOUT_CONNESSIONE = 5  # secondi di attesa massima per aprire una connessione al database
 
 
 # ora attuale in UTC, con il fuso (le colonne sono timestamptz)
@@ -68,9 +69,12 @@ class Messaggio(Base):
     chat: Mapped[Chat] = relationship(back_populates="messaggi")
 
 
-# motore verso PostgreSQL; pool_pre_ping ritrova il database dopo un suo riavvio
+# motore verso PostgreSQL; pool_pre_ping ritrova il database dopo un suo riavvio;
+# connect_timeout: con il database spento l'errore arriva in pochi secondi (su Windows una porta
+# chiusa senza timeout blocca la connessione per oltre due minuti)
 def crea_motore(url: str) -> Engine:
-    return create_engine(url, pool_pre_ping=True)
+    return create_engine(url, pool_pre_ping=True,
+                         connect_args={"connect_timeout": TIMEOUT_CONNESSIONE})
 
 
 # crea le tabelle mancanti (quelle esistenti non si toccano)

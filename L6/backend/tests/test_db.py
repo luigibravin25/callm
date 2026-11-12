@@ -75,3 +75,20 @@ def test_ordine_dei_messaggi(fabbrica):
     with fabbrica() as s:
         assert [m.testo for m in s.get(Chat, chat_id).messaggi] == ["primo", "secondo", "terzo"]
         assert s.get(Chat, chat_id).messaggi[0].strumenti is None
+
+
+# Verifica che un database spento dia errore in pochi secondi (su Windows una porta chiusa,
+# senza timeout di connessione, blocca per oltre due minuti).
+def test_timeout_di_connessione():
+    import time
+
+    from sqlalchemy.exc import OperationalError
+
+    from app.db import TIMEOUT_CONNESSIONE, crea_motore
+    assert TIMEOUT_CONNESSIONE == 5
+    motore = crea_motore("postgresql+psycopg://x:y@127.0.0.1:1/nessuno_test")
+    inizio = time.perf_counter()
+    with pytest.raises(OperationalError):
+        motore.connect()
+    assert time.perf_counter() - inizio < TIMEOUT_CONNESSIONE * 3
+    motore.dispose()
