@@ -118,10 +118,31 @@ class RichiestaChat(BaseModel):
             raise ValueError("messaggio e prompt insieme non sono ammessi")
         if self.messaggio is not None and not self.messaggio.strip():
             raise ValueError("messaggio vuoto")
+        # chiamate agli strumenti ancora senza risposta: id -> indice dell'assistant che le ha
+        # fatte (si azzerano a ogni nuovo messaggio user/assistant: un id riusato in un turno
+        # successivo e' ammesso)
+        aperte: dict[str, int] = {}
         for i, m in enumerate(self.cronologia):
             # i messaggi del revisore non tornano mai al chiamante: non si possono iniettare
             if m.name == NOME_REVISORE:
                 raise ValueError(f"cronologia[{i}]: name '{NOME_REVISORE}' riservato")
+            if m.role == "tool":
+                # la risposta di uno strumento deve chiudere una chiamata aperta
+                if m.tool_call_id not in aperte:
+                    raise ValueError(f"cronologia[{i}]: messaggio 'tool' senza una chiamata "
+                                     f"corrispondente (tool_call_id '{m.tool_call_id}')")
+                del aperte[m.tool_call_id]
+                continue
+            # un nuovo messaggio user o assistant: le chiamate di prima devono avere risposta
+            if aperte:
+                raise ValueError(f"cronologia[{i}]: chiamata '{next(iter(aperte))}' senza "
+                                 "risposta dello strumento")
+            aperte = {c.id: i for c in (m.tool_calls or [])}
+        # a fine lista: errore sull'assistant che ha aperto la chiamata rimasta senza risposta
+        if aperte:
+            id_aperto, indice = next(iter(aperte.items()))
+            raise ValueError(f"cronologia[{indice}]: chiamata '{id_aperto}' senza risposta dello "
+                             "strumento")
         return self
 
 
