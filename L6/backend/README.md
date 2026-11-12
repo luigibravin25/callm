@@ -73,8 +73,9 @@ Invoke-RestMethod http://127.0.0.1:8001/chat
 ```
 
 Per vedere il corpo degli errori da PowerShell 5.1: `curl.exe -s -w "%{http_code}" ...`.
-Se il database non risponde all'avvio il servizio esce subito con «Database non raggiungibile su
-... è avviato il container l6-postgres?».
+Se il database non risponde all'avvio il servizio esce entro pochi secondi (timeout di connessione
+5 s) con «Database non raggiungibile su ...: <motivo del driver>. È avviato il container
+l6-postgres? DATABASE_URL è giusta?». Durante l'uso lo stesso motivo compare nel log `[backend]`.
 
 ## Endpoint
 
@@ -96,7 +97,7 @@ Corpo sempre `{"errore": "<codice>", "messaggio": "<frase in italiano>"}`.
 |---|---|---|
 | 404 | `chat_non_trovata` | id inesistente (o chat eliminata mentre l'agente rispondeva) |
 | 404 / 405 | `percorso_non_trovato` / `metodo_non_ammesso` | percorso o metodo sbagliato |
-| 422 | `richiesta_non_valida` | testo vuoto, campo mancante o in più, JSON non valido, id non valido |
+| 422 | `richiesta_non_valida` | testo vuoto o con il carattere NUL, campo mancante o in più, JSON non valido, id non valido |
 | 400 | `richiesta_non_valida` | corpo che non è UTF-8 |
 | 503 | `agente_non_raggiungibile` | l'agente non risponde su `AGENTE_URL` |
 | 504 | `agente_in_timeout` | l'agente non risponde entro `AGENTE_TIMEOUT` |
@@ -108,7 +109,7 @@ Inoltrati dall'agente con lo stesso status e corpo (solo per l'invio di un messa
 `richiesta_non_valida`, 502 `errore_del_modello`, 503 `modello_non_raggiungibile` e
 `mcp_non_disponibile`, 504 `modello_in_timeout`, 500 `errore_interno`.
 
-**Agente non raggiungibile o in errore:** il turno è tutto o niente. La domanda si salva, poi si
+**Agente non raggiungibile o in errore (o salvataggio della risposta fallito):** il turno è tutto o niente. La domanda si salva, poi si
 chiama l'agente; se fallisce la domanda si cancella e arriva l'errore. La chat resta com'era e si
 può riprovare con lo stesso testo (il front-end lo conserva).
 
