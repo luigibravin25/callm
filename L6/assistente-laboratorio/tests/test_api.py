@@ -276,3 +276,38 @@ def test_main_porta_non_valida(monkeypatch):
     with pytest.raises(SystemExit, match="AGENTE_PORTA"):
         api.main()
     assert chiamate == []
+
+
+# --- test spostati dalla CLI (step 6): il giro tra i turni ora passa dall'API ---
+
+# Verifica che dopo un rifiuto del revisore la cronologia restituita non contenga il messaggio
+# [Revisore] ne' la bozza, e che il turno dopo non li riceva.
+def test_turno_successivo_senza_revisore(client_per):
+    no = DecisioneRevisore(motivo="parziale", coerente=False)
+    modello = ModelloFinto([AIMessage("bozza"), AIMessage("completa"), AIMessage("prego")])
+    grafo = build_graph(modello, RouterFinto([IN_AMBITO]), RevisoreFinto([no, OK, OK]),
+                        RiassuntoFinto(["r"]), AMBITO)
+    c = client_per(Agente(grafo=grafo, prompts=[], mcp_partito=True, strumenti=(),
+                          motivo_mcp=""))
+    primo = c.post("/chat", json={"messaggio": "domanda"}).json()
+    assert primo["risposta"] == "completa"
+    assert "bozza" not in str(primo["cronologia"]) and "[Revisore]" not in str(primo["cronologia"])
+    c.post("/chat", json={"messaggio": "grazie", "cronologia": primo["cronologia"]})
+    assert "bozza" not in [m.content for m in modello.chiamate[2]]
+
+
+# Verifica che il riassunto restituito, rimandato, arrivi all'agente nel turno dopo.
+def test_riassunto_passato_al_turno_successivo(client_per):
+    modello = ModelloFinto([AIMessage("r1"), AIMessage("r2"), AIMessage("r3"), AIMessage("r4")])
+    grafo = build_graph(modello, RouterFinto([IN_AMBITO]), RevisoreFinto([OK]),
+                        RiassuntoFinto(["Si chiama Luigi."]), AMBITO, soglia_riassunto=3,
+                        messaggi_recenti=1)
+    c = client_per(Agente(grafo=grafo, prompts=[], mcp_partito=True, strumenti=(),
+                          motivo_mcp=""))
+    cronologia, riassunto = [], ""
+    for domanda in ["Mi chiamo Luigi", "d2", "d3", "d4"]:
+        dati = c.post("/chat", json={"messaggio": domanda, "cronologia": cronologia,
+                                     "riassunto": riassunto}).json()
+        cronologia, riassunto = dati["cronologia"], dati["riassunto"]
+    assert "Riassunto della conversazione precedente: Si chiama Luigi." in \
+        modello.chiamate[3][0].content
