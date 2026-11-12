@@ -61,6 +61,11 @@ class ClientAgente:
         except httpx.TransportError:
             raise ErroreAgente(503, "agente_non_raggiungibile",
                                MSG_NON_RAGGIUNGIBILE.format(url=self.url)) from None
+        # altri errori della richiesta (corpo non decodificabile, troppi redirect): l'agente
+        # risponde, ma in modo non valido
+        except httpx.RequestError:
+            raise ErroreAgente(502, "risposta_agente_non_valida",
+                               MSG_NON_VALIDA.format(status="nessuno")) from None
         return self._leggi(risposta)
 
     # interpreta la risposta: 200 valida, errore dell'agente inoltrato, o 502

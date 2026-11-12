@@ -60,6 +60,9 @@ class NuovoMessaggio(BaseModel):
     def _non_vuoto(cls, valore: str) -> str:
         if not valore.strip():
             raise ValueError("testo vuoto")
+        # PostgreSQL non accetta il carattere NUL nei testi: errore chiaro invece di un 500
+        if "\x00" in valore:
+            raise ValueError("testo con caratteri non ammessi (NUL)")
         return valore
 
 

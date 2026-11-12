@@ -94,21 +94,45 @@ def invia_messaggio(fabbrica: sessionmaker, client: ClientAgente, chat_id: int,
     log.info("chat %d: domanda %d salvata, chiamo l'agente (cronologia %d messaggi, "
              "riassunto %s)", chat_id, domanda.id, len(cronologia), "sì" if riassunto else "no")
 
-    # 2. chiamata all'agente senza sessioni aperte
+    # 2-3. chiamata all'agente e salvataggio della risposta: qualsiasi errore (agente, database,
+    # imprevisto) cancella la domanda, cosi' la chat non resta con una domanda senza risposta
     try:
-        esito = client.turno(testo, cronologia, riassunto)
+        return _completa_turno(fabbrica, client, domanda, cronologia, riassunto, primo_turno)
     except ErroreAgente as errore:
-        # 3a. tutto o niente: la domanda si cancella (se la chat c'e' ancora)
-        with fabbrica() as s:
-            s.execute(delete(Messaggio).where(Messaggio.id == domanda.id))
-            s.commit()
-        log.warning("chat %d: agente in errore (%s, %d), domanda %d cancellata", chat_id,
+        log.warning("chat %d: agente in errore (%s, %d), cancello la domanda %d", chat_id,
                     errore.errore, errore.status, domanda.id)
+        _cancella_domanda(fabbrica, domanda.id)
+        raise
+    except ChatNonTrovata:
+        raise  # chat eliminata durante il turno: la domanda e' gia' sparita con la cascata
+    except Exception:
+        log.exception("chat %d: turno non completato, cancello la domanda %d", chat_id,
+                      domanda.id)
+        _cancella_domanda(fabbrica, domanda.id)
         raise
 
-    # 3b. risposta salvata con il nuovo stato dell'agente
+
+# cancella la domanda di un turno fallito; un errore qui non deve nascondere quello originale
+def _cancella_domanda(fabbrica: sessionmaker, domanda_id: int) -> None:
+    try:
+        with fabbrica() as s:
+            s.execute(delete(Messaggio).where(Messaggio.id == domanda_id))
+            s.commit()
+    except Exception:
+        log.error("domanda %d non cancellata: resta senza risposta", domanda_id)
+
+
+# chiamata all'agente (nessuna sessione aperta) e salvataggio della risposta
+def _completa_turno(fabbrica: sessionmaker, client: ClientAgente, domanda: Messaggio,
+                    cronologia: list, riassunto: str,
+                    primo_turno: bool) -> tuple[Messaggio, Messaggio]:
+    chat_id, testo = domanda.chat_id, domanda.testo
+    esito = client.turno(testo, cronologia, riassunto)
+    # risposta salvata con il nuovo stato dell'agente
     with fabbrica() as s:
-        chat = s.get(Chat, chat_id)
+        # riga della chat bloccata fino al commit: un DELETE in parallelo aspetta, e se la chat
+        # e' gia' stata eliminata si ottiene None (404) invece di un errore di chiave esterna
+        chat = s.get(Chat, chat_id, with_for_update=True)
         if chat is None:
             # eliminata durante la chiamata: la domanda e' sparita con la cascata
             log.warning("chat %d: eliminata durante il turno, risposta scartata", chat_id)

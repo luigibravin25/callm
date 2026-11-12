@@ -218,3 +218,11 @@ def test_main_avvia_uvicorn(monkeypatch, motore):
     monkeypatch.setattr(uvicorn, "run", lambda app, **k: visti.update(k, app=app))
     api.main()
     assert (visti["host"], visti["port"], visti["log_config"]) == ("127.0.0.1", 9123, None)
+
+
+# Verifica (revisione finale, importante 2) il carattere NUL nel testo: 422, non 500.
+def test_testo_con_nul(client_per):
+    c = client_per()
+    r = c.post(f"/chat/{_nuova(c)}/messaggi", json={"testo": "ciao\u0000"})
+    assert (r.status_code, r.json()["errore"]) == (422, "richiesta_non_valida")
+    assert "caratteri non ammessi" in r.json()["messaggio"]

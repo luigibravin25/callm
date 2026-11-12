@@ -82,3 +82,11 @@ def test_risposte_non_valide(risposta, status):
     e = _errore(risposta)
     assert (e.status, e.errore) == (502, "risposta_agente_non_valida")
     assert e.messaggio == MSG_NON_VALIDA.format(status=status)
+
+
+# Verifica (revisione finale) gli errori di httpx che non sono di trasporto: 502, non eccezioni
+# impreviste.
+@pytest.mark.parametrize("eccezione", [httpx.DecodingError("corpo"), httpx.TooManyRedirects("giri")])
+def test_altri_errori_di_richiesta(eccezione):
+    e = _errore(eccezione)
+    assert (e.status, e.errore) == (502, "risposta_agente_non_valida")

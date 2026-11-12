@@ -162,3 +162,35 @@ def test_testo_intatto(fabbrica):
         letta = leggi_chat(s, chat.id)
         assert [m.testo for m in letta.messaggi] == [testo, "Così 😀"]
         assert letta.titolo == titolo_da_domanda(testo)
+
+
+# --- tutto o niente anche per errori diversi dall'agente (revisione finale, importante 1) ---
+
+# client che solleva un errore imprevisto durante la chiamata
+class ClientRotto:
+    def turno(self, messaggio, cronologia, riassunto):
+        raise RuntimeError("guasto imprevisto")
+
+
+# Verifica che un errore imprevisto durante la chiamata cancelli la domanda e risalga.
+def test_errore_imprevisto_cancella_la_domanda(fabbrica):
+    with fabbrica() as s:
+        chat = crea_chat(s)
+    with pytest.raises(RuntimeError):
+        invia_messaggio(fabbrica, ClientRotto(), chat.id, "ciao")
+    assert _messaggi_totali(fabbrica) == 0
+
+
+# Verifica che un salvataggio della risposta fallito (NUL nella cronologia: JSONB lo rifiuta)
+# non lasci la domanda senza risposta.
+def test_salvataggio_fallito_cancella_la_domanda(fabbrica):
+    with fabbrica() as s:
+        chat = crea_chat(s)
+    cronologia = [{"role": "user", "content": "ciao"},
+                  {"role": "assistant", "content": "con \u0000 NUL"}]
+    with pytest.raises(Exception):
+        invia_messaggio(fabbrica, client_finto(AgenteFinto([risposta_ok("ok", cronologia)])),
+                        chat.id, "ciao")
+    assert _messaggi_totali(fabbrica) == 0
+    with fabbrica() as s:
+        assert leggi_chat(s, chat.id).cronologia_agente == []
