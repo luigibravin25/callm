@@ -311,3 +311,21 @@ def test_riassunto_passato_al_turno_successivo(client_per):
         cronologia, riassunto = dati["cronologia"], dati["riassunto"]
     assert "Riassunto della conversazione precedente: Si chiama Luigi." in \
         modello.chiamate[3][0].content
+
+
+# Verifica l'avvio valido: host e porta da ambiente, log del grafo e del servizio accesi, uvicorn
+# chiamato una volta (senza avviarlo davvero).
+def test_main_avvia_uvicorn_con_i_log(monkeypatch):
+    import logging
+    import uvicorn
+    from app import api
+    chiamate = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, **k: chiamate.append(k))
+    monkeypatch.setenv("LM_BASE_URL", "http://127.0.0.1:1234/v1")
+    monkeypatch.setenv("LM_MODEL", "google/gemma-4-e2b")
+    monkeypatch.setenv("AGENTE_HOST", "0.0.0.0")
+    monkeypatch.setenv("AGENTE_PORTA", "8123")
+    api.main()
+    assert chiamate == [{"host": "0.0.0.0", "port": 8123, "log_config": None}]
+    for nome in ("api", "router", "agente", "mcp", "preferenze"):
+        assert logging.getLogger(nome).level == logging.INFO

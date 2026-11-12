@@ -160,3 +160,20 @@ def test_prova_reale_spiega_fuori_ambito(grafo_e_ambito):
                         "steps": 0, "revisioni": 0, "riassunto": ""})
     assert out["categoria"] == "fuori_ambito"
     assert out["messages"][-1].content == ambito.rifiuto
+
+
+# Verifica (step 6) POST /chat con il servizio vero (server MCP e LM Studio): la domanda usa
+# tooltime e la risposta lo dice in strumenti_usati.
+def test_prova_reale_chat_http_con_tooltime():
+    from fastapi.testclient import TestClient
+    from app.agente import prepara
+    from app.api import crea_app
+    from app.config import load_ambito, load_settings
+    s = load_settings()
+    ambito = load_ambito(s.ambito_file)
+    with TestClient(crea_app(lambda: prepara(s, ambito))) as client:
+        r = client.post("/chat", json={"messaggio": "Che ore sono a Tokyo?"})
+    assert r.status_code == 200, r.text
+    dati = r.json()
+    assert [u["nome"] for u in dati["strumenti_usati"]] == ["tooltime"]
+    assert dati["categoria"] == "conversazione" and dati["risposta"].strip()
