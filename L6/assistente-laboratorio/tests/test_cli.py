@@ -33,10 +33,13 @@ class AgenteFinto:
         self.prompts = prompts
         self.corpi = []  # corpi ricevuti da POST /chat
         self.giu = False  # True = agente spento (connessione rifiutata)
+        self.ctrl_c_su_stato = False  # True = Ctrl+C durante GET /stato
 
     def __call__(self, richiesta: httpx.Request) -> httpx.Response:
         if self.giu:
             raise httpx.ConnectError("rifiutata", request=richiesta)
+        if richiesta.url.path == "/stato" and self.ctrl_c_su_stato:
+            raise KeyboardInterrupt
         if richiesta.url.path == "/stato":
             return httpx.Response(self.stato[0], json=self.stato[1])
         if richiesta.url.path == "/prompts":
@@ -215,3 +218,14 @@ def test_pipe_in_cp1252_con_bom(monkeypatch):
     stampato = []
     cli.avvia(output_fn=stampato.append)
     assert elenco_prompt([SPIEGA]) in stampato and agente.corpi == []
+
+
+# Verifica (revisione finale I-1) Ctrl+C durante l'avvio (GET /stato): uscita pulita, niente
+# traceback, nessun input letto.
+def test_ctrl_c_durante_l_avvio():
+    agente = AgenteFinto()
+    agente.ctrl_c_su_stato = True
+    letto = []
+    main(ClientAgente(URL, 5, transport=httpx.MockTransport(agente)),
+         input_fn=lambda p="": letto.append(1) or "esci", output_fn=lambda s: None)
+    assert letto == []

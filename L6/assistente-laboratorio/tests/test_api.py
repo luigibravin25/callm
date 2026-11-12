@@ -1,4 +1,5 @@
 # test del servizio HTTP dell'agente (step 6): grafo vero con modelli finti, nessun LM Studio
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -166,7 +167,8 @@ def test_prompt_server_non_partito(client_per):
     ({}, "serve messaggio oppure prompt"),
     ({"messaggio": "a", "prompt": {"nome": "spiega"}}, "insieme"),
     ({"messaggio": "  "}, "messaggio vuoto"),
-    ({"messaggio": "a", "cronologia": [{"role": "capo", "content": "x"}]}, "cronologia.0.role"),
+    ({"messaggio": "a", "cronologia": [{"role": "capo", "content": "x"}]},
+     "campo cronologia[0].role: valore non ammesso (ammessi: user, assistant o tool)"),
     ({"messaggio": "a", "cronologia": "x"}, "cronologia"),
     ({"prompt": {"nome": "spiega", "argomenti": {"a": 1}}}, "prompt.argomenti.a"),
 ])
@@ -329,3 +331,38 @@ def test_main_avvia_uvicorn_con_i_log(monkeypatch):
     assert chiamate == [{"host": "0.0.0.0", "port": 8123, "log_config": None}]
     for nome in ("api", "router", "agente", "mcp", "preferenze"):
         assert logging.getLogger(nome).level == logging.INFO
+
+
+
+# --- correzioni della revisione finale ---
+
+# Verifica (I-2) che anche 404, 405 e un corpo non UTF-8 abbiano il corpo {errore, messaggio}.
+@pytest.mark.parametrize("metodo,percorso,opzioni,codice,errore", [
+    ("GET", "/nonesiste", {}, 404, "percorso_non_trovato"),
+    ("GET", "/chat", {}, 405, "metodo_non_ammesso"),
+    ("POST", "/chat", {"content": bytes([0xFF, 0xFE]), "headers": {"Content-Type": "application/json"}},
+     None, "richiesta_non_valida"),
+])
+def test_errori_http_con_corpo_uniforme(client_per, metodo, percorso, opzioni, codice, errore):
+    r = client_per(_agente(ModelloEco())).request(metodo, percorso, **opzioni)
+    if codice is not None:
+        assert r.status_code == codice
+    dati = r.json()
+    assert set(dati) == {"errore", "messaggio"} and dati["errore"] == errore
+    assert "Not Found" not in dati["messaggio"] and "Method" not in dati["messaggio"]
+
+
+# Verifica (M-1) che la cronologia restituita non abbia campi null (formato OpenAI canonico).
+def test_cronologia_senza_campi_null(client_per):
+    dati = client_per(_agente(_con_tooltime())).post(
+        "/chat", json={"messaggio": "Che ore sono a Tokyo?"}).json()
+    assert dati["cronologia"][0] == {"role": "user", "content": "Che ore sono a Tokyo?"}
+    assert "null" not in json.dumps(dati["cronologia"])
+
+
+# Verifica (M-3) che un role "system" dia il messaggio dedicato e non un elenco che lo ammette.
+def test_role_system_messaggio_dedicato(client_per):
+    r = client_per(_agente(ModelloEco())).post(
+        "/chat", json={"messaggio": "a", "cronologia": [{"role": "system", "content": "x"}]})
+    assert r.status_code == 422
+    assert "messaggi di sistema non ammessi" in r.json()["messaggio"]

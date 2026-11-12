@@ -11,10 +11,14 @@ import time
 from contextlib import asynccontextmanager
 from typing import Callable
 
-# FastAPI: applicazione, errori di validazione, risposte JSON
+# libreria standard: lettura dei valori ammessi nei messaggi di Pydantic
+import re
+
+# FastAPI: applicazione, errori di validazione, risposte JSON; errori HTTP di Starlette (404, 405)
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 # messaggi LangChain; errori del client OpenAI verso LM Studio
 from langchain_core.messages import HumanMessage
 from openai import (APIConnectionError, APIError, APIStatusError, APITimeoutError,
@@ -69,14 +73,21 @@ def _errore(codice_http: int, errore: str, messaggio: str) -> JSONResponse:
 # primo errore di validazione in italiano: "campo cronologia.0.role: valore non ammesso"
 def _testo_validazione(errore: RequestValidationError) -> str:
     primo = errore.errors()[0]
-    # percorso senza "body" (dettaglio interno di FastAPI)
-    percorso = ".".join(str(p) for p in primo.get("loc", ()) if p != "body")
+    # percorso senza "body" (dettaglio interno di FastAPI); indici come [n]: cronologia[0].role
+    percorso = ""
+    for parte in primo.get("loc", ()):
+        if parte == "body":
+            continue
+        percorso += f"[{parte}]" if isinstance(parte, int) else (f".{parte}" if percorso else parte)
     tipo = primo.get("type", "")
     if tipo == "value_error":
         # errori scritti da noi negli schemi: si tiene il testo senza il prefisso di Pydantic
         problema = str(primo.get("msg", "")).removeprefix("Value error, ")
     elif tipo == "literal_error":
-        problema = f"valore non ammesso (ammessi: {primo.get('ctx', {}).get('expected', '')})"
+        # "'user', 'assistant' or 'tool'" -> "user, assistant o tool"
+        ammessi = re.findall(r"'([^']*)'", str(primo.get("ctx", {}).get("expected", "")))
+        elenco = ", ".join(ammessi[:-1]) + " o " + ammessi[-1] if len(ammessi) > 1 else             "".join(ammessi)
+        problema = f"valore non ammesso (ammessi: {elenco})"
     else:
         problema = PROBLEMI.get(tipo, "valore non valido")
     # percorso numerico del JSON non valido (posizione nel testo): non e' un campo
@@ -90,6 +101,20 @@ def _registra_errori(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def _validazione(request: Request, e: RequestValidationError):
         return _errore(422, "richiesta_non_valida", _testo_validazione(e))
+
+    # errori HTTP di Starlette (percorso inesistente, metodo sbagliato, corpo illeggibile): stesso
+    # corpo {errore, messaggio} di tutti gli altri errori
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_starlette(request: Request, e: StarletteHTTPException):
+        if e.status_code == 404:
+            return _errore(404, "percorso_non_trovato",
+                           f"Percorso non trovato: {request.url.path}. Percorsi: /chat, "
+                           "/prompts, /stato, /docs.")
+        if e.status_code == 405:
+            return _errore(405, "metodo_non_ammesso",
+                           f"Metodo {request.method} non ammesso su {request.url.path}.")
+        return _errore(e.status_code, "richiesta_non_valida",
+                       "Richiesta non leggibile: serve un corpo JSON in UTF-8.")
 
     @app.exception_handler(CronologiaNonValida)
     async def _cronologia(request: Request, e: CronologiaNonValida):
@@ -147,7 +172,9 @@ def crea_app(prepara_agente: Callable) -> FastAPI:
                   version="6.0", lifespan=ciclo_di_vita)
     _registra_errori(app)
 
-    @app.post("/chat", response_model=RispostaChat, responses=RISPOSTE_ERRORE)
+    # exclude_none: niente campi null nella cronologia (formato OpenAI canonico)
+    @app.post("/chat", response_model=RispostaChat, responses=RISPOSTE_ERRORE,
+              response_model_exclude_none=True)
     def chat(richiesta: RichiestaChat, request: Request) -> RispostaChat:
         """Un turno della conversazione: messaggio (o prompt del server MCP), cronologia e
         riassunto del chiamante; restituisce la risposta e la cronologia aggiornata."""

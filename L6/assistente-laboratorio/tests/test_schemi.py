@@ -86,3 +86,15 @@ def test_prompt_pubblicato_e_ritorno():
     pubblicato = da_info(info)
     assert pubblicato.model_dump()["argomenti"][0] == {"nome": "argomento", "obbligatorio": True}
     assert a_info(pubblicato.model_dump()) == info
+
+
+
+# Verifica (M-2) il formato OpenAI standard: content null con tool_calls e content a blocchi.
+def test_content_null_e_a_blocchi():
+    m = MessaggioOpenAI.model_validate({"role": "assistant", "content": None, "tool_calls": [
+        {"id": "c1", "type": "function",
+         "function": {"name": "tooltime", "arguments": "{}"}}]})
+    assert m.content == ""
+    m = MessaggioOpenAI.model_validate({"role": "user",
+                                        "content": [{"type": "text", "text": "ciao"}]})
+    assert m.content == "ciao"

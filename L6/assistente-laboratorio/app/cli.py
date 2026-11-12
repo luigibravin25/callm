@@ -105,6 +105,9 @@ def _avvio(client: ClientAgente, output_fn) -> list[InfoPrompt] | None:
     except ErroreAgente as errore:
         output_fn(errore.messaggio)
         return None
+    # Ctrl+C durante l'avvio (/stato puo' durare qualche secondo): uscita pulita, niente traceback
+    except KeyboardInterrupt:
+        return None
 
 
 # ciclo della chat: una domanda alla volta, cronologia solo in memoria

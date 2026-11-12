@@ -77,3 +77,21 @@ def test_stato_dell_agente():
     assert stato.agente == "ok"
     assert (stato.mcp.strumenti, stato.mcp.prompt) == (["tooltime"], 2)
     assert stato.modello.nome == MODELLO
+
+
+
+# Verifica (M-5) che il client creato da verifica_modello venga chiuso (niente socket persi a
+# ogni /stato).
+def test_client_chiuso(monkeypatch):
+    from app import stato as modulo
+    creati = []
+    vero = httpx.Client
+
+    def fabbrica(**opzioni):
+        c = vero(transport=httpx.MockTransport(
+            lambda r: httpx.Response(200, json={"data": [{"id": MODELLO}]})))
+        creati.append(c)
+        return c
+    monkeypatch.setattr(modulo.httpx, "Client", fabbrica)
+    assert verifica_modello(URL, MODELLO).stato == "ok"
+    assert len(creati) == 1 and creati[0].is_closed

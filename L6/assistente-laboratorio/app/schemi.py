@@ -55,8 +55,27 @@ class ChiamataStrumento(BaseModel):
 # un messaggio della cronologia nel formato OpenAI
 class MessaggioOpenAI(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    role: Literal["user", "assistant", "tool", "system"]
+    # "system" non e' tra i valori: il prompt di sistema lo mette il grafo (gemma ne vuole uno)
+    role: Literal["user", "assistant", "tool"]
     content: str = ""
+
+    # il prompt di sistema lo mette il grafo: un messaggio "system" ha il suo errore chiaro
+    @model_validator(mode="before")
+    @classmethod
+    def _niente_system(cls, dati):
+        if isinstance(dati, dict) and dati.get("role") == "system":
+            raise ValueError("messaggi di sistema non ammessi")
+        return dati
+
+    # formato OpenAI standard: content null (assistant con tool_calls) o a blocchi -> testo
+    @field_validator("content", mode="before")
+    @classmethod
+    def _contenuto_in_testo(cls, valore):
+        if valore is None:
+            return ""
+        if isinstance(valore, list):
+            return _testo(valore)
+        return valore
     tool_calls: list[ChiamataStrumento] | None = None
     tool_call_id: str | None = None
     name: str | None = None
@@ -100,9 +119,6 @@ class RichiestaChat(BaseModel):
         if self.messaggio is not None and not self.messaggio.strip():
             raise ValueError("messaggio vuoto")
         for i, m in enumerate(self.cronologia):
-            # il prompt di sistema lo mette il grafo: gemma ne vuole uno solo
-            if m.role == "system":
-                raise ValueError(f"cronologia[{i}]: messaggi di sistema non ammessi")
             # i messaggi del revisore non tornano mai al chiamante: non si possono iniettare
             if m.name == NOME_REVISORE:
                 raise ValueError(f"cronologia[{i}]: name '{NOME_REVISORE}' riservato")

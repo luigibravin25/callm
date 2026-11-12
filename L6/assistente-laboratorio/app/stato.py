@@ -14,7 +14,10 @@ MSG_MCP_NON_PARTITO = "server MCP non partito all'avvio: riavviare l'agente"
 # LM Studio risponde e ha il modello? GET {base_url}/models e controllo dell'id
 def verifica_modello(base_url: str, modello: str,
                      client: httpx.Client | None = None) -> StatoModello:
-    client = client or httpx.Client(timeout=TIMEOUT_STATO_S)
+    # client creato qui: chiuso subito dopo (a ogni /stato, niente socket lasciati aperti)
+    if client is None:
+        with httpx.Client(timeout=TIMEOUT_STATO_S) as proprio:
+            return verifica_modello(base_url, modello, proprio)
     try:
         risposta = client.get(base_url.rstrip("/") + "/models")
     except httpx.HTTPError:
