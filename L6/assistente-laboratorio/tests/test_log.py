@@ -2,8 +2,13 @@
 import io
 import subprocess
 import sys
+from pathlib import Path
 
 from app.log import rendi_sicuro
+
+# cartella del progetto: i sottoprocessi importano app/ da qui, da qualsiasi cartella
+# partano i test
+CARTELLA = Path(__file__).resolve().parent.parent
 
 
 # Verifica che "→" su un flusso cp1252 (stderr rediretto su Windows) non sollevi un errore e
@@ -21,5 +26,5 @@ def test_freccia_con_stderr_cp1252():
 def test_log_senza_langchain():
     codice = "import app.log, sys; print('langchain_core' in sys.modules)"
     uscita = subprocess.run([sys.executable, "-c", codice], capture_output=True, text=True,
-                            check=True)
+                            cwd=CARTELLA, check=True)
     assert uscita.stdout.strip() == "False"

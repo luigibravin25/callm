@@ -3,6 +3,7 @@ import io
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import httpx
 import pytest
@@ -12,6 +13,10 @@ from app.cli import (MSG_AGENTE_NON_RAGGIUNGIBILE, MSG_PROMPT, MSG_RISPOSTA_NON_
                      MSG_STATO, ClientAgente, main)
 from app.comandi import MSG_ARG_SCONOSCIUTO, MSG_NESSUN_PROMPT, elenco_prompt
 from app.info_prompt import InfoArgomento, InfoPrompt
+
+# cartella del progetto: i sottoprocessi importano app/ da qui, da qualsiasi cartella
+# partano i test
+CARTELLA = Path(__file__).resolve().parent.parent
 
 URL = "http://127.0.0.1:8000"
 SPIEGA = InfoPrompt("spiega", "Spiega.", (InfoArgomento("argomento", True),
@@ -83,7 +88,7 @@ def test_cli_non_importa_il_grafo():
     codice = ("import app.cli, sys; print([m for m in ('app.graph', 'app.llm', "
               "'app.adattatore_mcp', 'langchain_openai') if m in sys.modules])")
     uscita = subprocess.run([sys.executable, "-c", codice], capture_output=True, text=True,
-                            check=True)
+                            cwd=CARTELLA, check=True)
     assert uscita.stdout.strip() == "[]"
 
 

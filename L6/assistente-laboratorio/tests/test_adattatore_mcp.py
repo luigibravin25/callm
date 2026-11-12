@@ -1,6 +1,7 @@
 # Test dell'adattatore MCP con il server vero avviato come sottoprocesso (nessun LM Studio).
 import logging
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -8,6 +9,10 @@ from langchain_core.messages import HumanMessage
 
 from app.adattatore_mcp import (ErroreMCP, InfoArgomento, carica_strumenti, configurazione_server,
                                 elenca_prompt, leggi_preferenze, ottieni_prompt)
+
+# cartella del progetto: i sottoprocessi importano app/ da qui, da qualsiasi cartella
+# partano i test
+CARTELLA = Path(__file__).resolve().parent.parent
 
 
 # messaggi del logger "mcp" registrati da caplog
@@ -136,7 +141,7 @@ def test_info_prompt_senza_mcp():
     codice = ("import app.info_prompt, sys; "
               "print('mcp' in sys.modules, 'langchain_core' in sys.modules)")
     uscita = subprocess.run([sys.executable, "-c", codice], capture_output=True, text=True,
-                            check=True)
+                            cwd=CARTELLA, check=True)
     assert uscita.stdout.split() == ["False", "False"]
 
 
