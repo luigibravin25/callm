@@ -6,8 +6,8 @@ import sys
 from langchain_core.messages import HumanMessage
 from openai import APIConnectionError, APIError, APIStatusError
 
-# interruttori dei log (app/llm.py)
-from app.llm import LOG_GRAFO, LOG_HTTP
+# interruttori dei log (app/log.py)
+from app.log import LOG_GRAFO, LOG_HTTP
 # comandi dei prompt MCP (step 5): lettura delle righe "/..." e messaggio d'errore di prompts/get
 from app.comandi import MSG_ERRORE_PROMPT, RichiestaPrompt, interpreta
 # preferenze dell'utente in uso nella sessione (step 4)

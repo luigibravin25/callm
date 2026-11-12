@@ -101,3 +101,40 @@ def test_blocco_dettagliato():
     assert blocco.endswith("\n- Stile dettagliato: rispondi in modo completo, con qualche "
                            "spiegazione in più.")
     assert "(Rome)" in blocco
+
+
+# --- step 6: fonte delle preferenze nel log (minori dello step 4) ---
+
+# Verifica che il log dica "(da file)" se almeno un campo viene dal file.
+def test_fonte_da_file(caplog):
+    caplog.set_level(logging.INFO, logger="preferenze")
+    valida('{"lingua": "inglese"}', "Europe/Rome")
+    assert any("in uso:" in r.getMessage() and "(da file)" in r.getMessage()
+               for r in caplog.records)
+
+
+# Verifica che il log dica "(predefinite)" senza resource o con un JSON non valido.
+@pytest.mark.parametrize("testo", [None, "[1]"])
+def test_fonte_predefinite(caplog, testo):
+    caplog.set_level(logging.INFO, logger="preferenze")
+    valida(testo, "Europe/Rome")
+    assert any("in uso:" in r.getMessage() and "(predefinite)" in r.getMessage()
+               for r in caplog.records)
+
+
+# Verifica che usa_predefinite non scriva il WARNING sulla resource (server non partito).
+def test_usa_predefinite_senza_warning_resource(caplog):
+    from app.preferenze import usa_predefinite
+    caplog.set_level(logging.INFO, logger="preferenze")
+    p = usa_predefinite("Europe/Rome")
+    assert p == predefinite("Europe/Rome")
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("(predefinite)" in r.getMessage() for r in caplog.records)
+
+
+# Verifica che un file con soli valori non validi dia "(predefinite)": nessun campo dal file.
+def test_fonte_predefinite_con_valori_non_validi(caplog):
+    caplog.set_level(logging.INFO, logger="preferenze")
+    valida('{"stile": "barocco"}', "Europe/Rome")
+    assert any("in uso:" in r.getMessage() and "(predefinite)" in r.getMessage()
+               for r in caplog.records)

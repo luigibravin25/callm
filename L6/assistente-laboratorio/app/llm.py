@@ -19,8 +19,6 @@ SYSTEM_PROMPT = (
 # senza server MCP l'agente non ha l'orologio: non deve inventare l'ora (step 4)
 FRASE_SENZA_STRUMENTI = ("Non hai strumenti: se ti chiedono l'ora o la data, di' che "
                          "l'orologio non è disponibile.")
-LOG_HTTP = True  # True = mostra nel terminale le richieste HTTP verso LM Studio
-LOG_GRAFO = True  # True = mostra nel terminale i log di router, agente, rifiuto e revisore
 
 
 # crea il modello di LM Studio con i parametri comuni ad agente e router
