@@ -19,7 +19,8 @@ from app.info_prompt import InfoPrompt
 # logger dell'avvio MCP: nel terminale compare come [mcp]
 log = logging.getLogger("mcp")
 
-MSG_MCP_NON_PARTITO = "server MCP non partito all'avvio: riavviare l'agente"
+# stesso testo usato da /stato (app/stato.py)
+from app.stato import MSG_MCP_NON_PARTITO  # noqa: E402
 
 
 # risultato di un turno, pronto per la risposta dell'API
@@ -79,6 +80,15 @@ class Agente:
                           strumenti_usati=strumenti_del_turno(ingresso, messaggi),
                           categoria=out.get("categoria", ""), argomento=out.get("argomento"))
 
+    # stato dal vivo (GET /stato): i due controlli piu' strumenti e prompt caricati all'avvio
+    def stato(self):
+        # import qui: gli schemi servono solo a /stato
+        from app.schemi import Stato
+        mcp = self.verifica_mcp()
+        mcp.strumenti = list(self.strumenti)
+        mcp.prompt = len(self.prompts)
+        return Stato(agente="ok", mcp=mcp, modello=self.verifica_modello())
+
     # messaggi di un prompt del server: controllo con l'elenco, poi prompts/get
     def messaggi_prompt(self, nome: str, argomenti: dict[str, str]) -> list[BaseMessage]:
         # import come modulo: i test lo possono sostituire
@@ -120,5 +130,9 @@ def prepara(settings: Settings, ambito: Ambito) -> Agente:
                         strumenti=strumenti,
                         system_prompt=llm.prompt_agente(preferenze, bool(strumenti)),
                         fuso_predefinito=preferenze.fuso)
+    # controlli dal vivo di /stato con i valori di questa configurazione
+    from app.stato import verifica_mcp, verifica_modello
     return Agente(grafo=grafo, prompts=prompts, mcp_partito=partito,
-                  strumenti=tuple(t.name for t in strumenti), motivo_mcp=motivo)
+                  strumenti=tuple(t.name for t in strumenti), motivo_mcp=motivo,
+                  verifica_modello=lambda: verifica_modello(settings.base_url, settings.model),
+                  verifica_mcp=lambda: verifica_mcp(partito))
