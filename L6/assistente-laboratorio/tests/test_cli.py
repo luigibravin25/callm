@@ -270,3 +270,40 @@ def test_prompts_con_agente_spento():
     assert MSG_AGENTE_NON_RAGGIUNGIBILE.format(url=URL) in stampato
     assert "Assistente: Eccomi" in stampato
     assert [c["messaggio"] for c in agente.corpi] == ["Ci sei?"]
+
+
+# Verifica (minore 3 dello step 6) Ctrl+C durante l'attesa della risposta: la chiamata gira in un
+# thread di lavoro e l'attesa nel thread principale si puo' interrompere subito (su Windows un
+# Ctrl+C non interrompe una lettura di rete bloccata).
+def test_ctrl_c_durante_l_attesa(monkeypatch):
+    import threading
+    thread_chiamata = []
+
+    # agente che registra in quale thread arriva la richiesta
+    class AgenteThread(AgenteFinto):
+        def __call__(self, richiesta):
+            if richiesta.url.path == "/chat":
+                thread_chiamata.append((threading.get_ident(), threading.current_thread().daemon))
+            return super().__call__(richiesta)
+
+    # attesa interrotta da Ctrl+C mentre la risposta non e' ancora arrivata
+    def attesa_interrotta(futuro, intervallo=0.2):
+        futuro.result()  # la chiamata finta finisce subito: si aspetta per registrare il thread
+        raise KeyboardInterrupt
+    monkeypatch.setattr(cli, "_attendi", attesa_interrotta)
+    agente = AgenteThread([_ok("non mostrata")])
+    out = _chat(["Ciao", "non letta"], agente)
+    assert not any(s.startswith("Assistente:") for s in out)
+    assert len(agente.corpi) == 1
+    # thread diverso dal principale e daemon: all'uscita Python non aspetta la risposta
+    assert thread_chiamata and thread_chiamata[0][0] != threading.get_ident()
+    assert thread_chiamata[0][1] is True
+
+
+# Verifica che _attendi restituisca il risultato dopo piu' intervalli di attesa.
+def test_attendi_risultato_lento():
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=1) as esecutore:
+        futuro = esecutore.submit(lambda: time.sleep(0.5) or "fatto")
+        assert cli._attendi(futuro, intervallo=0.1) == "fatto"
