@@ -97,8 +97,10 @@ def messaggi_per_router(ambito: Ambito, messages: list) -> list:
 def decidi(router_llm, ambito: Ambito, messages: list) -> DecisioneRouter:
     """Decisione del router. Gli errori di LM Studio (APIError) salgono al chiamante; ogni
     altro problema (JSON rotto, categoria sconosciuta, risposta vuota) diventa conversazione."""
+    # fuori dal try: un errore di programma qui sale, non diventa "output non valido"
+    messaggi = messaggi_per_router(ambito, messages)
     try:
-        decisione = router_llm.invoke(messaggi_per_router(ambito, messages))
+        decisione = router_llm.invoke(messaggi)
     except APIError:
         raise  # LM Studio irraggiungibile o errore HTTP: non e' un output non valido
     except Exception as errore:  # validazione o parsing falliti

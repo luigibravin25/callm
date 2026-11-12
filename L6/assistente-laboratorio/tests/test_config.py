@@ -197,3 +197,21 @@ def test_argomenti_non_validi(tmp_path, argomenti, messaggio):
 def test_argomenti_validi(tmp_path):
     a = load_ambito(_toml(tmp_path, BASE + '[[argomenti]]\nnome = " ora "\ndescrizione = " ore "\n'))
     assert [(x.nome, x.descrizione) for x in a.argomenti] == [("ora", "ore")]
+
+
+# Verifica che l'errore su una voce di [[argomenti]] dica quale voce e quale campo (minore dello
+# step 5: prima l'errore sembrava riferito alla descrizione dell'ambito).
+def test_argomento_senza_descrizione_nomina_la_voce(tmp_path):
+    testo = BASE + ('[[argomenti]]\nnome = "ora"\ndescrizione = "x"\n'
+                    '[[argomenti]]\nnome = "saluti"\n')
+    with pytest.raises(ValueError) as errore:
+        load_ambito(_toml(tmp_path, testo))
+    for parte in ("[[argomenti]]", "voce 2", "saluti", "'descrizione'"):
+        assert parte in str(errore.value)
+
+
+# Verifica che una voce senza nome dica il numero della voce e il campo 'nome'.
+def test_argomento_senza_nome_nomina_la_voce(tmp_path):
+    with pytest.raises(ValueError) as errore:
+        load_ambito(_toml(tmp_path, BASE + '[[argomenti]]\ndescrizione = "x"\n'))
+    assert "voce 1" in str(errore.value) and "'nome'" in str(errore.value)

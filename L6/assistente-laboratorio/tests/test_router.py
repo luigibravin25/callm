@@ -155,3 +155,16 @@ def test_decidi_ricava_la_categoria(argomento, categoria):
     uscita = schema_router(AMBITO_ARG)(motivo="m", argomento=argomento)
     decisione = decidi(RouterFinto([uscita]), AMBITO_ARG, [HumanMessage("x")])
     assert decisione == DecisioneRouter(motivo="m", categoria=categoria, argomento=argomento)
+
+
+# Verifica che un errore di programma nel preparare i messaggi salga (minore dello step 1: prima
+# l'except Exception lo trasformava in "output non valido" e la domanda passava all'agente).
+def test_errore_di_programma_nel_router_sale(monkeypatch):
+    from app import router
+
+    def rotto(ambito, messages):
+        raise KeyError("x")
+    monkeypatch.setattr(router, "messaggi_per_router", rotto)
+    with pytest.raises(KeyError):
+        decidi(RouterFinto([DecisioneRouter(categoria="conversazione", motivo="ok")]), AMBITO,
+               [HumanMessage("ciao")])

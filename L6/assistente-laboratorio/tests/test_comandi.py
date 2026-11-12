@@ -97,3 +97,19 @@ def test_testo_dell_elenco():
         "  argomenti: stile (facoltativo)\n"
         "- vuoto: Niente.\n"
         "  argomenti: nessuno")
+
+
+# --- minori dello step 5 corretti nello step 6 ---
+
+# Verifica che un tab (o piu' spazi) separi comando, nome e argomenti come lo spazio.
+def test_tab_dopo_prompt_separa_il_comando():
+    assert interpreta("/prompt\tspiega\targomento=MCP", PROMPTS) == \
+        RichiestaPrompt("spiega", {"argomento": "MCP"})
+    assert interpreta("/prompts\t", PROMPTS) == elenco_prompt(PROMPTS)
+
+
+# Verifica che /prompts con del testo dopo non lo ignori ma mostri l'uso.
+def test_prompts_con_testo_da_uso():
+    from app.comandi import MSG_USO_PROMPTS
+    assert MSG_USO_PROMPTS == "Uso: /prompts (senza argomenti)."
+    assert interpreta("/prompts spiega", PROMPTS) == MSG_USO_PROMPTS
