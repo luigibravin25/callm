@@ -8,7 +8,7 @@ import shlex
 from dataclasses import dataclass
 
 # tipo dei prompt pubblicati dal server (prompts/list)
-from app.adattatore_mcp import InfoPrompt
+from app.info_prompt import InfoPrompt
 
 # messaggi fissi della CLI (i test li confrontano parola per parola)
 MSG_SCONOSCIUTO = "Comando sconosciuto: {comando}. Comandi: /prompts, /prompt nome chiave=valore."

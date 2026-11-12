@@ -11,7 +11,6 @@ import logging
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from pathlib import Path
 
 # classi dei messaggi e degli strumenti LangChain, client MCP, conversione dei prompt in messaggi
@@ -19,6 +18,13 @@ from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool, StructuredTool, ToolException
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.prompts import load_mcp_prompt
+
+# tipi dei prompt senza dipendenze da MCP (riesportati: i test e i moduli vecchi li prendono da qui)
+from app.info_prompt import InfoArgomento, InfoPrompt  # noqa: F401
+# errore restituito dal server MCP (per esempio il PromptError di un valore non ammesso)
+from mcp.shared.exceptions import McpError
+# codice di McpError quando il processo del server si chiude (non parte o cade)
+from mcp.types import CONNECTION_CLOSED
 
 # logger delle operazioni MCP: nel terminale compare come [mcp]
 log = logging.getLogger("mcp")
@@ -34,6 +40,18 @@ VARIABILI_SERVER = ("PREFERENZE_FILE", "FUSO_PREDEFINITO")
 # errore proprio dell'adattatore: il server non parte o non pubblica tool utilizzabili
 class ErroreMCP(Exception):
     """Il server MCP non parte o non pubblica tool utilizzabili."""
+
+
+# il server ha risposto ma ha rifiutato il prompt (nome sconosciuto o valore non ammesso)
+class PromptNonValido(ErroreMCP):
+    """Prompt rifiutato dal server o dal controllo degli argomenti: errore di chi lo chiede."""
+
+
+# primo errore vero dentro un gruppo di eccezioni (anyio raccoglie gli errori in gruppi)
+def _radice(errore: BaseException) -> BaseException:
+    while isinstance(errore, BaseExceptionGroup) and errore.exceptions:
+        errore = errore.exceptions[0]
+    return errore
 
 
 # descrive come avviare il server: comando, argomenti, cartella, variabili d'ambiente
@@ -159,19 +177,7 @@ def leggi_preferenze(modulo: str = MODULO_SERVER) -> str | None:
 
 # --- prompt (step 5) ---
 
-# argomento di un prompt come lo pubblica prompts/list: nome e se e' obbligatorio
-@dataclass(frozen=True)
-class InfoArgomento:
-    nome: str
-    obbligatorio: bool
-
-
-# prompt pubblicato dal server: la CLI usa questo tipo, non gli oggetti di MCP
-@dataclass(frozen=True)
-class InfoPrompt:
-    nome: str
-    descrizione: str
-    argomenti: tuple[InfoArgomento, ...]
+# tipi dei prompt (InfoPrompt, InfoArgomento): stanno in app/info_prompt.py, importati in cima
 
 
 # elenco dei prompt (prompts/list), chiesto una volta all'avvio della sessione
@@ -215,7 +221,15 @@ def ottieni_prompt(nome: str, argomenti: dict[str, str],
     try:
         messaggi = _esegui(ottieni)
     except Exception as errore:
-        raise ErroreMCP(_motivo(errore)) from None
+        motivo = _motivo(errore)
+        log.warning("prompts/get %s non riuscita: %s", nome, motivo)
+        # McpError = il server ha risposto con un errore (valore rifiutato, prompt sconosciuto):
+        # colpa della richiesta; con CONNECTION_CLOSED invece il server non e' partito o e'
+        # caduto, come ogni altro errore (timeout): colpa del server
+        radice = _radice(errore)
+        if isinstance(radice, McpError) and radice.error.code != CONNECTION_CLOSED:
+            raise PromptNonValido(motivo) from None
+        raise ErroreMCP(motivo) from None
     # evidenza dello step 5: messaggi ottenuti dal server, con tipo e testo
     parola = "messaggio" if len(messaggi) == 1 else "messaggi"
     testi = " | ".join(f"{m.type}: {m.content}" for m in messaggi)
