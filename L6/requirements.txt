@@ -17,5 +17,9 @@ fastapi==0.162.5
 uvicorn==0.54.0
 # client HTTP della CLI verso l'agente e di /stato verso LM Studio (gia' presente con openai)
 httpx==0.28.1
+# back-end (step 7): modelli e sessioni delle chat in PostgreSQL, tabelle create all'avvio
+sqlalchemy==2.1.8
+# driver PostgreSQL per SQLAlchemy; "binary" porta libpq gia' compilata (niente compilazione su Windows)
+psycopg[binary]==3.3.9
 # test automatici
 pytest==9.1.1
