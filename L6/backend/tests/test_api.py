@@ -226,3 +226,45 @@ def test_testo_con_nul(client_per):
     r = c.post(f"/chat/{_nuova(c)}/messaggi", json={"testo": "ciao\u0000"})
     assert (r.status_code, r.json()["errore"]) == (422, "richiesta_non_valida")
     assert "caratteri non ammessi" in r.json()["messaggio"]
+
+
+# Verifica (revisione finale, minore 5) che il log dica perche' il database non risponde (prima
+# riga del messaggio di psycopg, senza password).
+def test_database_non_disponibile_motivo_nel_log(client_per, caplog):
+    motore = crea_motore(URL_SPENTO)
+    client_per(fab=fabbrica_sessioni(motore)).get("/chat")
+    # il testo dipende dal sistema (Windows: timeout; Linux: connection refused)
+    assert "database non disponibile: connection" in caplog.text.lower()
+    assert "segreta" not in caplog.text
+    motore.dispose()
+
+
+# Verifica (minore 5) che il messaggio d'avvio con il database non raggiungibile riporti il
+# motivo del driver.
+def test_main_database_motivo(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", URL_SPENTO)
+    monkeypatch.setattr(uvicorn, "run", _vietato)
+    with pytest.raises(SystemExit) as uscita:
+        api.main()
+    testo = str(uscita.value)
+    assert "assistente_test" not in testo and "segreta" not in testo
+    assert "/nessuno_test: connection" in testo.lower()
+
+
+# Verifica (minore 6) l'attesa di una connessione libera scaduta: 503, non 500.
+def test_pool_esaurito(client_per, monkeypatch):
+    from sqlalchemy.exc import TimeoutError as AttesaPool
+
+    def esaurito(_s):
+        raise AttesaPool("QueuePool limit reached")
+    monkeypatch.setattr(servizio, "elenca_chat", esaurito)
+    r = client_per().get("/chat")
+    assert (r.status_code, r.json()["errore"]) == (503, "database_non_disponibile")
+
+
+# Verifica (minore 8) che alla chiusura del servizio il client dell'agente venga chiuso.
+def test_client_agente_chiuso_alla_chiusura(fabbrica):
+    client = client_finto(AgenteFinto())
+    with TestClient(crea_app(fabbrica, client)):
+        assert not client._http.is_closed
+    assert client._http.is_closed

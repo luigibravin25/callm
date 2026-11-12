@@ -99,6 +99,9 @@ def _testo_valido(testo: str) -> str:
 # Daemon: all'uscita dopo un Ctrl+C Python non aspetta la chiamata ancora in corso (i thread di
 # ThreadPoolExecutor invece verrebbero attesi, e l'uscita arriverebbe solo con la risposta)
 def _in_sottofondo(funzione, *argomenti) -> Future:
+    # Future creato a mano (la documentazione lo riserva agli esecutori e ai test): qui serve
+    # solo a passare risultato o eccezione dal thread daemon al principale. Dopo un Ctrl+C la
+    # connessione verso l'agente resta aperta nel thread, e si chiude con l'uscita del processo
     futuro = Future()
 
     # corpo del thread: risultato o eccezione passati al Future

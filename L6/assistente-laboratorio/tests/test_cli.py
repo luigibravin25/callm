@@ -39,6 +39,7 @@ class AgenteFinto:
         self.corpi = []  # corpi ricevuti da POST /chat
         self.giu = False  # True = agente spento (connessione rifiutata)
         self.ctrl_c_su_stato = False  # True = Ctrl+C durante GET /stato
+        self.ctrl_c_su_prompts = False  # True = Ctrl+C durante GET /prompts
 
     def __call__(self, richiesta: httpx.Request) -> httpx.Response:
         if self.giu:
@@ -47,6 +48,8 @@ class AgenteFinto:
             raise KeyboardInterrupt
         if richiesta.url.path == "/stato":
             return httpx.Response(self.stato[0], json=self.stato[1])
+        if richiesta.url.path == "/prompts" and self.ctrl_c_su_prompts:
+            raise KeyboardInterrupt
         if richiesta.url.path == "/prompts":
             return httpx.Response(200, json=self.prompts)
         self.corpi.append(json.loads(richiesta.content))
@@ -307,3 +310,21 @@ def test_attendi_risultato_lento():
     with ThreadPoolExecutor(max_workers=1) as esecutore:
         futuro = esecutore.submit(lambda: time.sleep(0.5) or "fatto")
         assert cli._attendi(futuro, intervallo=0.1) == "fatto"
+
+
+# Verifica (revisione finale, minore 9) Ctrl+C durante la rilettura dei prompt per un comando:
+# uscita pulita, nessuna chiamata a /chat, la riga dopo non viene letta.
+def test_ctrl_c_durante_la_rilettura_dei_prompt():
+    agente = AgenteFinto()
+    righe = iter(["/prompts", "non letta"])
+    lette = []
+
+    # finto input(): il Ctrl+C arriva durante GET /prompts del comando
+    def leggi(_prompt=""):
+        riga = next(righe)
+        lette.append(riga)
+        agente.ctrl_c_su_prompts = True
+        return riga
+    main(ClientAgente(URL, 5, transport=httpx.MockTransport(agente)), input_fn=leggi,
+         output_fn=lambda s: None)
+    assert lette == ["/prompts"] and agente.corpi == []

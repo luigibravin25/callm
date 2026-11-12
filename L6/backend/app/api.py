@@ -4,15 +4,17 @@ Unico punto di contatto del front-end: il front-end non conosce l'agente. Cinque
 (creare, elencare, leggere, inviare un messaggio, eliminare); documentazione OpenAPI su /docs.
 Avvio: python -m app.api (DATABASE_URL, AGENTE_URL, AGENTE_TIMEOUT, BACKEND_HOST, BACKEND_PORTA).
 """
-# librerie standard: log, valori ammessi nei messaggi di Pydantic
+# librerie standard: log, valori ammessi nei messaggi di Pydantic, ciclo di vita del servizio
 import logging
 import re
+from contextlib import asynccontextmanager
 
 # FastAPI: applicazione, percorsi, errori di validazione, risposte; errori HTTP di Starlette
 from fastapi import FastAPI, Path, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as AttesaPool
 from sqlalchemy.orm import sessionmaker
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -64,6 +66,14 @@ PROBLEMI = {
 
 # parametro di percorso: intero positivo entro il limite della colonna (oltre: 422, non 500)
 ChatId = Path(ge=1, le=ID_MASSIMO, description="identificativo della chat")
+
+
+# prima riga del messaggio del driver (psycopg non vi mette la password): dice perche' il
+# database non risponde (porta chiusa, password sbagliata, timeout)
+def motivo_database(e: Exception) -> str:
+    origine = getattr(e, "orig", None) or e
+    righe = str(origine).strip().splitlines()
+    return righe[0] if righe else type(origine).__name__
 
 
 # corpo d'errore uniforme
@@ -125,12 +135,12 @@ def _registra_errori(app: FastAPI) -> None:
     async def _agente(request: Request, e: ErroreAgente):
         return _errore(e.status, e.errore, e.messaggio)
 
-    # database spento o caduto: dettagli (senza password) solo nel log
+    # database spento o caduto, o nessuna connessione libera: il motivo (senza password) nel log
     @app.exception_handler(OperationalError)
     @app.exception_handler(InterfaceError)
+    @app.exception_handler(AttesaPool)
     async def _database(request: Request, e: Exception):
-        log.error("database non disponibile: %s", type(e.orig).__name__ if hasattr(e, "orig")
-                  else type(e).__name__)
+        log.error("database non disponibile: %s", motivo_database(e))
         return _errore(503, "database_non_disponibile", MSG_DATABASE)
 
     # tutto il resto: 500 con un messaggio fisso, traceback solo nel log
@@ -142,8 +152,15 @@ def _registra_errori(app: FastAPI) -> None:
 
 # crea l'applicazione; i test passano un database di prova e un agente finto
 def crea_app(fabbrica: sessionmaker, client: ClientAgente) -> FastAPI:
+    # ciclo di vita: alla chiusura del servizio si chiudono le connessioni verso l'agente
+    @asynccontextmanager
+    async def ciclo_di_vita(app: FastAPI):
+        yield
+        client.chiudi()
+        log.info("chiuso")
+
     app = FastAPI(title="Assistente di laboratorio · Back-end", description=DESCRIZIONE,
-                  version="7.0")
+                  version="7.0", lifespan=ciclo_di_vita)
     _registra_errori(app)
 
     @app.post("/chat", response_model=ChatCreata, status_code=201, tags=["chat"],
@@ -204,10 +221,11 @@ def main() -> None:
     motore = crea_motore(impostazioni.database_url)
     try:
         crea_tabelle(motore)
-    except (OperationalError, InterfaceError):
+    except (OperationalError, InterfaceError) as errore:
         motore.dispose()
-        raise SystemExit(f"Database non raggiungibile su {url}: è avviato il container "
-                         "l6-postgres?") from None
+        # motivo del driver: porta chiusa (container spento) o password sbagliata si distinguono
+        raise SystemExit(f"Database non raggiungibile su {url}: {motivo_database(errore)}. "
+                         "È avviato il container l6-postgres? DATABASE_URL è giusta?") from None
     log.info("database pronto (tabelle chat, messaggi) su %s", url)
     log.info("agente: %s (timeout %d s); documentazione su /docs", impostazioni.agente_url,
              impostazioni.agente_timeout)

@@ -194,3 +194,49 @@ def test_salvataggio_fallito_cancella_la_domanda(fabbrica):
     assert _messaggi_totali(fabbrica) == 0
     with fabbrica() as s:
         assert leggi_chat(s, chat.id).cronologia_agente == []
+
+
+# Verifica (revisione finale, minore 3) che al salvataggio della risposta la riga della chat sia
+# bloccata (SELECT ... FOR UPDATE): un DELETE in parallelo aspetta il commit invece di far
+# fallire la chiave esterna con un 500.
+def test_chat_bloccata_al_salvataggio(fabbrica, motore):
+    from sqlalchemy import event
+    istruzioni = []
+
+    # registra le istruzioni SQL mandate al database
+    def registra(conn, cursore, sql, parametri, contesto, molti):
+        istruzioni.append(sql)
+    event.listen(motore, "before_cursor_execute", registra)
+    try:
+        with fabbrica() as s:
+            chat = crea_chat(s)
+        invia_messaggio(fabbrica, client_finto(AgenteFinto([risposta_ok("ok")])), chat.id, "x")
+    finally:
+        event.remove(motore, "before_cursor_execute", registra)
+    assert any("FROM chat" in sql and "FOR UPDATE" in sql for sql in istruzioni)
+
+
+# fabbrica che fa fallire l'apertura della sessione numero `quale` (1 = la prima)
+def _fabbrica_che_fallisce(fabbrica, quale):
+    from sqlalchemy.exc import OperationalError
+    aperte = []
+
+    def apri():
+        aperte.append(1)
+        if len(aperte) == quale:
+            raise OperationalError("SELECT 1", {}, Exception("database caduto"))
+        return fabbrica()
+    return apri
+
+
+# Verifica (revisione finale, minore 4) che se la cancellazione della domanda fallisce resti
+# l'errore dell'agente (non quello del database) e la cosa finisca nel log.
+def test_pulizia_fallita_non_nasconde_l_errore(fabbrica, caplog):
+    with fabbrica() as s:
+        chat = crea_chat(s)
+    rotta = _fabbrica_che_fallisce(fabbrica, 2)  # 1 = domanda, 2 = cancellazione
+    with pytest.raises(ErroreAgente) as e:
+        invia_messaggio(rotta, client_finto(AgenteFinto([httpx.ConnectError("no")])), chat.id,
+                        "ciao")
+    assert e.value.errore == "agente_non_raggiungibile"
+    assert "non cancellata" in caplog.text
