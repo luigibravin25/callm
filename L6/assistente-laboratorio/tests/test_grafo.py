@@ -449,3 +449,33 @@ def test_log_del_router_con_argomento(log):
     decisione = DecisioneRouter(categoria="conversazione", motivo="ora", argomento="ora_data_fusi")
     _esegui(ModelloFinto([AIMessage("Sono le 10")]), RouterFinto([decisione]))
     assert 'categoria=conversazione motivo="ora" → agente (argomento ora_data_fusi)' in log.text
+
+
+# --- step 6: argomento del router nello stato, testi fissi degli strumenti come costanti ---
+
+# Verifica che l'argomento scelto dal router arrivi nello stato finale (lo restituisce l'API).
+@pytest.mark.parametrize("decisione,atteso", [
+    (DecisioneRouter(categoria="conversazione", motivo="ora", argomento="ora_data_fusi"),
+     "ora_data_fusi"),
+    (DecisioneRouter(categoria="fuori_ambito", motivo="ricetta", argomento="altro"), "altro"),
+    (None, None),  # output non valido del router: nessun argomento
+])
+def test_argomento_nello_stato(decisione, atteso):
+    out = _esegui(ModelloFinto([AIMessage("Ciao")]), RouterFinto([decisione]))
+    assert out["argomento"] == atteso
+
+
+# Verifica che i testi dei ToolMessage non eseguiti siano le costanti del grafo.
+def test_testi_fissi_come_costanti():
+    from app.graph import MSG_NON_DISPONIBILE, MSG_NON_ESEGUITA
+    agente = ModelloFinto([AIMessage("", tool_calls=[_chiamata()])])
+    out = _esegui(agente, RouterFinto([IN_AMBITO]), max_steps=1)
+    chiuse = [m for m in out["messages"] if isinstance(m, ToolMessage)]
+    assert chiuse[-1].content == MSG_NON_ESEGUITA
+    grafo = build_graph(ModelloFinto([AIMessage("", tool_calls=[_chiamata()]), AIMessage("ok")]),
+                        RouterFinto([IN_AMBITO]), RevisoreFinto([OK]), RiassuntoFinto(["r"]),
+                        AMBITO, strumenti=())
+    out = grafo.invoke({"messages": [HumanMessage("Che ore sono?")], "steps": 0, "revisioni": 0,
+                        "riassunto": ""})
+    assert [m.content for m in out["messages"] if isinstance(m, ToolMessage)] == \
+        [MSG_NON_DISPONIBILE]

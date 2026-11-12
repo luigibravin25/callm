@@ -28,6 +28,10 @@ PROGRAMMA = "programma"
 # blocco aggiunto in fondo al prompt di sistema dell'agente quando c'e' un riassunto
 BLOCCO_RIASSUNTO = "\n\nRiassunto della conversazione precedente: "
 
+# risposte degli strumenti non eseguiti (l'API le esclude dagli strumenti usati nel turno)
+MSG_NON_DISPONIBILE = "Strumento non disponibile: il server MCP non è partito."
+MSG_NON_ESEGUITA = "Chiamata non eseguita: raggiunto il limite di passaggi."
+
 # risposta usata quando il modello non restituisce ne' testo ne' chiamate
 MSG_VUOTO = (
     "Il modello ha restituito una risposta vuota: i token sono finiti nel "
@@ -44,6 +48,7 @@ class State(TypedDict):
     motivo: str  # motivo della decisione del router (solo per i log, mai all'utente)
     revisioni: int  # quante volte il revisore ha gia' rimandato la risposta all'agente
     riassunto: str  # riassunto dei messaggi tolti dalla cronologia (sostituito, non accumulato)
+    argomento: str | None  # argomento scelto dal router (step 6: lo restituisce l'API)
 
 
 # e' un messaggio del revisore? (HumanMessage con name="revisore")
@@ -151,7 +156,8 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
         argomento = f" (argomento {decisione.argomento})" if decisione.argomento else ""
         log_router.info('categoria=%s motivo="%s" → %s%s',
                         decisione.categoria, decisione.motivo, destinazione, argomento)
-        return {"categoria": decisione.categoria, "motivo": decisione.motivo}
+        return {"categoria": decisione.categoria, "motivo": decisione.motivo,
+                "argomento": decisione.argomento or None}  # vuoto = nessun argomento
 
     # nodo "rifiuto": risposta fissa dal file dell'ambito, nessuna chiamata al modello
     def rifiuto(state: State) -> dict:
@@ -186,9 +192,8 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
         if nodo_strumenti is None:
             # server MCP non partito: ogni chiamata riceve un errore, cosi' la chat non cade
             # e la cronologia resta valida (una risposta per ogni tool_call)
-            out = {"messages": [ToolMessage("Strumento non disponibile: il server MCP non è "
-                                            "partito.", tool_call_id=c["id"], name=c["name"],
-                                            status="error")
+            out = {"messages": [ToolMessage(MSG_NON_DISPONIBILE, tool_call_id=c["id"],
+                                            name=c["name"], status="error")
                                 for c in richiesta.tool_calls]}
         else:
             out = nodo_strumenti.invoke(state, config)
@@ -203,8 +208,8 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
     def limite(state: State) -> dict:
         log_agente.warning("limite di passaggi raggiunto (%d)", max_steps)
         # ogni tool_call pendente riceve una risposta, cosi' la cronologia resta valida
-        chiuse = [ToolMessage("Chiamata non eseguita: raggiunto il limite di passaggi.",
-                              tool_call_id=c["id"], name=c["name"], status="error")
+        chiuse = [ToolMessage(MSG_NON_ESEGUITA, tool_call_id=c["id"], name=c["name"],
+                              status="error")
                   for c in state["messages"][-1].tool_calls]
         testo = (f"Ho raggiunto il limite di {max_steps} passaggi con gli strumenti "
                  "e mi fermo qui senza una risposta completa.")
