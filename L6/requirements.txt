@@ -11,5 +11,11 @@ tzdata==2026.5
 fastmcp==3.4.11
 # client MCP per LangChain: tool MCP come strumenti dell'agente, lettura della resource
 langchain-mcp-adapters==0.3.2
+# servizio HTTP dell'agente (step 6): endpoint, validazione, documentazione OpenAPI su /docs
+fastapi==0.162.5
+# server ASGI che esegue il servizio (gia' presente con mcp, ora usato direttamente)
+uvicorn==0.54.0
+# client HTTP della CLI verso l'agente e di /stato verso LM Studio (gia' presente con openai)
+httpx==0.28.1
 # test automatici
 pytest==9.1.1

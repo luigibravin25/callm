@@ -1,6 +1,7 @@
 # Test dell'adattatore MCP con il server vero avviato come sottoprocesso (nessun LM Studio).
 import logging
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -8,6 +9,10 @@ from langchain_core.messages import HumanMessage
 
 from app.adattatore_mcp import (ErroreMCP, InfoArgomento, carica_strumenti, configurazione_server,
                                 elenca_prompt, leggi_preferenze, ottieni_prompt)
+
+# cartella del progetto: i sottoprocessi importano app/ da qui, da qualsiasi cartella
+# partano i test
+CARTELLA = Path(__file__).resolve().parent.parent
 
 
 # messaggi del logger "mcp" registrati da caplog
@@ -126,3 +131,36 @@ def test_elenca_prompt_server_inesistente(caplog):
 def test_ottieni_prompt_server_inesistente():
     with pytest.raises(ErroreMCP):
         ottieni_prompt("spiega", {"argomento": "MCP"}, "modulo_che_non_esiste")
+
+
+# --- step 6: tipi dei prompt senza MCP, prompt rifiutato distinto, avviso su prompts/get ---
+
+# Verifica che i tipi dei prompt si importino senza caricare MCP ne' LangChain (li usa la CLI).
+def test_info_prompt_senza_mcp():
+    import subprocess
+    codice = ("import app.info_prompt, sys; "
+              "print('mcp' in sys.modules, 'langchain_core' in sys.modules)")
+    uscita = subprocess.run([sys.executable, "-c", codice], capture_output=True, text=True,
+                            cwd=CARTELLA, check=True)
+    assert uscita.stdout.split() == ["False", "False"]
+
+
+# Verifica che un valore rifiutato dal server diventi PromptNonValido, con un WARNING nel log.
+def test_prompt_rifiutato_e_prompt_non_valido(caplog):
+    from app.adattatore_mcp import PromptNonValido
+    caplog.set_level(logging.INFO, logger="mcp")
+    with pytest.raises(PromptNonValido):
+        ottieni_prompt("spiega", {"argomento": "MCP", "livello": "esperto"})
+    assert any(r.levelno == logging.WARNING and "prompts/get spiega non riuscita" in r.getMessage()
+               for r in caplog.records)
+
+
+# Verifica che un server che non parte dia ErroreMCP (non PromptNonValido), con un WARNING.
+def test_server_rotto_e_errore_mcp(caplog):
+    from app.adattatore_mcp import PromptNonValido
+    caplog.set_level(logging.INFO, logger="mcp")
+    with pytest.raises(ErroreMCP) as errore:
+        ottieni_prompt("spiega", {"argomento": "MCP"}, "modulo_che_non_esiste")
+    assert not isinstance(errore.value, PromptNonValido)
+    assert any(r.levelno == logging.WARNING and "prompts/get spiega non riuscita" in r.getMessage()
+               for r in caplog.records)

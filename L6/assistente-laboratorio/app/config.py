@@ -133,6 +133,14 @@ def _esempi(dati: dict, campo: str, percorso: Path) -> tuple[str, ...]:
     return tuple(e.strip() for e in valore if e.strip())
 
 
+# controlla un campo di testo di una voce di [[argomenti]]; l'errore nomina la voce
+def _campo_voce(voce: dict, campo: str, percorso: Path, posizione: str) -> str:
+    valore = voce.get(campo)
+    if not isinstance(valore, str) or not valore.strip():
+        raise ValueError(f"{percorso.name}: {posizione}: il campo '{campo}' manca o e' vuoto")
+    return valore.strip()
+
+
 # controlla gli argomenti dell'ambito ([[argomenti]]): almeno uno, testi non vuoti, nomi unici,
 # "altro" riservato
 def _argomenti(dati: dict, percorso: Path) -> tuple[Argomento, ...]:
@@ -140,12 +148,15 @@ def _argomenti(dati: dict, percorso: Path) -> tuple[Argomento, ...]:
     if not isinstance(valore, list) or not valore:
         raise ValueError(f"{percorso.name}: servono uno o piu' [[argomenti]] con nome e descrizione")
     argomenti = []
-    for voce in valore:
+    for n, voce in enumerate(valore, start=1):
         if not isinstance(voce, dict):
             raise ValueError(f"{percorso.name}: ogni voce di [[argomenti]] vuole nome e descrizione")
-        # stessi controlli dei campi di testo obbligatori, con il nome del campo nell'errore
-        nome = _testo(voce, "nome", percorso)
-        descrizione = _testo(voce, "descrizione", percorso)
+        # l'errore dice quale voce (numero e nome) e quale campo: senza, "descrizione" sembrava
+        # il campo in cima al file
+        etichetta = voce.get("nome") if isinstance(voce.get("nome"), str) else ""
+        posizione = f"[[argomenti]] voce {n} ({etichetta.strip() or 'senza nome'})"
+        nome = _campo_voce(voce, "nome", percorso, posizione)
+        descrizione = _campo_voce(voce, "descrizione", percorso, posizione)
         if nome == ALTRO:
             raise ValueError(f"{percorso.name}: l'argomento '{ALTRO}' e' riservato (fuori ambito)")
         if any(a.nome == nome for a in argomenti):

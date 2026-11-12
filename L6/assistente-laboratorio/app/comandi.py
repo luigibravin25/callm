@@ -8,7 +8,7 @@ import shlex
 from dataclasses import dataclass
 
 # tipo dei prompt pubblicati dal server (prompts/list)
-from app.adattatore_mcp import InfoPrompt
+from app.info_prompt import InfoPrompt
 
 # messaggi fissi della CLI (i test li confrontano parola per parola)
 MSG_SCONOSCIUTO = "Comando sconosciuto: {comando}. Comandi: /prompts, /prompt nome chiave=valore."
@@ -20,6 +20,7 @@ MSG_ARG_SCONOSCIUTO = "Argomento sconosciuto '{argomento}'. Argomenti di {nome}:
 MSG_NON_LEGGIBILI = ("Argomenti non leggibili ({dettaglio}): usa chiave=valore, con le virgolette "
                      "doppie se il valore ha spazi.")
 MSG_NESSUN_PROMPT = "Nessun prompt disponibile: server MCP non avviato."
+MSG_USO_PROMPTS = "Uso: /prompts (senza argomenti)."
 MSG_ERRORE_PROMPT = "Il server non ha restituito il prompt: {motivo}."  # usato dalla CLI
 
 
@@ -84,17 +85,19 @@ def controlla_argomenti(info: InfoPrompt, argomenti: dict[str, str]) -> str | No
 
 # interpreta una riga che inizia con "/": testo da stampare (elenco o errore) o richiesta valida
 def interpreta(riga: str, prompts: list[InfoPrompt]) -> str | RichiestaPrompt:
-    # primo pezzo = comando (maiuscole indifferenti), il resto = nome e argomenti
-    comando, _, resto = riga.strip().partition(" ")
+    # primo pezzo = comando (maiuscole indifferenti), il resto = nome e argomenti; split() divide
+    # su qualsiasi spazio bianco (anche il tab)
+    comando, resto = (riga.strip().split(maxsplit=1) + ["", ""])[:2]
     if comando.lower() not in ("/prompts", "/prompt"):
         return MSG_SCONOSCIUTO.format(comando=comando)
     # server non avviato: nessun elenco con cui controllare
     if not prompts:
         return MSG_NESSUN_PROMPT
     if comando.lower() == "/prompts":
-        return elenco_prompt(prompts)
+        # /prompts non accetta argomenti: il testo in piu' non si ignora in silenzio
+        return MSG_USO_PROMPTS if resto.strip() else elenco_prompt(prompts)
     # nome del prompt: maiuscole distinte, come in MCP
-    nome, _, testo_argomenti = resto.strip().partition(" ")
+    nome, testo_argomenti = (resto.strip().split(maxsplit=1) + ["", ""])[:2]
     if not nome:
         return MSG_USO
     info = next((p for p in prompts if p.nome == nome), None)
