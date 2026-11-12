@@ -1,7 +1,7 @@
 # Lezione 6 · Chat con agente LangGraph
 
-Applicazione di chat con agente basata su LangGraph, costruita per step. Stato attuale: **step 6**
-(agente come servizio HTTP con FastAPI e CLI client, prompt MCP, preferenze via resource MCP,
+Applicazione di chat con agente basata su LangGraph, costruita per step. Stato attuale: **step 7**
+(back-end con chat salvate in PostgreSQL, agente come servizio HTTP con FastAPI e CLI client, prompt MCP, preferenze via resource MCP,
 riassunto, router e revisore). L'agente è un servizio senza stato; un nodo router decide prima se la domanda
 rientra nell'ambito dichiarato in configurazione; un nodo revisore controlla poi che la risposta
 risponda a tutta la domanda.
@@ -127,6 +127,18 @@ Errori, sempre con corpo `{"errore": "...", "messaggio": "..."}`:
 
 Senza server MCP la chat funziona lo stesso (200) ma senza strumenti né prompt; `/stato` dice di
 riavviare l'agente.
+
+La cronologia deve essere coerente (dallo step 7): ogni messaggio `tool` risponde a una chiamata
+`tool_calls` dell'`assistant` precedente e ogni chiamata ha la sua risposta prima del messaggio
+successivo; altrimenti 422 `richiesta_non_valida` con l'indice del messaggio. La cronologia
+restituita dall'agente lo è sempre. La CLI rilegge l'elenco dei prompt a ogni comando `/`, così un
+agente riavviato si vede senza riavviare la CLI.
+
+## Back-end (step 7)
+
+Il front-end parlerà solo con il back-end in `L6/backend/` (FastAPI, porta 8001), che salva le chat
+in PostgreSQL (container Docker `l6-postgres`) e inoltra le domande all'agente. Avvio, endpoint,
+errori e test: [`backend/README.md`](backend/README.md).
 
 ## Requisiti
 
