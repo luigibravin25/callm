@@ -323,3 +323,41 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
   .barra { width: auto; max-height: 40%; border-bottom: 1px solid var(--bordo); }
   .msg.utente, .msg.assistente { max-width: 92%; }
 }
+
+/* ----- streaming (step 10) ----- */
+/* riga di stato nel fumetto in attesa: Sto pensando / Sto usando tooltime… / Il revisore… */
+.stato-attesa {
+  color: var(--secondario);
+  font-size: 13px;
+  margin-top: 4px;
+}
+.stato-attesa .puntino { font-size: 10px; }
+/* etichetta sopra la bozza che sta arrivando: non è ancora la risposta definitiva */
+.etichetta-bozza {
+  display: inline-block;
+  font-size: 11px;
+  color: #fde68a;
+  border: 1px solid #a16207;
+  border-radius: 999px;
+  padding: 0 8px;
+  margin-bottom: 4px;
+}
+/* avviso del revisore: perché la bozza precedente è stata rifiutata */
+.avviso-revisore {
+  font-size: 12px;
+  color: #fdba74;
+  margin-bottom: 6px;
+}
+/* interruttore «Streaming» sotto il campo di testo, allineato alla colonna */
+.opzioni {
+  width: calc(100% - 32px);
+  max-width: var(--colonna);
+  margin: -10px auto 12px;
+  font-size: 12px;
+  color: var(--secondario);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.opzioni[hidden] { display: none; }

@@ -137,3 +137,75 @@ test.describe("tema", () => {
     expect(sfondo).toBe("rgb(15, 17, 21)");
   });
 });
+
+// ---------- step 10: streaming (stream simulato in un solo corpo SSE) ----------
+test.describe("streaming", () => {
+  test("stream con strumento: risposta e riga dello strumento", async ({ page }) => {
+    const finto = dueChat();
+    finto.streaming = true;
+    finto.eventi = [["fase", { fase: "pensa" }], ["bozza", {}],
+      ["strumento", { nome: "tooltime", argomenti: { fuso: "America/New_York" } }], ["bozza", {}],
+      ["testo", { testo: "A New York " }], ["testo", { testo: "sono le 03:50." }],
+      ["fase", { fase: "revisore" }]];
+    await simulaBackend(page, finto);
+    await page.goto("/");
+    await expect(page.locator("#interruttore-streaming")).toBeChecked();
+    await page.fill("#campo", "E a New York?");
+    await page.press("#campo", "Enter");
+    await expect(page.locator("#messaggi .msg.assistente .testo").last()).toHaveText("A New York sono le 03:50.");
+    await expect(page.locator("#messaggi .strumenti").last()).toHaveText("🕒 tooltime");
+    await expect(page.locator(".etichetta-bozza")).toHaveCount(0);
+  });
+
+  test("stream con revisione: avviso sparito a fine", async ({ page }) => {
+    const finto = dueChat();
+    finto.streaming = true;
+    finto.eventi = [["bozza", {}], ["testo", { testo: "Bozza." }], ["fase", { fase: "revisore" }],
+      ["revisione", { motivo: "manca l'ora" }], ["bozza", {}], ["testo", { testo: "Completa." }]];
+    const d = differita();
+    finto.attesaInvio = d.promessa;
+    await simulaBackend(page, finto);
+    await page.goto("/");
+    await page.fill("#campo", "E a New York?");
+    await page.press("#campo", "Enter");
+    await expect(page.locator(".stato-attesa")).toContainText("Sto pensando");
+    d.risolvi();
+    await expect(page.locator("#messaggi .msg.assistente .testo").last()).toHaveText("A New York sono le 03:50.");
+    await expect(page.locator(".avviso-revisore")).toHaveCount(0);
+  });
+
+  test("errore a metà: riquadro e domanda nel campo", async ({ page }) => {
+    const finto = dueChat();
+    finto.streaming = true;
+    finto.eventi = [["bozza", {}], ["testo", { testo: "A met" }]];
+    finto.erroreFlusso = { errore: "modello_non_raggiungibile", messaggio: "LM Studio non risponde." };
+    await simulaBackend(page, finto);
+    await page.goto("/");
+    await page.fill("#campo", "E a New York?");
+    await page.press("#campo", "Enter");
+    await expect(page.locator("#errore-chat")).toContainText("LM Studio non risponde.");
+    await expect(page.locator("#campo")).toHaveValue("E a New York?");
+    await expect(page.locator(".attesa")).toHaveCount(0);
+  });
+
+  test("interruttore spento usa l'invio di oggi", async ({ page }) => {
+    const finto = dueChat();
+    finto.streaming = true;
+    await simulaBackend(page, finto);
+    let stream = 0;
+    page.on("request", (r) => { if (r.url().endsWith("/messaggi/stream")) stream++; });
+    await page.goto("/");
+    await page.locator("#interruttore-streaming").uncheck();
+    await page.fill("#campo", "E a New York?");
+    await page.press("#campo", "Enter");
+    await expect(page.locator("#messaggi .msg.assistente .testo").last()).toHaveText("A New York sono le 03:50.");
+    expect(stream).toBe(0);
+  });
+
+  test("interruttore assente senza streaming", async ({ page }) => {
+    await simulaBackend(page, dueChat());
+    await page.goto("/");
+    await expect(page.locator("#messaggi .msg.assistente")).toHaveCount(1);
+    await expect(page.locator("#interruttore-streaming")).toBeHidden();
+  });
+});

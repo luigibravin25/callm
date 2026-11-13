@@ -6,6 +6,16 @@ export const MSG_RETE =
 export const MSG_CHAT_SPARITA = "La chat non esiste più.";
 export const MSG_INVITO = "Nessuna chat: crea la prima con + Nuova chat";
 export const MSG_NESSUN_MESSAGGIO = "nessun messaggio";
+// testi dello streaming (step 10)
+export const MSG_PENSA = "Sto pensando";
+export const MSG_REVISORE_CONTROLLA = "Il revisore sta controllando…";
+export const ETICHETTA_BOZZA = "bozza, in revisione";
+export function MSG_STRUMENTO_IN_USO(nome: string): string {
+  return `${iconaStrumento(nome)} Sto usando ${nome}…`;
+}
+export function MSG_AVVISO_REVISORE(motivo: string): string {
+  return `Il revisore ha chiesto una correzione: ${motivo}`;
+}
 // stream della risposta finito senza l'evento di fine (step 10)
 export const MSG_FLUSSO_INTERROTTO = "Connessione interrotta prima della fine della risposta.";
 
@@ -68,6 +78,11 @@ export function gruppoData(iso: string | null | undefined, adesso = new Date()):
 const ICONE: Record<string, string> = { tooltime: "🕒" };
 const ICONA_PREDEFINITA = "🔧";
 
+// icona di uno strumento (riga degli strumenti e riga di stato dello streaming)
+export function iconaStrumento(nome: string): string {
+  return ICONE[nome] ?? ICONA_PREDEFINITA;
+}
+
 // nome di una voce {nome, argomenti}; voce malformata → null (gli argomenti non si mostrano)
 function nomeStrumento(voce: unknown): string | null {
   if (typeof voce !== "object" || voce === null) return null;
@@ -80,5 +95,5 @@ function nomeStrumento(voce: unknown): string | null {
 export function rigaStrumenti(strumenti: unknown): string | null {
   if (!Array.isArray(strumenti)) return null;
   const nomi = [...new Set(strumenti.map(nomeStrumento).filter((n): n is string => n !== null))];
-  return nomi.length ? nomi.map((n) => `${ICONE[n] ?? ICONA_PREDEFINITA} ${n}`).join(" · ") : null;
+  return nomi.length ? nomi.map((n) => `${iconaStrumento(n)} ${n}`).join(" · ") : null;
 }
