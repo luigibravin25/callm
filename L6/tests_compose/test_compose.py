@@ -1,7 +1,8 @@
 # test di compose.yaml sulla configurazione risolta da Docker (docker compose config, nessun container
 # avviato) con un .env di prova finto: porte, rete, variabili, healthcheck, volume, segreti
-# librerie standard: JSON, percorsi, ricerca ed esecuzione di docker, file temporanei
+# librerie standard: JSON, ambiente, percorsi, ricerca ed esecuzione di docker, file temporanei
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,10 +17,21 @@ PROVA_ENV = Path(__file__).resolve().parent / "prova.env"
 pytestmark = pytest.mark.skipif(shutil.which("docker") is None, reason="docker non trovato nel PATH")
 
 
+# variabili che compose.yaml legge: tolte dall'ambiente del comando, perché quelle della shell hanno
+# la precedenza su --env-file (un valore vero finirebbe nell'output di un test fallito)
+VARIABILI_DI_COMPOSE = ("POSTGRES_", "LM_", "MAX_", "FUSO_", "SOGLIA_", "MESSAGGI_", "AGENTE_", "AMBITO_",
+                        "PREFERENZE_", "DATABASE_", "BACKEND_")
+
+
+def ambiente_pulito() -> dict[str, str]:
+    return {k: v for k, v in os.environ.items() if not k.upper().startswith(VARIABILI_DI_COMPOSE)}
+
+
 # esegue docker compose config con un file di variabili; restituisce l'esito del comando
 def esegui_config(env: Path) -> subprocess.CompletedProcess:
     return subprocess.run(["docker", "compose", "--env-file", str(env), "config", "--format", "json"],
-                          cwd=L6, capture_output=True, text=True, encoding="utf-8", timeout=60)
+                          cwd=L6, capture_output=True, text=True, encoding="utf-8", timeout=60,
+                          env=ambiente_pulito())
 
 
 # configurazione risolta con il .env di prova
@@ -109,6 +121,30 @@ def test_password_obbligatoria(tmp_path):
 
 
 def test_nessuna_password_nei_file():
-    testo = (L6 / "compose.yaml").read_text(encoding="utf-8")
-    assert "password-di-prova-123" not in testo
-    assert "POSTGRES_PASSWORD=" not in testo
+    for file in ("compose.yaml", "assistente-laboratorio/Dockerfile", "backend/Dockerfile",
+                 "frontend/Dockerfile"):
+        testo = (L6 / file).read_text(encoding="utf-8")
+        assert "password-di-prova-123" not in testo, file
+        assert "POSTGRES_PASSWORD" not in testo or file == "compose.yaml", file
+        assert "POSTGRES_PASSWORD=" not in testo, file
+
+
+def test_variabili_della_shell_ignorate(monkeypatch):
+    # una password impostata nella shell non entra nella configurazione dei test (né nel loro output)
+    monkeypatch.setenv("POSTGRES_PASSWORD", "segreto-della-shell")
+    url = servizi()["backend"]["environment"]["DATABASE_URL"]
+    assert "segreto-della-shell" not in url and "password-di-prova-123" in url
+
+
+def test_password_solo_caratteri_sicuri_documentata():
+    # la password finisce dentro DATABASE_URL e passa dall'interpolazione di Compose
+    testo = (L6 / ".env.example").read_text(encoding="utf-8")
+    assert "solo lettere, cifre, - e _" in testo
+
+
+def test_a_capo_unix_per_i_file_docker():
+    # Dockerfile, nginx.conf, compose.yaml e .dockerignore con LF anche in un clone su Windows
+    righe = (L6 / ".gitattributes").read_text(encoding="utf-8").splitlines()
+    for regola in ("Dockerfile text eol=lf", "*.conf text eol=lf", "*.yaml text eol=lf",
+                   ".dockerignore text eol=lf"):
+        assert regola in righe, regola

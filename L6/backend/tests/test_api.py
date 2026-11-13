@@ -199,6 +199,9 @@ def test_main_database_non_raggiungibile(monkeypatch):
         api.main()
     testo = str(uscita.value)
     assert "Database non raggiungibile" in testo and "***" in testo and "segreta" not in testo
+    # consiglio valido sia in locale (l6-postgres) sia in Docker Compose (servizio database)
+    assert "l6-postgres" not in testo
+    assert "È avviato il database" in testo
 
 
 # Verifica la configurazione non valida all'avvio.

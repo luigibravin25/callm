@@ -157,7 +157,7 @@ browser → 127.0.0.1:8080 (frontend: nginx) ── /api → backend:8001 → ag
 ```
 
 Prerequisiti: Docker Desktop acceso; LM Studio con `google/gemma-4-e2b` caricato e il server avviato.
-In `L6/.env` (da `.env.example`) servono `POSTGRES_USER`, `POSTGRES_PASSWORD` (senza `@ : / % #`) e
+In `L6/.env` (da `.env.example`) servono `POSTGRES_USER`, `POSTGRES_PASSWORD` (solo lettere, cifre, `-` e `_`) e
 `POSTGRES_DB`; gli indirizzi interni li fissa `compose.yaml`, le altre righe restano per l'uso locale.
 
 ```powershell
