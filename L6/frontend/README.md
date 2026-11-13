@@ -42,8 +42,9 @@ npm run preview        # http://127.0.0.1:5173
   la risposta è già completa; lo streaming vero è lo step 10). Con «riduci movimento» del sistema
   la risposta compare subito intera.
 - **Invio** invia, **Maiusc+Invio** va a capo. Durante la risposta compare «Assistente: …»: solo
-  quella chat è bloccata, le altre restano usabili. Sotto la risposta la riga 🔧 mostra gli
-  strumenti usati (per esempio `🔧 tooltime (fuso: Asia/Tokyo)`).
+  quella chat è bloccata, le altre restano usabili. Sotto la risposta compaiono gli
+  strumenti usati, solo per nome e con la loro icona (per esempio `🕒 tooltime`; 🔧 per gli altri),
+  e l'ora.
 - Errori: riquadro nella chat con il messaggio del back-end (per esempio agente non raggiungibile);
   la domanda torna nel campo di testo per reinviarla (il back-end non l'ha salvata). Con il back-end
   spento: «Il back-end non risponde (HTTP …): controlla che sia avviato.» con **Riprova**.
@@ -66,7 +67,7 @@ npm run test:browser   # Playwright in Chrome con il back-end simulato (avvia Vi
 Prova reale (stack completo con LM Studio; database, agente, back-end e `npm run dev` avviati):
 ```powershell
 $env:RUN_E2E = "1"
-npm run test:reale     # nuova chat, «Che ore sono a Tokyo?», riga 🔧 tooltime, chat presente dopo il ricaricamento
+npm run test:reale     # nuova chat, «Che ore sono a Tokyo?», riga con tooltime, chat presente dopo il ricaricamento
 Remove-Item Env:RUN_E2E
 ```
 Senza `RUN_E2E` la prova reale viene saltata. Screenshot in `test-results/`.
