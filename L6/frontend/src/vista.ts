@@ -226,11 +226,16 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
     menu.hidden = !apri;
     ingranaggio.setAttribute("aria-expanded", String(apri));
   }
-  menu.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
+  // Esc chiude il menu sia dal pulsante sia da una voce, e riporta il fuoco sul pulsante
+  barraImpostazioni.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !menu.hidden) {
       apriMenu(false);
       ingranaggio.focus();
     }
+  });
+  // un clic fuori dal pulsante e dal menu lo chiude
+  document.addEventListener("click", (e) => {
+    if (!menu.hidden && !barraImpostazioni.contains(e.target as Node)) apriMenu(false);
   });
   area.append(erroreChat, invito, messaggi, modulo, barraImpostazioni);
   radice.replaceChildren(barra, area);

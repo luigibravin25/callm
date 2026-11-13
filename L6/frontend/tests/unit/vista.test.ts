@@ -464,3 +464,20 @@ describe("menu delle impostazioni e log", () => {
     expect(app.impostaLog).toHaveBeenCalledWith(true);
   });
 });
+
+test("menu: Esc anche dal pulsante ⚙ e clic fuori lo chiudono", () => {
+  conChat([]);
+  montaVista(radice, app).disegna();
+  const pulsante = radice.querySelector<HTMLButtonElement>("#impostazioni")!;
+  const menu = radice.querySelector<HTMLElement>("#menu-impostazioni")!;
+  pulsante.click();
+  pulsante.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  expect(menu.hidden).toBe(true);
+  pulsante.click();
+  expect(menu.hidden).toBe(false);
+  // clic dentro il menu: resta aperto; clic fuori: si chiude
+  menu.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(menu.hidden).toBe(false);
+  radice.querySelector<HTMLElement>("#messaggi")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(menu.hidden).toBe(true);
+});
