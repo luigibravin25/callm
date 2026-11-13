@@ -17,7 +17,8 @@ import re
 # FastAPI: applicazione, errori di validazione, risposte JSON; errori HTTP di Starlette (404, 405)
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 # messaggi LangChain; errori del client OpenAI verso LM Studio
 from langchain_core.messages import HumanMessage
@@ -29,6 +30,7 @@ from app.adattatore_mcp import ErroreMCP, PromptNonValido
 from app.errori import MSG_CONNESSIONE, messaggio_errore_generico, messaggio_errore_http
 from app.schemi import (Errore, PromptPubblicato, RichiestaChat, RispostaChat, Stato,
                         StrumentoUsato, a_openai, da_info, da_openai)
+from app.sse import con_ping, formatta
 
 # logger del servizio: nel terminale compare come [api]
 log = logging.getLogger("api")
@@ -61,6 +63,29 @@ PROBLEMI = {
 # un messaggio di cronologia che LangChain non riesce a convertire
 class CronologiaNonValida(Exception):
     """La cronologia ha superato la validazione ma non si converte in messaggi LangChain."""
+
+
+# eccezione -> (status HTTP, codice, messaggio): unica tabella per le risposte JSON e per l'evento
+# "errore" dello stream; l'ordine conta (APITimeoutError e' una sottoclasse di APIConnectionError,
+# LengthFinishReasonError non e' un APIError)
+def errore_da_eccezione(e: Exception) -> tuple[int, str, str]:
+    if isinstance(e, CronologiaNonValida):
+        return 422, "richiesta_non_valida", str(e)
+    if isinstance(e, PromptNonValido):
+        return 422, "prompt_non_valido", str(e)
+    if isinstance(e, ErroreMCP):
+        return 503, "mcp_non_disponibile", str(e)
+    if isinstance(e, APITimeoutError):
+        return 504, "modello_in_timeout", MSG_TIMEOUT
+    if isinstance(e, APIConnectionError):
+        return 503, "modello_non_raggiungibile", MSG_CONNESSIONE
+    if isinstance(e, APIStatusError):
+        return 502, "errore_del_modello", messaggio_errore_http(e)
+    if isinstance(e, (APIError, LengthFinishReasonError)):
+        return 502, "errore_del_modello", messaggio_errore_generico(e)
+    # tutto il resto: messaggio fisso, traceback solo nel log
+    log.error("errore interno", exc_info=e)
+    return 500, "errore_interno", MSG_INTERNO
 
 
 # corpo d'errore uniforme
@@ -116,42 +141,57 @@ def _registra_errori(app: FastAPI) -> None:
         return _errore(e.status_code, "richiesta_non_valida",
                        "Richiesta non leggibile: serve un corpo JSON in UTF-8.")
 
+    # errori del turno (modello, MCP, prompt, cronologia) e tutto il resto: una sola tabella,
+    # la stessa usata dallo stream per l'evento "errore"
     @app.exception_handler(CronologiaNonValida)
-    async def _cronologia(request: Request, e: CronologiaNonValida):
-        return _errore(422, "richiesta_non_valida", str(e))
-
     @app.exception_handler(PromptNonValido)
-    async def _prompt(request: Request, e: PromptNonValido):
-        return _errore(422, "prompt_non_valido", str(e))
-
     @app.exception_handler(ErroreMCP)
-    async def _mcp(request: Request, e: ErroreMCP):
-        return _errore(503, "mcp_non_disponibile", str(e))
-
-    # APITimeoutError e' una sottoclasse di APIConnectionError: ha il suo gestore
-    @app.exception_handler(APITimeoutError)
-    async def _timeout(request: Request, e: APITimeoutError):
-        return _errore(504, "modello_in_timeout", MSG_TIMEOUT)
-
-    @app.exception_handler(APIConnectionError)
-    async def _connessione(request: Request, e: APIConnectionError):
-        return _errore(503, "modello_non_raggiungibile", MSG_CONNESSIONE)
-
-    @app.exception_handler(APIStatusError)
-    async def _http(request: Request, e: APIStatusError):
-        return _errore(502, "errore_del_modello", messaggio_errore_http(e))
-
-    # LengthFinishReasonError non e' un APIError: gestore a parte
     @app.exception_handler(APIError)
     @app.exception_handler(LengthFinishReasonError)
-    async def _modello(request: Request, e):
-        return _errore(502, "errore_del_modello", messaggio_errore_generico(e))
-
-    # tutto il resto: 500 con un messaggio fisso, traceback solo nel log
     @app.exception_handler(Exception)
-    async def _interno(request: Request, e: Exception):
-        log.exception("errore interno")
-        return _errore(500, "errore_interno", MSG_INTERNO)
+    async def _turno(request: Request, e: Exception):
+        return _errore(*errore_da_eccezione(e))
+
+
+# messaggi del turno dalla richiesta: cronologia convertita e messaggi nuovi (o del prompt MCP)
+def _prepara_turno(agente, richiesta: RichiestaChat, percorso: str):
+    tipo = (f"prompt {richiesta.prompt.nome}" if richiesta.prompt else "messaggio")
+    log.info("%s %s, cronologia %d", percorso, tipo, len(richiesta.cronologia))
+    # cronologia OpenAI -> messaggi LangChain (raro: un messaggio non convertibile)
+    try:
+        cronologia = da_openai(richiesta.cronologia)
+    except Exception as errore:
+        raise CronologiaNonValida(f"cronologia non convertibile: {errore}") from None
+    if richiesta.prompt:
+        nuovi = agente.messaggi_prompt(richiesta.prompt.nome, richiesta.prompt.argomenti)
+    else:
+        nuovi = [HumanMessage(richiesta.messaggio)]
+    return nuovi, cronologia
+
+
+# riga di log a turno completato
+def _log_esito(esito, inizio: float) -> None:
+    log.info("→ 200 categoria=%s argomento=%s strumenti=%s in %.1fs", esito.categoria,
+             esito.argomento, [s["nome"] for s in esito.strumenti_usati],
+             time.perf_counter() - inizio)
+
+
+# corpo della risposta di POST /chat (e dell'evento "fine" dello stream)
+def _risposta(esito) -> RispostaChat:
+    return RispostaChat(risposta=esito.risposta,
+                        strumenti_usati=[StrumentoUsato(**s) for s in esito.strumenti_usati],
+                        categoria=esito.categoria, argomento=esito.argomento,
+                        cronologia=a_openai(esito.messaggi), riassunto=esito.riassunto)
+
+
+# corpo asincrono di una StreamingResponse da un generatore sincrono: alla chiusura (anche per un
+# client disconnesso) il generatore si chiude subito, cosi' smette di consumare il grafo
+async def _corpo(generatore):
+    try:
+        async for parte in iterate_in_threadpool(generatore):
+            yield parte
+    finally:
+        await run_in_threadpool(generatore.close)
 
 
 # crea l'applicazione; `prepara_agente` costruisce l'agente all'avvio (i test passano un finto)
@@ -180,25 +220,39 @@ def crea_app(prepara_agente: Callable) -> FastAPI:
         riassunto del chiamante; restituisce la risposta e la cronologia aggiornata."""
         agente = request.app.state.agente
         inizio = time.perf_counter()
-        tipo = (f"prompt {richiesta.prompt.nome}" if richiesta.prompt else "messaggio")
-        log.info("POST /chat %s, cronologia %d", tipo, len(richiesta.cronologia))
-        # cronologia OpenAI -> messaggi LangChain (raro: un messaggio non convertibile)
-        try:
-            cronologia = da_openai(richiesta.cronologia)
-        except Exception as errore:
-            raise CronologiaNonValida(f"cronologia non convertibile: {errore}") from None
-        if richiesta.prompt:
-            nuovi = agente.messaggi_prompt(richiesta.prompt.nome, richiesta.prompt.argomenti)
-        else:
-            nuovi = [HumanMessage(richiesta.messaggio)]
+        nuovi, cronologia = _prepara_turno(agente, richiesta, "POST /chat")
         esito = agente.turno(nuovi, cronologia, richiesta.riassunto)
-        log.info("→ 200 categoria=%s argomento=%s strumenti=%s in %.1fs", esito.categoria,
-                 esito.argomento, [s["nome"] for s in esito.strumenti_usati],
-                 time.perf_counter() - inizio)
-        return RispostaChat(risposta=esito.risposta,
-                            strumenti_usati=[StrumentoUsato(**s) for s in esito.strumenti_usati],
-                            categoria=esito.categoria, argomento=esito.argomento,
-                            cronologia=a_openai(esito.messaggi), riassunto=esito.riassunto)
+        _log_esito(esito, inizio)
+        return _risposta(esito)
+
+    # lo stesso turno in streaming (step 10): eventi SSE fase, bozza, testo, strumento,
+    # revisione, fine (corpo di POST /chat) oppure errore; ": ping" ogni 5 s nei silenzi
+    @app.post("/chat/stream", response_class=StreamingResponse, responses={
+        **RISPOSTE_ERRORE, 200: {"description": "Eventi SSE del turno", "content": {
+            "text/event-stream": {"schema": {"type": "string"}}}}})
+    def chat_stream(richiesta: RichiestaChat, request: Request):
+        """Come POST /chat, ma la risposta arriva a pezzi mentre il modello la scrive.
+        Errori di validazione e del prompt in JSON prima dello stream; dopo, evento `errore`."""
+        agente = request.app.state.agente
+        inizio = time.perf_counter()
+        nuovi, cronologia = _prepara_turno(agente, richiesta, "POST /chat/stream")
+
+        def righe():
+            try:
+                for evento in agente.turno_in_flusso(nuovi, cronologia, richiesta.riassunto):
+                    if evento.tipo == "fine":
+                        _log_esito(evento.dati, inizio)
+                        dati = _risposta(evento.dati).model_dump(mode="json", exclude_none=True)
+                    else:
+                        dati = evento.dati
+                    yield formatta(evento.tipo, dati)
+            except Exception as errore:
+                status, codice, messaggio = errore_da_eccezione(errore)
+                log.warning("stream interrotto: %d %s", status, codice)
+                yield formatta("errore", {"errore": codice, "messaggio": messaggio})
+
+        return StreamingResponse(_corpo(con_ping(righe())), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @app.get("/prompts", response_model=list[PromptPubblicato])
     def prompts(request: Request) -> list[PromptPubblicato]:

@@ -37,7 +37,9 @@ _FINE = object()
 # righe della sorgente con un ping a ogni silenzio di "intervallo" secondi. La sorgente gira in un
 # thread che mette le righe in una coda; chiudere questo generatore (client disconnesso) ferma il
 # thread al prossimo elemento e chiude la sorgente (una chiamata gia' partita finisce da sola).
-def con_ping(sorgente: Iterator[str], intervallo: float = INTERVALLO_PING) -> Iterator[str]:
+def con_ping(sorgente: Iterator[str], intervallo: float | None = None) -> Iterator[str]:
+    # letto qui (non come predefinito): i test possono ridurre INTERVALLO_PING del modulo
+    intervallo = INTERVALLO_PING if intervallo is None else intervallo
     coda: queue.Queue = queue.Queue()
     stop = threading.Event()
 
