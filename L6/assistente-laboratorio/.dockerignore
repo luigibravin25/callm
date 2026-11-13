@@ -1,0 +1,7 @@
+# fuori dal contesto di build dell'agente: segreti, test, cache
+.env
+tests/
+__pycache__/
+.pytest_cache/
+venv/
+docs/
