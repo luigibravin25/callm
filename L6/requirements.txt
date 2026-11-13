@@ -1,25 +1,11 @@
-# Python 3.14 (venv in L6/venv, creato con Python 3.14.5)
-# Stesse versioni di L5 per la parte agente; dipendenze nuove solo motivate e concordate.
+# venv di sviluppo di L6 (Python 3.14, creato con Python 3.14.5): tutte le dipendenze dei componenti
+# piu' gli strumenti di test. Le immagini Docker (step 9) installano solo il file del proprio componente.
+# Dipendenze nuove solo motivate e concordate.
 
-# grafo dell'agente: stato, nodi, archi condizionali, ToolNode
-langgraph==1.2.17
-# client compatibile OpenAI verso LM Studio (ChatOpenAI, bind_tools, with_structured_output)
-langchain-openai==1.7.2
-# database dei fusi orari IANA per zoneinfo (su Windows non c'e' quello di sistema)
-tzdata==2026.5
-# server MCP (step 4): tooltime e resource utente://preferenze, trasporto stdio
-fastmcp==3.4.11
-# client MCP per LangChain: tool MCP come strumenti dell'agente, lettura della resource
-langchain-mcp-adapters==0.3.2
-# servizio HTTP dell'agente (step 6): endpoint, validazione, documentazione OpenAPI su /docs
-fastapi==0.162.5
-# server ASGI che esegue il servizio (gia' presente con mcp, ora usato direttamente)
-uvicorn==0.54.0
-# client HTTP della CLI verso l'agente e di /stato verso LM Studio (gia' presente con openai)
-httpx==0.28.1
-# back-end (step 7): modelli e sessioni delle chat in PostgreSQL, tabelle create all'avvio
-sqlalchemy==2.1.8
-# driver PostgreSQL per SQLAlchemy; "binary" porta libpq gia' compilata (niente compilazione su Windows)
-psycopg[binary]==3.3.9
-# test automatici
+# agente: grafo LangGraph, client e server MCP, servizio HTTP
+-r assistente-laboratorio/requirements.txt
+# back-end: API, database PostgreSQL, client verso l'agente
+-r backend/requirements.txt
+
+# test automatici (solo nel venv, non nelle immagini)
 pytest==9.1.1
