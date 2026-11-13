@@ -5,7 +5,8 @@ questo modo anche llm.invoke va a pezzi), "updates" (risultato dei nodi), "value
 passo: l'ultimo e' lo stato finale). Router, revisore e riassunto non vanno in streaming
 (disable_streaming in app/llm.py): solo il testo del nodo "modello" arriva al browser.
 """
-# librerie standard: tipi
+# librerie standard: espressioni regolari (parole), tipi
+import re
 from collections.abc import Iterator
 
 # LangChain: pezzi di messaggio prodotti in streaming
@@ -20,6 +21,22 @@ from app.sse import Evento
 _PRIMA, _DOPO = MSG_REVISORE.split("{motivo}")
 
 
+# una parola completa: spazi iniziali, caratteri non spazio, spazi finali (la parola e' finita solo
+# quando arriva lo spazio dopo; l'ultima si manda a fine risposta)
+_PAROLA = re.compile(r"\s*\S+\s+")
+
+
+# parole complete all'inizio del testo e il resto ancora incompleto
+def parole_complete(testo: str) -> tuple[list[str], str]:
+    parole, fine = [], 0
+    for m in _PAROLA.finditer(testo):
+        if m.start() != fine:
+            break
+        parole.append(m.group())
+        fine = m.end()
+    return parole, testo[fine:]
+
+
 # motivo del revisore dal testo del suo messaggio (se il formato non torna, il testo intero)
 def motivo_revisore(testo: str) -> str:
     if testo.startswith(_PRIMA) and testo.endswith(_DOPO):
@@ -32,7 +49,13 @@ def motivo_revisore(testo: str) -> str:
 def eventi_turno(grafo, ingresso: dict, fuso_predefinito: str) -> Iterator[Evento]:
     yield Evento("fase", {"fase": "pensa"})
     finale = None
+    # pezzi del modello non ancora diventati una parola intera (LM Studio spezza anche le parole)
+    in_sospeso = ""
     for modo, dati in grafo.stream(ingresso, stream_mode=["messages", "updates", "values", "tasks"]):
+        # qualsiasi passo del grafo diverso da un pezzo di testo chiude l'ultima parola
+        if modo != "messages" and in_sospeso:
+            yield Evento("testo", {"testo": in_sospeso})
+            in_sospeso = ""
         if modo == "tasks":
             # inizio di un nodo: c'e' "input"; la fine del nodo (con "result") si ignora
             if "input" not in dati:
@@ -55,7 +78,10 @@ def eventi_turno(grafo, ingresso: dict, fuso_predefinito: str) -> Iterator[Event
             # risposte fisse del programma) arrivano con lo stato finale
             if (meta.get("langgraph_node") == "modello" and isinstance(messaggio, AIMessageChunk)
                     and isinstance(messaggio.content, str) and messaggio.content):
-                yield Evento("testo", {"testo": messaggio.content})
+                # una parola alla volta: si manda solo quando e' completa
+                parole, in_sospeso = parole_complete(in_sospeso + messaggio.content)
+                for parola in parole:
+                    yield Evento("testo", {"testo": parola})
         elif modo == "updates":
             for nodo, aggiornamento in dati.items():
                 if nodo != "revisore" or not aggiornamento:
@@ -65,4 +91,6 @@ def eventi_turno(grafo, ingresso: dict, fuso_predefinito: str) -> Iterator[Event
                         yield Evento("revisione", {"motivo": motivo_revisore(str(m.content))})
         elif modo == "values":
             finale = dati
+    if in_sospeso:
+        yield Evento("testo", {"testo": in_sospeso})
     yield Evento("stato_finale", finale)

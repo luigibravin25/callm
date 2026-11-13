@@ -145,3 +145,26 @@ def test_eccezione_a_meta():
                         strumenti=[tooltime_finto([])])
     with pytest.raises(APIConnectionError):
         list(eventi_turno(grafo, _ingresso(), "Europe/Rome"))
+
+
+# Verifica lo streaming parola per parola: i pezzi del modello (anche spezzoni come "2" e "1")
+# arrivano come parole intere, ognuna con lo spazio che la segue; il testo totale non cambia.
+def test_testo_parola_per_parola():
+    from langchain_core.messages import AIMessageChunk
+    from langchain_core.outputs import ChatGenerationChunk
+
+    class Spezzoni(ModelloFlussoFinto):
+        # pezzi come quelli di LM Studio: parole spezzate a meta'
+        def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+            self._prossima()
+            for pezzo in ["A", " Tok", "yo", " sono", " le", " ", "2", "1", ".", "\n", "Ciao"]:
+                chunk = ChatGenerationChunk(message=AIMessageChunk(content=pezzo))
+                if run_manager:
+                    run_manager.on_llm_new_token(pezzo, chunk=chunk)
+                yield chunk
+
+    grafo = build_graph(Spezzoni(risposte=[AIMessage("A Tokyo sono le 21.\nCiao")]),
+                        RouterFinto([IN_AMBITO]), RevisoreFinto([OK]), RiassuntoFinto(["r"]),
+                        AMBITO, strumenti=[tooltime_finto([])])
+    testi = [e.dati["testo"] for e in eventi_turno(grafo, _ingresso(), "Europe/Rome") if e.tipo == "testo"]
+    assert testi == ["A ", "Tokyo ", "sono ", "le ", "21.\n", "Ciao"]
