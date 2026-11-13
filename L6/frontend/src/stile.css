@@ -1,1 +1,204 @@
-/* stile dell'interfaccia: solo tema scuro (completato nel task della vista) */
+/* stile dell'interfaccia: solo tema scuro, anche con il sistema operativo in modalità chiara */
+
+/* colori del tema (contrasto del testo almeno 4.5:1) */
+:root {
+  --sfondo: #0f1115;
+  --barra: #161a20;
+  --bordo: #2a313b;
+  --utente: #2563eb;
+  --testo-utente: #ffffff;
+  --assistente: #1f242c;
+  --testo: #e6e8eb;
+  --secondario: #9aa3ad;
+  --accento: #2563eb;
+  --errore-sfondo: #3a1414;
+  --errore-bordo: #f87171;
+  --errore-testo: #fecaca;
+  /* barre di scorrimento, textarea e finestre del browser scure */
+  color-scheme: dark;
+  font-family: system-ui, "Segoe UI", sans-serif;
+  font-size: 15px;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  background: var(--sfondo);
+  color: var(--testo);
+}
+
+/* barra laterale a sinistra, chat a destra */
+#app {
+  display: flex;
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* ----- barra laterale ----- */
+.barra {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--barra);
+  border-right: 1px solid var(--bordo);
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+#nuova-chat {
+  background: var(--accento);
+  color: var(--testo-utente);
+  border: none;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+#elenco-chat {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#elenco-chat li {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+#elenco-chat li.aperta { background: #1e3a8a; }
+#elenco-chat li:not(.aperta):hover { background: #1c2129; }
+
+#elenco-chat .apri {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+}
+#elenco-chat .titolo {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#elenco-chat .data { color: var(--secondario); font-size: 12px; }
+/* chat in attesa di risposta: segno «…» dopo il titolo */
+#elenco-chat li.in-attesa .titolo::after { content: " …"; color: var(--secondario); }
+
+#elenco-chat .elimina {
+  background: none;
+  border: none;
+  padding: 6px 8px;
+}
+
+/* ----- area della chat ----- */
+.area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 8px;
+}
+
+.invito { color: var(--secondario); margin: auto; }
+
+.messaggi {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.msg {
+  max-width: 75%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  /* a capo del modello conservati, Markdown mostrato così com'è */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg.utente {
+  align-self: flex-end;
+  background: var(--utente);
+  color: var(--testo-utente);
+}
+.msg.assistente {
+  align-self: flex-start;
+  background: var(--assistente);
+}
+.msg .strumenti {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--secondario);
+}
+
+/* «Assistente: …» con i puntini che pulsano durante l'attesa */
+.attesa { color: var(--secondario); }
+.attesa .puntini { display: inline-block; animation: pulsa 1.2s ease-in-out infinite; }
+@keyframes pulsa {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
+/* riquadri d'errore (barra e chat) */
+.errore {
+  background: var(--errore-sfondo);
+  border: 1px solid var(--errore-bordo);
+  color: var(--errore-testo);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.errore[hidden] { display: none; }
+.errore span { flex: 1; }
+.errore button {
+  background: none;
+  border: 1px solid var(--errore-bordo);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+/* campo di testo e Invia */
+.modulo { display: flex; gap: 8px; }
+.modulo[hidden] { display: none; }
+#campo {
+  flex: 1;
+  resize: vertical;
+  background: var(--assistente);
+  color: var(--testo);
+  border: 1px solid var(--bordo);
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+#invia {
+  background: var(--accento);
+  color: var(--testo-utente);
+  border: none;
+  border-radius: 6px;
+  padding: 0 16px;
+}
+
+/* schermo stretto: l'elenco va sopra la chat */
+@media (max-width: 700px) {
+  #app { flex-direction: column; }
+  .barra { width: auto; max-height: 40%; border-right: none; border-bottom: 1px solid var(--bordo); }
+}
