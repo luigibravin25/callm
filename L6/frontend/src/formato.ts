@@ -16,6 +16,8 @@ export function MSG_STRUMENTO_IN_USO(nome: string): string {
 export function MSG_AVVISO_REVISORE(motivo: string): string {
   return `Il revisore ha chiesto una correzione: ${motivo}`;
 }
+// errore della pagina stessa (non del back-end) durante una risposta
+export const MSG_ERRORE_PAGINA = "Errore dell'interfaccia durante la risposta: ricarica la pagina e riprova.";
 // stream della risposta finito senza l'evento di fine (step 10)
 export const MSG_FLUSSO_INTERROTTO = "Connessione interrotta prima della fine della risposta.";
 

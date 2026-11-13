@@ -141,7 +141,10 @@ def test_client_chiuso_durante_il_silenzio(fabbrica, monkeypatch):
 
     def lento():
         yield _sse("fase", {"fase": "pensa"}).encode()
-        time.sleep(3)
+        # silenzio lungo, con il ping dell'agente ogni 0,05 s
+        for _ in range(60):
+            time.sleep(0.05)
+            yield b": ping\n\n"
         yield _sse("fine", FINE).encode()
 
     # la chiusura dello stream imposta "annullato": a ogni riga dell'agente il turno lo controlla
@@ -158,7 +161,8 @@ def test_client_chiuso_durante_il_silenzio(fabbrica, monkeypatch):
             break
         time.sleep(0.05)
     assert _messaggi(fabbrica, chat_id) == []
-    assert time.monotonic() - inizio < 4
+    # entro qualche ping dell'agente, non alla fine del silenzio (3 s)
+    assert time.monotonic() - inizio < 0.5
 
 
 # ---------- API ----------
@@ -245,3 +249,66 @@ def test_corpo_chiude_il_generatore_quando_annullato():
 
     chiuso_subito, _ = asyncio.run(principale())
     assert chiuso_subito
+
+
+
+# Verifica che alla cancellazione della risposta (client andato via) il corpo avvisi SUBITO la
+# sorgente, anche se un next() e' bloccato in attesa (il ping arriverebbe solo dopo).
+def test_corpo_avvisa_subito_alla_cancellazione():
+    import asyncio
+    import contextlib
+    from app.api import _corpo
+    avvisato = threading.Event()
+    istante = []  # quando arriva l'avviso
+
+    def avvisa():
+        istante.append(time.monotonic())
+        avvisato.set()
+
+    def bloccato():
+        yield "primo"
+        time.sleep(2)  # next() fermo, come in attesa del prossimo ping
+        yield "secondo"
+
+    async def principale():
+        async def consuma():
+            async for _ in _corpo(bloccato(), alla_chiusura=avvisa):
+                pass
+        compito = asyncio.create_task(consuma())
+        await asyncio.sleep(0.2)
+        inizio = time.monotonic()
+        compito.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await compito
+        # il task finisce quando il next() in corso termina (poi il generatore si chiude); l'avviso
+        # alla sorgente invece parte subito
+        return avvisato.is_set(), istante[0] - inizio
+
+    avvisato_subito, ritardo = asyncio.run(principale())
+    assert avvisato_subito
+    assert ritardo < 0.5
+
+
+# Verifica che un JSON non valido dell'agente diventi una risposta non valida (502), non un errore interno.
+def test_json_non_valido_dell_agente():
+    corpo = "event: testo\ndata: {non json\n\n"
+    with pytest.raises(ErroreAgente) as e:
+        list(_client(corpo=corpo).turno_in_flusso("x", [], ""))
+    assert (e.value.status, e.value.errore) == (502, "risposta_agente_non_valida")
+
+
+# Verifica il tempo massimo del turno: AGENTE_TIMEOUT vale per tutto il turno anche se l'agente pinga.
+def test_tempo_massimo_del_turno():
+    def eterno():
+        while True:
+            time.sleep(0.02)
+            yield b": ping\n\n"
+
+    def gestore(richiesta):
+        return httpx.Response(200, content=eterno())
+    client = ClientAgente(URL_AGENTE, 0.3, transport=httpx.MockTransport(gestore))
+    inizio = time.monotonic()
+    with pytest.raises(ErroreAgente) as e:
+        list(client.turno_in_flusso("x", [], ""))
+    assert (e.value.status, e.value.errore) == (504, "agente_in_timeout")
+    assert time.monotonic() - inizio < 1.5

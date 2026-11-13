@@ -402,3 +402,15 @@ describe("streaming: correzioni della revisione", () => {
     expect(radice.querySelector(".stato-attesa")!.textContent).toBe("🕒 Sto usando tooltime…");
   });
 });
+
+
+test("area dei messaggi occupata durante l'attesa (lettori di schermo)", () => {
+  const d = conChat([]);
+  const vista = montaVista(radice, app);
+  vista.disegna();
+  const messaggi = radice.querySelector("#messaggi")!;
+  expect(messaggi.getAttribute("aria-busy")).toBe("false");
+  d.provvisoria = "x";
+  vista.disegna();
+  expect(messaggi.getAttribute("aria-busy")).toBe("true");
+});

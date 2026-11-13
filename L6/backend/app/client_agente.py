@@ -8,6 +8,7 @@ il resto (risposta illeggibile, AGENTE_URL sbagliato) e' 502 risposta_agente_non
 # librerie standard: JSON degli eventi, tipi
 import json
 import threading
+import time
 from collections.abc import Iterable, Iterator
 
 # client HTTP sincrono
@@ -107,13 +108,17 @@ class ClientAgente:
                         annullato: threading.Event | None = None) -> Iterator[tuple[str, object]]:
         corpo = {"messaggio": messaggio, "cronologia": cronologia, "riassunto": riassunto}
         aperto = False  # True quando l'agente ha risposto 200 e lo stream e' partito
+        # AGENTE_TIMEOUT vale per tutto il turno: i ping tengono viva la connessione, ma un turno
+        # bloccato (es. un ciclo) non deve restare aperto per sempre
+        scadenza = time.monotonic() + self.timeout
         try:
             with self._http.stream("POST", "/chat/stream", json=corpo) as risposta:
                 if risposta.status_code != 200:
                     risposta.read()
                     self._leggi(risposta)  # solleva l'ErroreAgente giusto
                 aperto = True
-                for tipo, dati in leggi_eventi(_controllate(risposta.iter_lines(), annullato)):
+                for tipo, dati in leggi_eventi(_controllate(risposta.iter_lines(), annullato,
+                                                            scadenza)):
                     if tipo == "fine":
                         try:
                             yield tipo, RispostaAgente.model_validate(dati)
@@ -124,9 +129,13 @@ class ClientAgente:
                     yield tipo, dati
                     if tipo == "errore":
                         return
-        except httpx.TimeoutException:
+        except (httpx.TimeoutException, TempoScaduto):
             raise ErroreAgente(504, "agente_in_timeout",
                                MSG_TIMEOUT.format(secondi=int(self.timeout))) from None
+        except ValueError:
+            # dati di un evento che non sono JSON: risposta dell'agente non valida
+            raise ErroreAgente(502, "risposta_agente_non_valida",
+                               MSG_NON_VALIDA.format(status=200)) from None
         except httpx.TransportError:
             if aperto:
                 raise ErroreAgente(502, "flusso_interrotto", MSG_FLUSSO_INTERROTTO) from None
@@ -148,11 +157,19 @@ class Annullato(Exception):
     pass
 
 
-# righe dell'agente con il controllo della chiusura del browser a ogni riga
-def _controllate(righe: Iterable[str], annullato: threading.Event | None) -> Iterator[str]:
+# turno oltre AGENTE_TIMEOUT (controllato a ogni riga, ping compresi)
+class TempoScaduto(Exception):
+    pass
+
+
+# righe dell'agente con il controllo della chiusura del browser e del tempo massimo a ogni riga
+def _controllate(righe: Iterable[str], annullato: threading.Event | None,
+                 scadenza: float | None = None) -> Iterator[str]:
     for riga in righe:
         if annullato is not None and annullato.is_set():
             raise Annullato()
+        if scadenza is not None and time.monotonic() > scadenza:
+            raise TempoScaduto()
         yield riga
 
 

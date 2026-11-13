@@ -19,7 +19,6 @@ import anyio
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 # messaggi LangChain; errori del client OpenAI verso LM Studio
 from langchain_core.messages import HumanMessage
@@ -196,17 +195,33 @@ def _chiudi(generatore) -> None:
             time.sleep(0.05)
 
 
-# corpo asincrono di una StreamingResponse da un generatore sincrono: alla chiusura (anche per un
-# client disconnesso) il generatore si chiude subito, cosi' smette di consumare il grafo
-async def _corpo(generatore):
+# corpo asincrono di una StreamingResponse da un generatore sincrono. Ogni next() gira in un thread
+# che si puo' abbandonare: se il client va via la cancellazione arriva subito (senza aspettare il
+# prossimo ping), alla_chiusura avvisa la sorgente e il generatore si chiude appena il next() in
+# corso finisce
+async def _corpo(generatore, alla_chiusura=None):
+    finito = False
     try:
-        async for parte in iterate_in_threadpool(generatore):
+        while True:
+            parte = await anyio.to_thread.run_sync(_prossimo, generatore, abandon_on_cancel=True)
+            if parte is _FINE_GENERATORE:
+                finito = True
+                return
             yield parte
     finally:
-        # scope protetto: con il client disconnesso il task e' annullato e senza protezione
-        # l'await qui verrebbe annullato a sua volta (la chiusura resterebbe al garbage collector)
+        if not finito and alla_chiusura is not None:
+            alla_chiusura()
+        # scope protetto: la chiusura avviene anche se il task e' stato annullato
         with anyio.CancelScope(shield=True):
-            await run_in_threadpool(_chiudi, generatore)
+            await anyio.to_thread.run_sync(_chiudi, generatore)
+
+
+# prossimo elemento o il segnale di fine (StopIteration non attraversa bene i thread)
+_FINE_GENERATORE = object()
+
+
+def _prossimo(generatore):
+    return next(generatore, _FINE_GENERATORE)
 
 
 # crea l'applicazione; `prepara_agente` costruisce l'agente all'avvio (i test passano un finto)

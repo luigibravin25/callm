@@ -97,14 +97,21 @@ export async function inviaInFlusso(
     }
     return { ok: false, errore: traduciErrore(risposta.status, corpo) };
   }
-  try {
-    for await (const e of leggiEventi(blocchiDi(risposta.body))) {
-      suEvento(e);
-      if (e.tipo === "fine") return { ok: true, dati: e.dati };
-      if (e.tipo === "errore") return { ok: false, errore: { codice: e.dati.errore, messaggio: e.dati.messaggio } };
+  const eventi = leggiEventi(blocchiDi(risposta.body))[Symbol.asyncIterator]();
+  for (;;) {
+    // solo la lettura è protetta: una connessione caduta a metà è come uno stream senza fine;
+    // un errore del gestore (bug della pagina) invece risale al chiamante
+    let passo: IteratorResult<EventoFlusso>;
+    try {
+      passo = await eventi.next();
+    } catch {
+      break;
     }
-  } catch {
-    // connessione caduta a metà: come uno stream finito senza fine
+    if (passo.done) break;
+    const e = passo.value;
+    suEvento(e);
+    if (e.tipo === "fine") return { ok: true, dati: e.dati };
+    if (e.tipo === "errore") return { ok: false, errore: { codice: e.dati.errore, messaggio: e.dati.messaggio } };
   }
   return { ok: false, errore: { codice: "flusso_interrotto", messaggio: MSG_FLUSSO_INTERROTTO } };
 }

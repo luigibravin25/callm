@@ -90,7 +90,7 @@ eseguire `npm run genera-api` in `L6/frontend` (lo controlla `tests/test_openapi
 | `POST /chat/{id}/messaggi` | `{"testo": "..."}` | 200 `{domanda, risposta}` (due messaggi) |
 | `DELETE /chat/{id}` | — | 204 |
 | `GET /impostazioni` | — | 200 `{streaming}` (step 10) |
-| `POST /chat/{id}/messaggi/stream` | `{"testo": "..."}` | 200 `text/event-stream`: eventi `fase`, `bozza`, `testo`, `strumento`, `revisione`, poi `fine` (`{domanda, risposta}` salvate) o `errore`; `: ping` ogni 5 s. Si salva solo a `fine`; errore o client chiuso → domanda cancellata |
+| `POST /chat/{id}/messaggi/stream` | `{"testo": "..."}` | 200 `text/event-stream`: eventi `fase`, `bozza`, `testo`, `strumento`, `revisione`, poi `fine` (`{domanda, risposta}` salvate) o `errore`; `: ping` ogni 5 s. Si salva solo a `fine`; errore o client chiuso → domanda cancellata (entro ~5 s, il ping dell'agente). `AGENTE_TIMEOUT` vale per tutto il turno anche con i ping (oltre: 504 `agente_in_timeout`) |
 
 Date in ISO 8601 UTC. `id` è un intero tra 1 e 2147483647.
 

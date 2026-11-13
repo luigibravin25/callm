@@ -98,3 +98,14 @@ test("impostazioni", async () => {
   expect(await api.impostazioni()).toEqual({ ok: true, dati: { streaming: true } });
   expect((fetchFinto.mock.calls[0][0] as Request).url).toBe("http://test/api/impostazioni");
 });
+
+
+test("un errore nel gestore degli eventi non diventa «connessione interrotta»", async () => {
+  const corpo = `event: testo
+data: {"testo": "x"}
+
+`;
+  const fetchFinto = vi.fn(async () => new Response(corpo));
+  await expect(inviaInFlusso(1, "x", () => { throw new TypeError("bug della pagina"); },
+    { fetch: fetchFinto as unknown as typeof fetch })).rejects.toThrow("bug della pagina");
+});

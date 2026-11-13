@@ -300,6 +300,9 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
         attesa(dati, parla));
     }
     messaggi.replaceChildren(...elementi);
+    // regione occupata durante l'attesa: i lettori di schermo annunciano la risposta finita, non
+    // ogni pezzo del testo in arrivo
+    messaggi.setAttribute("aria-busy", dati?.provvisoria != null ? "true" : "false");
     // in fondo solo se cambiano chat o messaggi, o mentre la risposta compare: chi sta leggendo più
     // in alto non viene spostato da un disegno dovuto ad altro (rilettura dell'elenco)
     const staRivelando = daRivelare !== null && inCorso.has(daRivelare);

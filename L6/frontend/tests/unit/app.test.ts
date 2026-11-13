@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Api, ChatCompleta, ChatInElenco, Esito, Messaggio, Turno } from "../../src/api/client";
 import { creaApplicazione, type Applicazione } from "../../src/app";
 import type { EventoFlusso, inviaInFlusso } from "../../src/api/flusso";
-import { MSG_CHAT_SPARITA, testoConferma } from "../../src/formato";
+import { MSG_CHAT_SPARITA, MSG_ERRORE_PAGINA, testoConferma } from "../../src/formato";
 import { inAttesa } from "../../src/stato";
 
 // dati di prova
@@ -426,6 +426,30 @@ describe("streaming", () => {
     expect(f.flusso).not.toHaveBeenCalled();
     expect(api.invia).toHaveBeenCalled();
     expect(a.stato.perChat.get(1)!.daRivelare).toBe(11);
+  });
+
+  test("streaming spento a pagina aperta: si riprova senza stream e l'interruttore sparisce", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.chiudi({ ok: false, errore: { codice: "streaming_disattivato", messaggio: "Lo streaming è disattivato." } });
+    await invio;
+    expect(a.stato.streamingDisponibile).toBe(false);
+    expect(api.invia).toHaveBeenCalledWith(1, "Che ore sono?");
+    const s = a.stato.perChat.get(1)!;
+    expect(s.errore).toBeNull();
+    expect(s.messaggi.map((m) => m.testo)).toEqual(["Che ore sono?", "Sono le 17:50."]);
+  });
+
+  test("errore della pagina durante lo stream: messaggio chiaro, domanda nel campo", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "x");
+    f.flusso.mockRejectedValueOnce(new TypeError("bug"));
+    await a.invia(1);
+    const s = a.stato.perChat.get(1)!;
+    expect(s.errore).toBe(MSG_ERRORE_PAGINA);
+    expect(s.bozza).toBe("x");
+    expect(s.provvisoria).toBeNull();
   });
 
   test("streaming non disponibile ignora la scelta salvata", async () => {

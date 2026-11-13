@@ -1,7 +1,7 @@
 // orchestrazione: collega le azioni dell'utente alle chiamate al back-end e aggiorna lo stato per chat
 import type { Api, Esito, Turno } from "./api/client";
 import { inviaInFlusso, type EventoFlusso } from "./api/flusso";
-import { MSG_CHAT_SPARITA, testoConferma } from "./formato";
+import { MSG_CHAT_SPARITA, MSG_ERRORE_PAGINA, testoConferma } from "./formato";
 import { datiChat, inAttesa, statoIniziale, type Stato, type StatoChat } from "./stato";
 
 // dove si ricorda la scelta dell'interruttore «Streaming» (nel browser: localStorage)
@@ -195,9 +195,24 @@ export function creaApplicazione(
     if (inFlusso) dati.fase = "pensa";
     ridisegna();
     // con lo streaming gli eventi aggiornano la chat di partenza mentre arrivano
-    const esito: Esito<Turno> = inFlusso
-      ? await flusso(id, testo, (e) => { applica(dati, e); ridisegna(); })
-      : await api.invia(id, testo);
+    let esito: Esito<Turno>;
+    try {
+      esito = inFlusso
+        ? await flusso(id, testo, (e) => { applica(dati, e); ridisegna(); })
+        : await api.invia(id, testo);
+    } catch {
+      // errore della pagina stessa: la domanda torna nel campo, il turno non è stato salvato
+      esito = { ok: false, errore: { codice: "errore_pagina", messaggio: MSG_ERRORE_PAGINA } };
+    }
+    // streaming spento nel back-end mentre la pagina era aperta: niente più interruttore e la stessa
+    // domanda parte con l'invio senza stream
+    if (!esito.ok && esito.errore.codice === "streaming_disattivato") {
+      stato.streamingDisponibile = false;
+      stato.streamingScelto = false;
+      azzeraFlusso(dati);
+      ridisegna();
+      esito = await api.invia(id, testo);
+    }
     // l'esito va sempre alla chat di partenza, anche se ora è aperta un'altra
     dati.provvisoria = null;
     azzeraFlusso(dati);
