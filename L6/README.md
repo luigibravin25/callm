@@ -24,6 +24,15 @@ START → riassunto → router ─(conversazione)→ modello ⇄ strumenti
   categoria: `altro` = `fuori_ambito`, ogni altro argomento = `conversazione` (dallo step 5: con
   l'ambito più largo gemma e2b decideva male con la sola scelta conversazione/fuori ambito). Non
   sceglie gli strumenti: lo fa l'agente.
+
+  **Nota sulla consegna dello step 1.** La consegna chiede un router con output strutturato
+  `categoria` (conversazione o fuori ambito) e `motivo`. L'**uscita del nodo** (stato del grafo e
+  log `[router] categoria=... motivo=...`) è proprio `categoria` + `motivo`; cambia solo la
+  **domanda fatta a gemma**: invece di scegliere direttamente la categoria sceglie l'argomento da un
+  elenco chiuso, e la categoria la ricava il codice. Motivo: allargando l'ambito (step 5) gemma e2b
+  con lo schema `categoria` + `motivo` rifiutava domande in ambito come «Che ore sono a Tokyo?»;
+  nella diagnosi su 9 domande lo schema originale ne decideva bene 5, quello per argomento 9.
+  Scelta confermata dall'utente il 2026-11-13 (opzione A: si tiene e si documenta).
 - `rifiuto`: frase fissa letta da `config/ambito.toml`, nessuna chiamata al modello.
 - `modello` / `strumenti` / `limite`: l'agente come nella lezione 5, con lo strumento `tooltime` del
   server MCP `mcp_assistente`. Se il modello chiama `tooltime` senza fuso, il nodo `strumenti` lo
