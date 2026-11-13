@@ -15,6 +15,7 @@ from typing import Callable
 import re
 
 # FastAPI: applicazione, errori di validazione, risposte JSON; errori HTTP di Starlette (404, 405)
+import anyio
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -184,6 +185,17 @@ def _risposta(esito) -> RispostaChat:
                         cronologia=a_openai(esito.messaggi), riassunto=esito.riassunto)
 
 
+# chiude il generatore; se un next() e' ancora in corso in un altro thread (annullamento a meta'
+# lettura) close() solleva ValueError: si riprova finche' finisce (al massimo un ping, ~5 s)
+def _chiudi(generatore) -> None:
+    for _ in range(200):
+        try:
+            generatore.close()
+            return
+        except ValueError:
+            time.sleep(0.05)
+
+
 # corpo asincrono di una StreamingResponse da un generatore sincrono: alla chiusura (anche per un
 # client disconnesso) il generatore si chiude subito, cosi' smette di consumare il grafo
 async def _corpo(generatore):
@@ -191,7 +203,10 @@ async def _corpo(generatore):
         async for parte in iterate_in_threadpool(generatore):
             yield parte
     finally:
-        await run_in_threadpool(generatore.close)
+        # scope protetto: con il client disconnesso il task e' annullato e senza protezione
+        # l'await qui verrebbe annullato a sua volta (la chiusura resterebbe al garbage collector)
+        with anyio.CancelScope(shield=True):
+            await run_in_threadpool(_chiudi, generatore)
 
 
 # crea l'applicazione; `prepara_agente` costruisce l'agente all'avvio (i test passano un finto)

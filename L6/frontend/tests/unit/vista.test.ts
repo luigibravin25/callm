@@ -375,3 +375,30 @@ describe("streaming", () => {
     expect(app.impostaStreaming).toHaveBeenCalledWith(false);
   });
 });
+
+describe("streaming: correzioni della revisione", () => {
+  test("la vista segue il testo in arrivo", () => {
+    const d = conChat([]);
+    d.provvisoria = "x";
+    d.fase = "pensa";
+    const vista = montaVista(radice, app);
+    const messaggi = radice.querySelector<HTMLElement>("#messaggi")!;
+    let scorrimenti = 0;
+    Object.defineProperty(messaggi, "scrollTop", { set: () => { scorrimenti++; }, get: () => 0 });
+    vista.disegna();
+    const dopoIlPrimo = scorrimenti;
+    d.testoInArrivo = "A Tokyo";
+    vista.disegna();
+    d.testoInArrivo = "A Tokyo sono le 20.";
+    vista.disegna();
+    expect(scorrimenti).toBe(dopoIlPrimo + 2);
+  });
+
+  test("riga dello strumento anche con testo scritto insieme alla chiamata", () => {
+    const d = conChat([]);
+    Object.assign(d, { provvisoria: "x", fase: "strumento", strumentoInUso: "tooltime",
+      testoInArrivo: "Controllo l'ora…" });
+    montaVista(radice, app).disegna();
+    expect(radice.querySelector(".stato-attesa")!.textContent).toBe("🕒 Sto usando tooltime…");
+  });
+});

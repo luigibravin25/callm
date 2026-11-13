@@ -128,7 +128,8 @@ function attesa(dati: StatoChat, parla: boolean): HTMLElement {
   // riga di stato: sempre durante il revisore; altrimenti solo finché non arriva testo
   if (dati.fase === "revisore") {
     corpo.append(el("div", "stato-attesa", MSG_REVISORE_CONTROLLA));
-  } else if (!dati.testoInArrivo && dati.fase === "strumento" && dati.strumentoInUso) {
+  } else if (dati.fase === "strumento" && dati.strumentoInUso) {
+    // anche se il modello ha scritto testo insieme alla chiamata («Controllo l'ora…»)
     corpo.append(el("div", "stato-attesa", MSG_STRUMENTO_IN_USO(dati.strumentoInUso)));
   } else if (!dati.testoInArrivo && dati.fase === "pensa") {
     const riga = el("div", "stato-attesa", MSG_PENSA + " ");
@@ -217,7 +218,7 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
   // ultimo stato visto: il campo prende la bozza solo quando cambiano chat, errore o attesa;
   // elementi = numero di fumetti mostrati (per lo scorrimento in fondo)
   let ultimo = { aperta: null as number | null, errore: null as string | null,
-    provvisoria: null as string | null, elementi: -1 };
+    provvisoria: null as string | null, elementi: -1, arrivo: 0 };
 
   function disegnaBarra(): void {
     const s = app.stato;
@@ -302,7 +303,10 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
     // in fondo solo se cambiano chat o messaggi, o mentre la risposta compare: chi sta leggendo più
     // in alto non viene spostato da un disegno dovuto ad altro (rilettura dell'elenco)
     const staRivelando = daRivelare !== null && inCorso.has(daRivelare);
-    if (id !== ultimo.aperta || elementi.length !== ultimo.elementi || staRivelando) {
+    // streaming: il fumetto in attesa cresce senza cambiare il numero di elementi
+    const arrivo = dati?.testoInArrivo.length ?? 0;
+    if (id !== ultimo.aperta || elementi.length !== ultimo.elementi || staRivelando ||
+        arrivo !== ultimo.arrivo) {
       messaggi.scrollTop = messaggi.scrollHeight;
     }
 
@@ -319,7 +323,7 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
     const finitaAttesa = !cambiata && ultimo.provvisoria !== null && !occupato;
     if ((cambiata || finitaAttesa) && id !== null && !occupato) campo.focus();
     ultimo = { aperta: id, errore: dati?.errore ?? null, provvisoria: dati?.provvisoria ?? null,
-      elementi: elementi.length };
+      elementi: elementi.length, arrivo };
   }
 
   // rivelazione parola per parola delle risposte appena arrivate (anche se si cambia chat:

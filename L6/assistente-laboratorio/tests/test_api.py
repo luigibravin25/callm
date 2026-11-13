@@ -475,3 +475,39 @@ def test_openapi_con_lo_stream():
     with _client_flusso(ModelloFlussoFinto(risposte=[AIMessage("x")])) as c:
         spec = c.get("/openapi.json").json()
     assert "text/event-stream" in spec["paths"]["/chat/stream"]["post"]["responses"]["200"]["content"]
+
+
+# Verifica che il corpo dello stream chiuda subito il generatore quando la risposta viene annullata
+# (client disconnesso), senza aspettare il garbage collector.
+def test_corpo_chiude_il_generatore_quando_annullato():
+    import asyncio
+    import contextlib
+    import threading
+    import time
+    from app.api import _corpo
+    chiuso = threading.Event()
+
+    def generatore():
+        try:
+            while True:
+                yield "x"
+                time.sleep(0.01)
+        finally:
+            chiuso.set()
+
+    async def principale():
+        g = generatore()  # resta referenziato: niente chiusura dal garbage collector
+
+        async def consuma():
+            async for _ in _corpo(g):
+                pass
+        compito = asyncio.create_task(consuma())
+        await asyncio.sleep(0.1)
+        compito.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await compito
+        await asyncio.sleep(0.1)
+        return chiuso.is_set(), g
+
+    chiuso_subito, _ = asyncio.run(principale())
+    assert chiuso_subito

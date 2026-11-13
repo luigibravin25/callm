@@ -6,11 +6,13 @@ Avvio: python -m app.api (DATABASE_URL, AGENTE_URL, AGENTE_TIMEOUT, BACKEND_HOST
 """
 # librerie standard: log, valori ammessi nei messaggi di Pydantic, ciclo di vita del servizio
 import logging
+import time
 import threading
 import re
 from contextlib import asynccontextmanager
 
 # FastAPI: applicazione, percorsi, errori di validazione, risposte; errori HTTP di Starlette
+import anyio
 from fastapi import FastAPI, Path, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -156,6 +158,17 @@ def _registra_errori(app: FastAPI) -> None:
         return _errore(500, "errore_interno", MSG_INTERNO)
 
 
+# chiude il generatore; se un next() e' ancora in corso in un altro thread (annullamento a meta'
+# lettura) close() solleva ValueError: si riprova finche' finisce (al massimo un ping, ~5 s)
+def _chiudi(generatore) -> None:
+    for _ in range(200):
+        try:
+            generatore.close()
+            return
+        except ValueError:
+            time.sleep(0.05)
+
+
 # corpo asincrono di una StreamingResponse da un generatore sincrono: alla chiusura (anche per un
 # client disconnesso) il generatore si chiude subito, cosi' la domanda non risposta si cancella
 async def _corpo(generatore):
@@ -163,7 +176,10 @@ async def _corpo(generatore):
         async for parte in iterate_in_threadpool(generatore):
             yield parte
     finally:
-        await run_in_threadpool(generatore.close)
+        # scope protetto: con il client disconnesso il task e' annullato e senza protezione
+        # l'await qui verrebbe annullato a sua volta (la chiusura resterebbe al garbage collector)
+        with anyio.CancelScope(shield=True):
+            await run_in_threadpool(_chiudi, generatore)
 
 
 # crea l'applicazione; i test passano un database di prova e un agente finto
