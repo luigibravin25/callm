@@ -1,7 +1,68 @@
 // orchestrazione: collega le azioni dell'utente alle chiamate al back-end e aggiorna lo stato per chat
-import type { Api } from "./api/client";
+import type { Api, Esito, Turno } from "./api/client";
+import { inviaInFlusso, type EventoFlusso } from "./api/flusso";
 import { MSG_CHAT_SPARITA, testoConferma } from "./formato";
-import { datiChat, inAttesa, statoIniziale, type Stato } from "./stato";
+import { datiChat, inAttesa, statoIniziale, type Stato, type StatoChat } from "./stato";
+
+// dove si ricorda la scelta dell'interruttore «Streaming» (nel browser: localStorage)
+export interface Archivio {
+  leggi(): string | null;
+  scrivi(valore: string): void;
+}
+
+// chiave e archivio predefinito; localStorage può mancare o essere bloccato: nessun errore
+const CHIAVE_STREAMING = "streaming";
+const archivioDelBrowser: Archivio = {
+  leggi: () => {
+    try {
+      return window.localStorage.getItem(CHIAVE_STREAMING);
+    } catch {
+      return null;
+    }
+  },
+  scrivi: (valore) => {
+    try {
+      window.localStorage.setItem(CHIAVE_STREAMING, valore);
+    } catch {
+      // scelta non ricordata: vale solo per questa pagina
+    }
+  },
+};
+
+// un evento dello stream sullo stato della chat di partenza
+function applica(dati: StatoChat, e: EventoFlusso): void {
+  switch (e.tipo) {
+    case "fase":
+      dati.fase = e.dati.fase;
+      break;
+    case "bozza":
+      // nuova risposta del modello: il testo precedente si scarta
+      dati.fase = "pensa";
+      dati.strumentoInUso = null;
+      dati.testoInArrivo = "";
+      break;
+    case "strumento":
+      dati.fase = "strumento";
+      dati.strumentoInUso = e.dati.nome;
+      break;
+    case "testo":
+      dati.testoInArrivo += e.dati.testo;
+      dati.ultimoPezzo = Date.now();
+      break;
+    case "revisione":
+      dati.avvisoRevisore = e.dati.motivo;
+      break;
+  }
+}
+
+// a fine turno (riuscito o no) lo stato dello streaming torna vuoto
+function azzeraFlusso(dati: StatoChat): void {
+  dati.fase = null;
+  dati.strumentoInUso = null;
+  dati.testoInArrivo = "";
+  dati.avvisoRevisore = null;
+  dati.ultimoPezzo = 0;
+}
 
 // azioni disponibili alla vista
 export interface Applicazione {
@@ -14,6 +75,7 @@ export interface Applicazione {
   aggiornaBozza(id: number, testo: string): void;
   chiudiErrore(id: number): void;
   riprovaElenco(): Promise<void>;
+  impostaStreaming(si: boolean): void;    // interruttore della pagina (ricordato nel browser)
 }
 
 // conferma = window.confirm nel browser; ridisegna = aggiorna la vista dopo ogni cambio
@@ -21,8 +83,18 @@ export function creaApplicazione(
   api: Api,
   conferma: (testo: string) => boolean,
   ridisegna: () => void,
+  flusso: typeof inviaInFlusso = inviaInFlusso,
+  archivio: Archivio = archivioDelBrowser,
 ): Applicazione {
   const stato = statoIniziale();
+
+  // streaming disponibile secondo il back-end; scelta salvata nel browser, predefinita = disponibile
+  async function leggiImpostazioni(): Promise<void> {
+    const esito = await api.impostazioni();
+    stato.streamingDisponibile = esito.ok && esito.dati.streaming;
+    const salvata = archivio.leggi();
+    stato.streamingScelto = stato.streamingDisponibile && salvata !== "false";
+  }
 
   // rilegge l'elenco; errore nella barra (con «Riprova» se richiesto); true se riuscita
   async function rileggiElenco(conRiprova: boolean): Promise<boolean> {
@@ -79,6 +151,7 @@ export function creaApplicazione(
   }
 
   async function avvia(): Promise<void> {
+    await leggiImpostazioni();
     if (await rileggiElenco(true)) await apriPrima();
   }
 
@@ -118,14 +191,21 @@ export function creaApplicazione(
     dati.provvisoria = testo;
     dati.bozza = "";
     dati.errore = null;
+    const inFlusso = stato.streamingDisponibile && stato.streamingScelto;
+    if (inFlusso) dati.fase = "pensa";
     ridisegna();
-    const esito = await api.invia(id, testo);
+    // con lo streaming gli eventi aggiornano la chat di partenza mentre arrivano
+    const esito: Esito<Turno> = inFlusso
+      ? await flusso(id, testo, (e) => { applica(dati, e); ridisegna(); })
+      : await api.invia(id, testo);
     // l'esito va sempre alla chat di partenza, anche se ora è aperta un'altra
     dati.provvisoria = null;
+    azzeraFlusso(dati);
     if (esito.ok) {
       dati.messaggi.push(esito.dati.domanda, esito.dati.risposta);
-      // la risposta appena arrivata compare parola per parola (effetto della vista)
-      dati.daRivelare = esito.dati.risposta.id;
+      // senza streaming la risposta compare parola per parola (effetto della vista); con lo
+      // streaming il testo è già arrivato: niente rivelazione finta
+      dati.daRivelare = inFlusso ? null : esito.dati.risposta.id;
       ridisegna();
       // titolo e data aggiornati nell'elenco
       await rileggiElenco(true);
@@ -147,5 +227,10 @@ export function creaApplicazione(
     aggiornaBozza: (id, testo) => { datiChat(stato, id).bozza = testo; },
     chiudiErrore: (id) => { datiChat(stato, id).errore = null; ridisegna(); },
     riprovaElenco: avvia,
+    impostaStreaming: (si) => {
+      stato.streamingScelto = stato.streamingDisponibile && si;
+      archivio.scrivi(si ? "true" : "false");
+      ridisegna();
+    },
   };
 }

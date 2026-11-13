@@ -22,6 +22,7 @@ function appFinta(): Applicazione {
     aggiornaBozza: vi.fn(),
     chiudiErrore: vi.fn(),
     riprovaElenco: vi.fn(async () => {}),
+    impostaStreaming: vi.fn(),
   };
 }
 

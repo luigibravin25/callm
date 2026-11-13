@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Api, ChatCompleta, ChatInElenco, Esito, Messaggio, Turno } from "../../src/api/client";
 import { creaApplicazione, type Applicazione } from "../../src/app";
+import type { EventoFlusso, inviaInFlusso } from "../../src/api/flusso";
 import { MSG_CHAT_SPARITA, testoConferma } from "../../src/formato";
 import { inAttesa } from "../../src/stato";
 
@@ -308,5 +309,134 @@ describe("apertura e creazione", () => {
     await app.nuovaChat();
     expect(app.stato.erroreBarra).toEqual({ messaggio: "DB giù", riprova: false });
     expect(app.stato.aperta).toBe(1);
+  });
+});
+
+// ---------- step 10: streaming ----------
+describe("streaming", () => {
+  // flusso finto: il test manda gli eventi con `manda` e chiude con `chiudi`
+  function flussoFinto() {
+    let suEvento: (e: EventoFlusso) => void = () => {};
+    let chiudi!: (esito: Esito<Turno>) => void;
+    const flusso = vi.fn((_id: number, _testo: string, se: (e: EventoFlusso) => void) => {
+      suEvento = se;
+      return new Promise<Esito<Turno>>((r) => { chiudi = r; });
+    });
+    return { flusso, manda: (e: EventoFlusso) => suEvento(e), chiudi: (e: Esito<Turno>) => chiudi(e) };
+  }
+
+  function archivioFinto(valore: string | null = null) {
+    const archivio = { valore, leggi: vi.fn(() => archivio.valore), scrivi: vi.fn((v: string) => { archivio.valore = v; }) };
+    return archivio;
+  }
+
+  async function conStreaming(archivio = archivioFinto()) {
+    api.impostazioni.mockResolvedValue(ok({ streaming: true }));
+    const f = flussoFinto();
+    const a = creaApplicazione(api as unknown as Api, conferma as unknown as (t: string) => boolean,
+      ridisegna as unknown as () => void, f.flusso as unknown as typeof inviaInFlusso, archivio);
+    await a.avvia();
+    return { a, f, archivio };
+  }
+
+  test("evento bozza azzera il testo in arrivo, testo accumulato", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    const s = a.stato.perChat.get(1)!;
+    expect(s.fase).toBe("pensa");
+    f.manda({ tipo: "bozza", dati: {} });
+    f.manda({ tipo: "testo", dati: { testo: "Sono " } });
+    f.manda({ tipo: "testo", dati: { testo: "le 9." } });
+    expect(s.testoInArrivo).toBe("Sono le 9.");
+    expect(s.ultimoPezzo).toBeGreaterThan(0);
+    f.manda({ tipo: "bozza", dati: {} });
+    expect(s.testoInArrivo).toBe("");
+    f.chiudi(ok(turno("Che ore sono?")));
+    await invio;
+  });
+
+  test("strumento imposta la fase e revisione l'avviso", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "x");
+    const invio = a.invia(1);
+    const s = a.stato.perChat.get(1)!;
+    f.manda({ tipo: "strumento", dati: { nome: "tooltime", argomenti: {} } });
+    expect([s.fase, s.strumentoInUso]).toEqual(["strumento", "tooltime"]);
+    f.manda({ tipo: "fase", dati: { fase: "revisore" } });
+    expect(s.fase).toBe("revisore");
+    f.manda({ tipo: "revisione", dati: { motivo: "manca Tokyo" } });
+    expect(s.avvisoRevisore).toBe("manca Tokyo");
+    f.chiudi(ok(turno("x")));
+    await invio;
+  });
+
+  test("fine sostituisce il testo in arrivo", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.manda({ tipo: "testo", dati: { testo: "bozza vecchia" } });
+    f.manda({ tipo: "revisione", dati: { motivo: "m" } });
+    f.chiudi(ok(turno("Che ore sono?")));
+    await invio;
+    const s = a.stato.perChat.get(1)!;
+    expect(s.messaggi.map((m) => m.testo)).toEqual(["Che ore sono?", "Sono le 17:50."]);
+    expect(s.daRivelare).toBeNull();
+    expect([s.testoInArrivo, s.avvisoRevisore, s.fase, s.provvisoria]).toEqual(["", null, null, null]);
+    expect(api.invia).not.toHaveBeenCalled();
+  });
+
+  test("errore rimette la domanda", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.manda({ tipo: "testo", dati: { testo: "A met" } });
+    f.chiudi({ ok: false, errore: { codice: "flusso_interrotto", messaggio: "Connessione interrotta" } });
+    await invio;
+    const s = a.stato.perChat.get(1)!;
+    expect([s.errore, s.bozza, s.testoInArrivo]).toEqual(["Connessione interrotta", "Che ore sono?", ""]);
+    expect(s.messaggi).toEqual([]);
+  });
+
+  test("eventi alla chat di partenza", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "x");
+    const invio = a.invia(1);
+    await a.apri(2);
+    f.manda({ tipo: "testo", dati: { testo: "per la chat 1" } });
+    expect(a.stato.perChat.get(1)!.testoInArrivo).toBe("per la chat 1");
+    expect(a.stato.perChat.get(2)!.testoInArrivo).toBe("");
+    f.chiudi(ok(turno("x")));
+    await invio;
+  });
+
+  test("streaming scelto salvato", async () => {
+    const { a, archivio } = await conStreaming();
+    expect(a.stato.streamingDisponibile && a.stato.streamingScelto).toBe(true);
+    a.impostaStreaming(false);
+    expect(a.stato.streamingScelto).toBe(false);
+    expect(archivio.scrivi).toHaveBeenCalledWith("false");
+  });
+
+  test("senza streaming scelto invia come oggi", async () => {
+    const { a, f } = await conStreaming(archivioFinto("false"));
+    expect(a.stato.streamingScelto).toBe(false);
+    a.aggiornaBozza(1, "x");
+    await a.invia(1);
+    expect(f.flusso).not.toHaveBeenCalled();
+    expect(api.invia).toHaveBeenCalled();
+    expect(a.stato.perChat.get(1)!.daRivelare).toBe(11);
+  });
+
+  test("streaming non disponibile ignora la scelta salvata", async () => {
+    api.impostazioni.mockResolvedValue(ok({ streaming: false }));
+    const f = flussoFinto();
+    const a = creaApplicazione(api as unknown as Api, conferma as unknown as (t: string) => boolean,
+      ridisegna as unknown as () => void, f.flusso as unknown as typeof inviaInFlusso, archivioFinto("true"));
+    await a.avvia();
+    expect([a.stato.streamingDisponibile, a.stato.streamingScelto]).toEqual([false, false]);
+    a.aggiornaBozza(1, "x");
+    await a.invia(1);
+    expect(f.flusso).not.toHaveBeenCalled();
   });
 });
