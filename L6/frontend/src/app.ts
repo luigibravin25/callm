@@ -6,23 +6,24 @@ import { datiChat, inAttesa, statoIniziale, type Stato, type StatoChat } from ".
 
 // dove si ricorda la scelta dell'interruttore «Streaming» (nel browser: localStorage)
 export interface Archivio {
-  leggi(): string | null;
-  scrivi(valore: string): void;
+  leggi(chiave: string): string | null;
+  scrivi(chiave: string, valore: string): void;
 }
 
-// chiave e archivio predefinito; localStorage può mancare o essere bloccato: nessun errore
+// chiavi delle scelte del menu ⚙; localStorage può mancare o essere bloccato: nessun errore
 const CHIAVE_STREAMING = "streaming";
+const CHIAVE_LOG = "log";
 const archivioDelBrowser: Archivio = {
-  leggi: () => {
+  leggi: (chiave) => {
     try {
-      return window.localStorage.getItem(CHIAVE_STREAMING);
+      return window.localStorage.getItem(chiave);
     } catch {
       return null;
     }
   },
-  scrivi: (valore) => {
+  scrivi: (chiave, valore) => {
     try {
-      window.localStorage.setItem(CHIAVE_STREAMING, valore);
+      window.localStorage.setItem(chiave, valore);
     } catch {
       // scelta non ricordata: vale solo per questa pagina
     }
@@ -76,6 +77,7 @@ export interface Applicazione {
   chiudiErrore(id: number): void;
   riprovaElenco(): Promise<void>;
   impostaStreaming(si: boolean): void;    // interruttore della pagina (ricordato nel browser)
+  impostaLog(si: boolean): void;          // dettagli dell'attesa visibili (ricordato nel browser)
 }
 
 // conferma = window.confirm nel browser; ridisegna = aggiorna la vista dopo ogni cambio
@@ -92,8 +94,9 @@ export function creaApplicazione(
   async function leggiImpostazioni(): Promise<void> {
     const esito = await api.impostazioni();
     stato.streamingDisponibile = esito.ok && esito.dati.streaming;
-    const salvata = archivio.leggi();
-    stato.streamingScelto = stato.streamingDisponibile && salvata !== "false";
+    stato.streamingScelto = stato.streamingDisponibile && archivio.leggi(CHIAVE_STREAMING) !== "false";
+    // dettagli dell'attesa: spenti finché l'utente non li accende
+    stato.logVisibile = archivio.leggi(CHIAVE_LOG) === "true";
   }
 
   // rilegge l'elenco; errore nella barra (con «Riprova» se richiesto); true se riuscita
@@ -244,7 +247,12 @@ export function creaApplicazione(
     riprovaElenco: avvia,
     impostaStreaming: (si) => {
       stato.streamingScelto = stato.streamingDisponibile && si;
-      archivio.scrivi(si ? "true" : "false");
+      archivio.scrivi(CHIAVE_STREAMING, si ? "true" : "false");
+      ridisegna();
+    },
+    impostaLog: (si) => {
+      stato.logVisibile = si;
+      archivio.scrivi(CHIAVE_LOG, si ? "true" : "false");
       ridisegna();
     },
   };

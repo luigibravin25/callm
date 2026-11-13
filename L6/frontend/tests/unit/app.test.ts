@@ -325,8 +325,13 @@ describe("streaming", () => {
     return { flusso, manda: (e: EventoFlusso) => suEvento(e), chiudi: (e: Esito<Turno>) => chiudi(e) };
   }
 
-  function archivioFinto(valore: string | null = null) {
-    const archivio = { valore, leggi: vi.fn(() => archivio.valore), scrivi: vi.fn((v: string) => { archivio.valore = v; }) };
+  // archivio finto a chiavi (streaming, log), come localStorage
+  function archivioFinto(valori: Record<string, string> = {}) {
+    const archivio = {
+      valori: { ...valori },
+      leggi: vi.fn((chiave: string) => archivio.valori[chiave] ?? null),
+      scrivi: vi.fn((chiave: string, v: string) => { archivio.valori[chiave] = v; }),
+    };
     return archivio;
   }
 
@@ -415,11 +420,11 @@ describe("streaming", () => {
     expect(a.stato.streamingDisponibile && a.stato.streamingScelto).toBe(true);
     a.impostaStreaming(false);
     expect(a.stato.streamingScelto).toBe(false);
-    expect(archivio.scrivi).toHaveBeenCalledWith("false");
+    expect(archivio.scrivi).toHaveBeenCalledWith("streaming", "false");
   });
 
   test("senza streaming scelto invia come oggi", async () => {
-    const { a, f } = await conStreaming(archivioFinto("false"));
+    const { a, f } = await conStreaming(archivioFinto({ streaming: "false" }));
     expect(a.stato.streamingScelto).toBe(false);
     a.aggiornaBozza(1, "x");
     await a.invia(1);
@@ -452,11 +457,24 @@ describe("streaming", () => {
     expect(s.provvisoria).toBeNull();
   });
 
+  test("log spento di base, acceso e ricordato", async () => {
+    const { a, archivio } = await conStreaming();
+    expect(a.stato.logVisibile).toBe(false);
+    a.impostaLog(true);
+    expect(a.stato.logVisibile).toBe(true);
+    expect(archivio.scrivi).toHaveBeenCalledWith("log", "true");
+  });
+
+  test("log acceso letto all'avvio", async () => {
+    const { a } = await conStreaming(archivioFinto({ log: "true" }));
+    expect(a.stato.logVisibile).toBe(true);
+  });
+
   test("streaming non disponibile ignora la scelta salvata", async () => {
     api.impostazioni.mockResolvedValue(ok({ streaming: false }));
     const f = flussoFinto();
     const a = creaApplicazione(api as unknown as Api, conferma as unknown as (t: string) => boolean,
-      ridisegna as unknown as () => void, f.flusso as unknown as typeof inviaInFlusso, archivioFinto("true"));
+      ridisegna as unknown as () => void, f.flusso as unknown as typeof inviaInFlusso, archivioFinto({ streaming: "true" }));
     await a.avvia();
     expect([a.stato.streamingDisponibile, a.stato.streamingScelto]).toEqual([false, false]);
     a.aggiornaBozza(1, "x");

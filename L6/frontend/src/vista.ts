@@ -116,11 +116,18 @@ function puntini(): HTMLElement[] {
 // fumetto dell'assistente in attesa. Senza streaming: «Assistente: ...» con i puntini. Con lo
 // streaming (step 10): avviso del revisore, bozza in arrivo con l'etichetta, riga di stato
 // (Sto pensando / Sto usando <strumento>… / Il revisore sta controllando…); parla = bocca in moto
-function attesa(dati: StatoChat, parla: boolean): HTMLElement {
+function attesa(dati: StatoChat, parla: boolean, log: boolean): HTMLElement {
   const div = el("div", "msg assistente attesa");
   const corpo = el("div", "corpo");
   // «Assistente: » per i lettori di schermo
   corpo.append(el("span", "nascosto", "Assistente: "));
+  // log spento: i tre puntini finché non arriva il testo, poi il testo che cresce, nient'altro
+  if (!log) {
+    if (dati.testoInArrivo) corpo.append(el("div", "testo", dati.testoInArrivo));
+    else corpo.append(...puntini());
+    div.append(volto(parla), corpo);
+    return div;
+  }
   if (dati.avvisoRevisore) corpo.append(el("div", "avviso-revisore", MSG_AVVISO_REVISORE(dati.avvisoRevisore)));
   if (dati.testoInArrivo) {
     corpo.append(el("div", "etichetta-bozza", ETICHETTA_BOZZA), el("div", "testo", dati.testoInArrivo));
@@ -186,14 +193,46 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
   invia.title = "Invia (Invio)";
   modulo.append(campo, invia);
   // interruttore «Streaming» sotto il campo, visibile solo se il back-end lo rende disponibile
-  const opzioni = el("label", "opzioni");
-  const casella = el("input");
-  casella.type = "checkbox";
-  casella.id = "interruttore-streaming";
-  casella.addEventListener("change", () => app.impostaStreaming(casella.checked));
-  opzioni.append(casella, document.createTextNode(" Streaming"));
-  opzioni.title = "Risposta mostrata mentre il modello la scrive";
-  area.append(erroreChat, invito, messaggi, modulo, opzioni);
+  // menu delle impostazioni: pulsante ⚙ sotto il campo, voci on/off nascoste finché non si apre
+  const barraImpostazioni = el("div", "barra-impostazioni");
+  const ingranaggio = pulsante("", "⚙", () => apriMenu(menu.hidden));
+  ingranaggio.id = "impostazioni";
+  ingranaggio.setAttribute("aria-label", "Impostazioni");
+  ingranaggio.setAttribute("aria-haspopup", "true");
+  ingranaggio.setAttribute("aria-expanded", "false");
+  const menu = el("div", "menu-impostazioni");
+  menu.id = "menu-impostazioni";
+  menu.hidden = true;
+  // una voce del menu: interruttore on/off (checkbox con role switch) e il suo nome
+  function voce(id: string, nome: string, spiegazione: string, cambia: (si: boolean) => void) {
+    const etichetta = el("label", "voce-menu");
+    const casella = el("input");
+    casella.type = "checkbox";
+    casella.id = id;
+    casella.setAttribute("role", "switch");
+    casella.addEventListener("change", () => cambia(casella.checked));
+    etichetta.append(el("span", "", nome), casella);
+    etichetta.title = spiegazione;
+    menu.append(etichetta);
+    return { etichetta, casella };
+  }
+  const streaming = voce("interruttore-streaming", "Streaming",
+    "La risposta compare mentre il modello la scrive", (si) => app.impostaStreaming(si));
+  const log = voce("interruttore-log", "Log",
+    "Mostra cosa fa l'assistente: strumenti in uso, revisore, bozza", (si) => app.impostaLog(si));
+  barraImpostazioni.append(ingranaggio, menu);
+  // apertura e chiusura del menu (Esc lo chiude e riporta il fuoco sul pulsante)
+  function apriMenu(apri: boolean): void {
+    menu.hidden = !apri;
+    ingranaggio.setAttribute("aria-expanded", String(apri));
+  }
+  menu.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      apriMenu(false);
+      ingranaggio.focus();
+    }
+  });
+  area.append(erroreChat, invito, messaggi, modulo, barraImpostazioni);
   radice.replaceChildren(barra, area);
 
   // invio della bozza della chat aperta
@@ -269,8 +308,11 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
 
   function disegnaChat(): void {
     const s = app.stato;
-    opzioni.hidden = !s.streamingDisponibile || s.aperta === null;
-    casella.checked = s.streamingScelto;
+    // voce Streaming solo se il back-end lo rende disponibile; il menu solo con una chat aperta
+    barraImpostazioni.hidden = s.aperta === null;
+    streaming.etichetta.hidden = !s.streamingDisponibile;
+    streaming.casella.checked = s.streamingScelto;
+    log.casella.checked = s.logVisibile;
     const id = s.aperta;
     const dati = id === null ? null : datiChat(s, id);
     invito.hidden = s.chat.length > 0 || id !== null;
@@ -297,7 +339,7 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
       const parla = dati.ultimoPezzo > 0 && silenzio < MS_SILENZIO_BOCCA;
       if (parla) programmaRidisegno(MS_SILENZIO_BOCCA - silenzio + 10);
       elementi.push(fumetto({ ruolo: "utente", testo: dati.provvisoria, strumenti: null }),
-        attesa(dati, parla));
+        attesa(dati, parla, s.logVisibile));
     }
     messaggi.replaceChildren(...elementi);
     // regione occupata durante l'attesa: i lettori di schermo annunciano la risposta finita, non

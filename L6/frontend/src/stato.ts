@@ -33,11 +33,12 @@ export interface Stato {
   erroreApertura: string | null; // errore di GET /chat/{id} diverso da 404 (con «Riprova»)
   streamingDisponibile: boolean; // STREAMING del back-end (GET /impostazioni)
   streamingScelto: boolean;      // interruttore della pagina
+  logVisibile: boolean;          // dettagli dell'attesa (pensa, strumento, revisore, bozza)
 }
 
 export function statoIniziale(): Stato {
   return { chat: [], aperta: null, perChat: new Map(), erroreBarra: null, erroreApertura: null,
-    streamingDisponibile: false, streamingScelto: false };
+    streamingDisponibile: false, streamingScelto: false, logVisibile: false };
 }
 
 // dati della chat id, creati vuoti alla prima richiesta

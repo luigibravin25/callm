@@ -149,7 +149,11 @@ test.describe("streaming", () => {
       ["fase", { fase: "revisore" }]];
     await simulaBackend(page, finto);
     await page.goto("/");
+    // interruttori nel menu ⚙: Streaming acceso di base, Log acceso per vedere i dettagli
+    await expect(page.locator("#menu-impostazioni")).toBeHidden();
+    await page.click("#impostazioni");
     await expect(page.locator("#interruttore-streaming")).toBeChecked();
+    await expect(page.locator("#interruttore-log")).not.toBeChecked();
     await page.fill("#campo", "E a New York?");
     await page.press("#campo", "Enter");
     await expect(page.locator("#messaggi .msg.assistente .testo").last()).toHaveText("A New York sono le 03:50.");
@@ -166,6 +170,9 @@ test.describe("streaming", () => {
     finto.attesaInvio = d.promessa;
     await simulaBackend(page, finto);
     await page.goto("/");
+    await page.click("#impostazioni");
+    await page.locator("#interruttore-log").check();
+    await page.keyboard.press("Escape");
     await page.fill("#campo", "E a New York?");
     await page.press("#campo", "Enter");
     await expect(page.locator(".stato-attesa")).toContainText("Sto pensando");
@@ -195,6 +202,7 @@ test.describe("streaming", () => {
     let stream = 0;
     page.on("request", (r) => { if (r.url().endsWith("/messaggi/stream")) stream++; });
     await page.goto("/");
+    await page.click("#impostazioni");
     await page.locator("#interruttore-streaming").uncheck();
     await page.fill("#campo", "E a New York?");
     await page.press("#campo", "Enter");
@@ -208,4 +216,21 @@ test.describe("streaming", () => {
     await expect(page.locator("#messaggi .msg.assistente")).toHaveCount(1);
     await expect(page.locator("#interruttore-streaming")).toBeHidden();
   });
+});
+
+
+test("log spento: solo i tre puntini durante l'attesa", async ({ page }) => {
+  const finto = dueChat();
+  finto.streaming = true;
+  finto.eventi = [["fase", { fase: "pensa" }], ["strumento", { nome: "tooltime", argomenti: {} }]];
+  const d = differita();
+  finto.attesaInvio = d.promessa;
+  await simulaBackend(page, finto);
+  await page.goto("/");
+  await page.fill("#campo", "E a New York?");
+  await page.press("#campo", "Enter");
+  await expect(page.locator(".attesa .puntino")).toHaveCount(3);
+  await expect(page.locator(".stato-attesa")).toHaveCount(0);
+  d.risolvi();
+  await expect(page.locator("#messaggi .strumenti").last()).toHaveText("🕒 tooltime");
 });

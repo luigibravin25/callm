@@ -8,7 +8,11 @@ test.skip(process.env.RUN_E2E !== "1",
 test("streaming dal browser con tooltime", async ({ page }, info) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
+  // menu ⚙: streaming acceso, log acceso per vedere strumento e bozza
+  await page.click("#impostazioni");
   await expect(page.locator("#interruttore-streaming")).toBeChecked();
+  await page.locator("#interruttore-log").check();
+  await page.keyboard.press("Escape");
   const prima = await page.locator("#elenco-chat li").count();
   await page.click("#nuova-chat");
   await expect(page.locator("#elenco-chat li")).toHaveCount(prima + 1);

@@ -23,6 +23,7 @@ function appFinta(): Applicazione {
     chiudiErrore: vi.fn(),
     riprovaElenco: vi.fn(async () => {}),
     impostaStreaming: vi.fn(),
+    impostaLog: vi.fn(),
   };
 }
 
@@ -307,6 +308,7 @@ describe("streaming", () => {
   function inAttesa(campi: Partial<ReturnType<typeof datiChat>>) {
     const d = conChat([]);
     Object.assign(d, { provvisoria: "Che ore sono?" }, campi);
+    app.stato.logVisibile = true;
     return d;
   }
 
@@ -370,6 +372,7 @@ describe("streaming", () => {
     const casella = radice.querySelector<HTMLInputElement>("#interruttore-streaming")!;
     expect(casella.closest("label")!.hidden).toBe(false);
     expect(casella.closest("label")!.textContent).toContain("Streaming");
+    expect(casella.getAttribute("role")).toBe("switch");
     expect(casella.checked).toBe(true);
     casella.click();
     expect(app.impostaStreaming).toHaveBeenCalledWith(false);
@@ -398,6 +401,7 @@ describe("streaming: correzioni della revisione", () => {
     const d = conChat([]);
     Object.assign(d, { provvisoria: "x", fase: "strumento", strumentoInUso: "tooltime",
       testoInArrivo: "Controllo l'ora…" });
+    app.stato.logVisibile = true;
     montaVista(radice, app).disegna();
     expect(radice.querySelector(".stato-attesa")!.textContent).toBe("🕒 Sto usando tooltime…");
   });
@@ -413,4 +417,50 @@ test("area dei messaggi occupata durante l'attesa (lettori di schermo)", () => {
   d.provvisoria = "x";
   vista.disegna();
   expect(messaggi.getAttribute("aria-busy")).toBe("true");
+});
+
+
+describe("menu delle impostazioni e log", () => {
+  test("con il log spento solo i tre puntini, poi il testo senza etichetta", () => {
+    const d = conChat([]);
+    Object.assign(d, { provvisoria: "x", fase: "strumento", strumentoInUso: "tooltime",
+      avvisoRevisore: "manca", testoInArrivo: "" });
+    app.stato.logVisibile = false;
+    const vista = montaVista(radice, app);
+    vista.disegna();
+    expect(radice.querySelectorAll(".attesa .puntino")).toHaveLength(3);
+    expect(radice.querySelector(".stato-attesa")).toBeNull();
+    expect(radice.querySelector(".avviso-revisore")).toBeNull();
+    d.testoInArrivo = "A Tokyo";
+    vista.disegna();
+    expect(radice.querySelector(".attesa .testo")!.textContent).toBe("A Tokyo");
+    expect(radice.querySelector(".etichetta-bozza")).toBeNull();
+    expect(radice.querySelector(".stato-attesa")).toBeNull();
+  });
+
+  test("menu nascosto, si apre con il pulsante ⚙ e si chiude con Esc", () => {
+    conChat([]);
+    montaVista(radice, app).disegna();
+    const pulsante = radice.querySelector<HTMLButtonElement>("#impostazioni")!;
+    const menu = radice.querySelector<HTMLElement>("#menu-impostazioni")!;
+    expect(pulsante.getAttribute("aria-label")).toBe("Impostazioni");
+    expect(menu.hidden).toBe(true);
+    pulsante.click();
+    expect(menu.hidden).toBe(false);
+    expect(pulsante.getAttribute("aria-expanded")).toBe("true");
+    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(menu.hidden).toBe(true);
+  });
+
+  test("interruttore Log nel menu collegato", () => {
+    conChat([]);
+    app.stato.logVisibile = false;
+    montaVista(radice, app).disegna();
+    const log = radice.querySelector<HTMLInputElement>("#menu-impostazioni #interruttore-log")!;
+    expect(log.getAttribute("role")).toBe("switch");
+    expect(log.closest("label")!.textContent).toContain("Log");
+    expect(log.checked).toBe(false);
+    log.click();
+    expect(app.impostaLog).toHaveBeenCalledWith(true);
+  });
 });
