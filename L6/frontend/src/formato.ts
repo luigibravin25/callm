@@ -62,25 +62,21 @@ export function gruppoData(iso: string | null | undefined, adesso = new Date()):
   return "Più vecchie";
 }
 
-// valore di un argomento: le stringhe così come sono, il resto in JSON (2, true, [..])
-function valore(v: unknown): string {
-  return typeof v === "string" ? v : JSON.stringify(v);
-}
+// icona di ogni strumento conosciuto; gli altri hanno la chiave inglese
+const ICONE: Record<string, string> = { tooltime: "🕒" };
+const ICONA_PREDEFINITA = "🔧";
 
-// una voce {nome, argomenti} → "nome (k: v, k2: v2)"; voce malformata → null
-function descriviStrumento(voce: unknown): string | null {
+// nome di una voce {nome, argomenti}; voce malformata → null (gli argomenti non si mostrano)
+function nomeStrumento(voce: unknown): string | null {
   if (typeof voce !== "object" || voce === null) return null;
-  const { nome, argomenti } = voce as { nome?: unknown; argomenti?: unknown };
-  if (typeof nome !== "string" || !nome) return null;
-  // argomenti assenti o non oggetto: solo il nome
-  if (typeof argomenti !== "object" || argomenti === null || Array.isArray(argomenti)) return nome;
-  const coppie = Object.entries(argomenti).map(([k, v]) => `${k}: ${valore(v)}`);
-  return coppie.length ? `${nome} (${coppie.join(", ")})` : nome;
+  const { nome } = voce as { nome?: unknown };
+  return typeof nome === "string" && nome ? nome : null;
 }
 
-// strumenti usati nel turno (campo strumenti del back-end) → riga "🔧 ..."; nessuno valido → null
+// strumenti usati nel turno (campo strumenti del back-end) → "🕒 tooltime · 🔧 altro":
+// solo i nomi, ognuno una volta con la sua icona; nessuno valido → null
 export function rigaStrumenti(strumenti: unknown): string | null {
   if (!Array.isArray(strumenti)) return null;
-  const voci = strumenti.map(descriviStrumento).filter((v): v is string => v !== null);
-  return voci.length ? `🔧 ${voci.join(" · ")}` : null;
+  const nomi = [...new Set(strumenti.map(nomeStrumento).filter((n): n is string => n !== null))];
+  return nomi.length ? nomi.map((n) => `${ICONE[n] ?? ICONA_PREDEFINITA} ${n}`).join(" · ") : null;
 }

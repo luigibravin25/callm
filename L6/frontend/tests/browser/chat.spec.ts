@@ -26,7 +26,7 @@ test("apre la chat più recente", async ({ page }) => {
   await expect(page.locator("#elenco-chat .titolo")).toHaveText(["Che ore sono a Tokyo?", "Fusi orari in Europa"]);
   await expect(page.locator("#elenco-chat li.aperta .titolo")).toHaveText("Che ore sono a Tokyo?");
   await expect(page.locator("#messaggi .msg.assistente .testo")).toHaveText("A Tokyo sono le 17:50.");
-  await expect(page.locator("#messaggi .strumenti")).toHaveText("🔧 tooltime (fuso: Asia/Tokyo)");
+  await expect(page.locator("#messaggi .strumenti")).toHaveText("🕒 tooltime");
 });
 
 test("senza chat mostra l'invito", async ({ page }) => {
@@ -84,7 +84,7 @@ test("attesa e cambio chat", async ({ page }) => {
   await expect(page.locator("#elenco-chat li[data-id='1']")).not.toHaveClass(/in-attesa/);
   await page.click("#elenco-chat li[data-id='1'] .apri");
   await expect(page.locator("#messaggi .msg.assistente .testo").last()).toHaveText("A New York sono le 03:50.");
-  await expect(page.locator("#messaggi .strumenti").last()).toHaveText("🔧 tooltime (fuso: America/New_York)");
+  await expect(page.locator("#messaggi .strumenti").last()).toHaveText("🕒 tooltime");
   await expect(page.locator(".attesa")).toHaveCount(0);
 });
 

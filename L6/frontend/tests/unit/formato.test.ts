@@ -54,30 +54,25 @@ describe("rigaStrumenti", () => {
     expect(rigaStrumenti([])).toBeNull();
   });
 
-  test("uno strumento con un argomento", () => {
-    expect(rigaStrumenti([{ nome: "tooltime", argomenti: { fuso: "Asia/Tokyo" } }]))
-      .toBe("🔧 tooltime (fuso: Asia/Tokyo)");
+  test("solo il nome dello strumento, senza argomenti, con l'icona dell'orologio per tooltime", () => {
+    expect(rigaStrumenti([{ nome: "tooltime", argomenti: { fuso: "Asia/Tokyo", parte: "ora" } }]))
+      .toBe("🕒 tooltime");
   });
 
-  test("due strumenti separati da ·", () => {
+  test("lo stesso strumento chiamato più volte compare una volta", () => {
     expect(rigaStrumenti([
       { nome: "tooltime", argomenti: { fuso: "Asia/Tokyo" } },
       { nome: "tooltime", argomenti: { fuso: "America/New_York" } },
-    ])).toBe("🔧 tooltime (fuso: Asia/Tokyo) · tooltime (fuso: America/New_York)");
+    ])).toBe("🕒 tooltime");
   });
 
-  test("senza argomenti solo il nome", () => {
-    expect(rigaStrumenti([{ nome: "tooltime", argomenti: {} }])).toBe("🔧 tooltime");
-    expect(rigaStrumenti([{ nome: "tooltime" }])).toBe("🔧 tooltime");
-  });
-
-  test("argomenti non stringa in JSON, più argomenti separati da virgola", () => {
-    expect(rigaStrumenti([{ nome: "conta", argomenti: { n: 2, unita: "ore" } }]))
-      .toBe("🔧 conta (n: 2, unita: ore)");
+  test("strumento senza icona propria: chiave inglese; più strumenti separati da ·", () => {
+    expect(rigaStrumenti([{ nome: "tooltime" }, { nome: "conta", argomenti: { n: 2 } }]))
+      .toBe("🕒 tooltime · 🔧 conta");
   });
 
   test("voci malformate ignorate", () => {
-    expect(rigaStrumenti([{}, "x", { nome: 3 }, { nome: "tooltime" }])).toBe("🔧 tooltime");
+    expect(rigaStrumenti([{}, "x", { nome: 3 }, { nome: "tooltime" }])).toBe("🕒 tooltime");
     expect(rigaStrumenti([{}, "x", { nome: 3 }])).toBeNull();
     expect(rigaStrumenti("non una lista")).toBeNull();
   });

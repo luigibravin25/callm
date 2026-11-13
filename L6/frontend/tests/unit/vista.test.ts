@@ -70,7 +70,9 @@ describe("vista", () => {
     expect(radice.querySelector("#messaggi .msg.utente .testo")!.textContent).toBe("Che ore sono a Tokyo?");
     expect(radice.querySelector(".attesa")!.textContent).toContain("Assistente:");
     // tre puntini separati: compaiono uno alla volta (ritardo dell'animazione per ciascuno)
-    expect(radice.querySelectorAll(".attesa .puntino")).toHaveLength(3);
+    const puntini = [...radice.querySelectorAll(".attesa .puntino")].map((p) => p.textContent);
+    // pallini pieni come nella bozza del design B (non punti tipografici)
+    expect(puntini).toEqual(["●", "●", "●"]);
     expect(radice.querySelector<HTMLButtonElement>("#invia")!.disabled).toBe(true);
     expect(radice.querySelector<HTMLTextAreaElement>("#campo")!.disabled).toBe(true);
     expect(radice.querySelector<HTMLButtonElement>("#elenco-chat button.elimina")!.disabled).toBe(true);
@@ -137,7 +139,7 @@ describe("vista", () => {
       expect(testo()).toBe("A Tokyo sono le 17:37.");
       expect(radice.querySelector(".msg.assistente .volto.parla")).toBeNull();
       expect(radice.querySelector(".msg.assistente .strumenti")!.textContent)
-        .toBe("🔧 tooltime (fuso: Asia/Tokyo)");
+        .toBe("🕒 tooltime");
     } finally {
       vi.useRealTimers();
     }
@@ -194,7 +196,7 @@ describe("vista", () => {
       [{ nome: "tooltime", argomenti: { fuso: "Asia/Tokyo" } }])]);
     montaVista(radice, app).disegna();
     expect(radice.querySelector(".msg.assistente .strumenti")!.textContent)
-      .toBe("🔧 tooltime (fuso: Asia/Tokyo)");
+      .toBe("🕒 tooltime");
   });
 
   test("Enter invia, Shift+Enter no", () => {

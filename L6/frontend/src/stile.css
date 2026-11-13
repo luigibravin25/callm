@@ -232,7 +232,8 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
 /* «Assistente: ...» durante l'attesa: i tre puntini compaiono uno alla volta, restano visibili
    insieme per un momento, poi spariscono e il giro ricomincia (1,5 s) */
 .attesa .corpo { color: var(--secondario); }
-.attesa .puntino { opacity: 0; animation: compari 1.5s infinite; }
+/* pallini pieni con un po' di spazio, come nella bozza del design B */
+.attesa .puntino { opacity: 0; animation: compari 1.5s infinite; font-size: 13px; margin-right: 3px; }
 .attesa .puntino:nth-child(2) { animation-name: compari2; }
 .attesa .puntino:nth-child(3) { animation-name: compari3; }
 @keyframes compari {

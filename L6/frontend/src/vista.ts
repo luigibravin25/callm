@@ -100,7 +100,7 @@ function attesa(): HTMLElement {
   const corpo = el("div", "corpo");
   // «Assistente: » per i lettori di schermo; a video i tre puntini che compaiono uno alla volta
   corpo.append(el("span", "nascosto", "Assistente: "),
-    el("span", "puntino", "."), el("span", "puntino", "."), el("span", "puntino", "."));
+    el("span", "puntino", "●"), el("span", "puntino", "●"), el("span", "puntino", "●"));
   div.append(volto(false), corpo);
   return div;
 }
