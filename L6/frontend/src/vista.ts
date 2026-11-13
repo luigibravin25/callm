@@ -141,7 +141,8 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
     if (dati?.provvisoria != null) {
       elementi.push(fumetto({ ruolo: "utente", testo: dati.provvisoria, strumenti: null }));
       const attesa = el("div", "msg assistente attesa", "Assistente: ");
-      attesa.append(el("span", "puntini", "…"));
+      // tre puntini separati: lo stile li fa comparire uno alla volta
+      attesa.append(el("span", "puntino", "."), el("span", "puntino", "."), el("span", "puntino", "."));
       elementi.push(attesa);
     }
     messaggi.replaceChildren(...elementi);

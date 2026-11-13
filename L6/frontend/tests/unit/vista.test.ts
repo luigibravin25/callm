@@ -69,6 +69,8 @@ describe("vista", () => {
     montaVista(radice, app).disegna();
     expect(radice.querySelector("#messaggi .msg.utente")!.textContent).toBe("Che ore sono a Tokyo?");
     expect(radice.querySelector(".attesa")!.textContent).toContain("Assistente:");
+    // tre puntini separati: compaiono uno alla volta (ritardo dell'animazione per ciascuno)
+    expect(radice.querySelectorAll(".attesa .puntino")).toHaveLength(3);
     expect(radice.querySelector<HTMLButtonElement>("#invia")!.disabled).toBe(true);
     expect(radice.querySelector<HTMLTextAreaElement>("#campo")!.disabled).toBe(true);
     expect(radice.querySelector<HTMLButtonElement>("#elenco-chat button.elimina")!.disabled).toBe(true);

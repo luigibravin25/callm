@@ -148,12 +148,26 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   color: var(--secondario);
 }
 
-/* «Assistente: …» con i puntini che pulsano durante l'attesa */
+/* «Assistente: ...» durante l'attesa: i tre puntini compaiono uno alla volta, restano visibili
+   insieme per un momento, poi spariscono e il giro ricomincia (1,5 s) */
 .attesa { color: var(--secondario); }
-.attesa .puntini { display: inline-block; animation: pulsa 1.2s ease-in-out infinite; }
-@keyframes pulsa {
-  0%, 100% { opacity: 0.2; }
-  50% { opacity: 1; }
+.attesa .puntino { opacity: 0; animation: compari 1.5s infinite; }
+.attesa .puntino:nth-child(2) { animation-name: compari2; }
+.attesa .puntino:nth-child(3) { animation-name: compari3; }
+@keyframes compari {
+  0% { opacity: 0; }
+  20%, 85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes compari2 {
+  0%, 20% { opacity: 0; }
+  40%, 85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes compari3 {
+  0%, 40% { opacity: 0; }
+  60%, 85% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* riquadri d'errore (barra e chat) */
