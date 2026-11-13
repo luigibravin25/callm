@@ -198,6 +198,8 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
   const ingranaggio = pulsante("", "⚙", () => apriMenu(menu.hidden));
   ingranaggio.id = "impostazioni";
   ingranaggio.setAttribute("aria-label", "Impostazioni");
+  // scritta al passaggio del mouse
+  ingranaggio.title = "Settings";
   ingranaggio.setAttribute("aria-haspopup", "true");
   ingranaggio.setAttribute("aria-expanded", "false");
   const menu = el("div", "menu-impostazioni");

@@ -30,14 +30,20 @@ const archivioDelBrowser: Archivio = {
   },
 };
 
-// un evento dello stream sullo stato della chat di partenza
-function applica(dati: StatoChat, e: EventoFlusso): void {
+// ritmo delle parole dello streaming: una ogni 150 ms (come la rivelazione senza streaming), anche se
+// il modello ne manda molte insieme: il testo si legge e la bocca del volto si vede muovere
+export const MS_PAROLA_STREAMING = 150;
+
+// un evento dello stream sullo stato della chat di partenza; il testo va nella coda delle parole
+function applica(dati: StatoChat, e: EventoFlusso, accoda: (testo: string) => void,
+  svuota: () => void): void {
   switch (e.tipo) {
     case "fase":
       dati.fase = e.dati.fase;
       break;
     case "bozza":
-      // nuova risposta del modello: il testo precedente si scarta
+      // nuova risposta del modello: il testo precedente (anche quello in coda) si scarta
+      svuota();
       dati.fase = "pensa";
       dati.strumentoInUso = null;
       dati.testoInArrivo = "";
@@ -47,8 +53,7 @@ function applica(dati: StatoChat, e: EventoFlusso): void {
       dati.strumentoInUso = e.dati.nome;
       break;
     case "testo":
-      dati.testoInArrivo += e.dati.testo;
-      dati.ultimoPezzo = Date.now();
+      accoda(e.dati.testo);
       break;
     case "revisione":
       dati.avvisoRevisore = e.dati.motivo;
@@ -87,8 +92,67 @@ export function creaApplicazione(
   ridisegna: () => void,
   flusso: typeof inviaInFlusso = inviaInFlusso,
   archivio: Archivio = archivioDelBrowser,
+  msPerParola: number = MS_PAROLA_STREAMING,
 ): Applicazione {
   const stato = statoIniziale();
+
+  // coda delle parole arrivate e non ancora mostrate, per chat; "attese" = chi aspetta la fine
+  type Coda = { parole: string[]; timer: ReturnType<typeof setInterval> | null; attese: (() => void)[] };
+  const code = new Map<StatoChat, Coda>();
+
+  function codaDi(dati: StatoChat): Coda {
+    let c = code.get(dati);
+    if (!c) {
+      c = { parole: [], timer: null, attese: [] };
+      code.set(dati, c);
+    }
+    return c;
+  }
+
+  // una parola mostrata: testo che cresce e bocca in movimento
+  function mostra(dati: StatoChat, parola: string): void {
+    dati.testoInArrivo += parola;
+    dati.ultimoPezzo = Date.now();
+    ridisegna();
+  }
+
+  // coda vuota: chi aspettava la fine delle parole (il turno finito) puo' proseguire
+  function liberaAttese(c: Coda): void {
+    if (c.timer !== null) clearInterval(c.timer);
+    c.timer = null;
+    c.attese.splice(0).forEach((f) => f());
+  }
+
+  // una parola in coda; il timer le fa uscire una alla volta (ritmo 0: subito, per i test)
+  function accoda(dati: StatoChat, parola: string): void {
+    if (msPerParola <= 0) {
+      mostra(dati, parola);
+      return;
+    }
+    const c = codaDi(dati);
+    c.parole.push(parola);
+    if (c.timer !== null) return;
+    c.timer = setInterval(() => {
+      const prossima = c.parole.shift();
+      if (prossima !== undefined) mostra(dati, prossima);
+      if (c.parole.length === 0) liberaAttese(c);
+    }, msPerParola);
+  }
+
+  // parole in coda scartate (nuova bozza, errore)
+  function svuota(dati: StatoChat): void {
+    const c = code.get(dati);
+    if (!c) return;
+    c.parole = [];
+    liberaAttese(c);
+  }
+
+  // si risolve quando tutte le parole arrivate sono state mostrate
+  function finitaCoda(dati: StatoChat): Promise<void> {
+    const c = code.get(dati);
+    if (!c || (c.timer === null && c.parole.length === 0)) return Promise.resolve();
+    return new Promise((r) => c.attese.push(r));
+  }
 
   // streaming disponibile secondo il back-end; scelta salvata nel browser, predefinita = disponibile
   async function leggiImpostazioni(): Promise<void> {
@@ -201,8 +265,14 @@ export function creaApplicazione(
     let esito: Esito<Turno>;
     try {
       esito = inFlusso
-        ? await flusso(id, testo, (e) => { applica(dati, e); ridisegna(); })
+        ? await flusso(id, testo, (e) => {
+          applica(dati, e, (t) => accoda(dati, t), () => svuota(dati));
+          ridisegna();
+        })
         : await api.invia(id, testo);
+      // la risposta finale compare dopo l'ultima parola; con un errore le parole in coda si scartano
+      if (inFlusso && esito.ok) await finitaCoda(dati);
+      else svuota(dati);
     } catch {
       // errore della pagina stessa: la domanda torna nel campo, il turno non è stato salvato
       esito = { ok: false, errore: { codice: "errore_pagina", messaggio: MSG_ERRORE_PAGINA } };

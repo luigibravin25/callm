@@ -481,3 +481,10 @@ test("menu: Esc anche dal pulsante ⚙ e clic fuori lo chiudono", () => {
   radice.querySelector<HTMLElement>("#messaggi")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   expect(menu.hidden).toBe(true);
 });
+
+
+test("ingranaggio con la scritta Settings al passaggio del mouse", () => {
+  conChat([]);
+  montaVista(radice, app).disegna();
+  expect(radice.querySelector<HTMLButtonElement>("#impostazioni")!.title).toBe("Settings");
+});

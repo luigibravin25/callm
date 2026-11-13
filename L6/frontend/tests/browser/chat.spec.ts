@@ -234,3 +234,42 @@ test("log spento: solo i tre puntini durante l'attesa", async ({ page }) => {
   d.risolvi();
   await expect(page.locator("#messaggi .strumenti").last()).toHaveText("🕒 tooltime");
 });
+
+
+test.describe("impaginazione", () => {
+  // molti messaggi: scorre solo l'area dei messaggi, la pagina resta ferma
+  function chatLunga(): Finto {
+    const messaggi = [];
+    for (let i = 0; i < 30; i++) {
+      messaggi.push(messaggio(100 + 2 * i, "utente", `Domanda ${i}`),
+        messaggio(101 + 2 * i, "assistente", `Risposta ${i}\nseconda riga\nterza riga`));
+    }
+    return { chat: [chatFinta(1, "Chat lunga", messaggi), chatFinta(2, "Altra")] };
+  }
+
+  test("la pagina non scorre, scorre solo l'area dei messaggi", async ({ page }) => {
+    await simulaBackend(page, chatLunga());
+    await page.goto("/");
+    await expect(page.locator("#messaggi .msg")).toHaveCount(60);
+    const pagina = await page.evaluate(() => ({
+      alta: document.documentElement.scrollHeight, finestra: window.innerHeight }));
+    expect(pagina.alta).toBeLessThanOrEqual(pagina.finestra);
+    const area = await page.locator("#messaggi").evaluate((e) => e.scrollHeight > e.clientHeight);
+    expect(area).toBe(true);
+  });
+
+  test("barra laterale sempre a sinistra quando la finestra si stringe", async ({ page }) => {
+    await simulaBackend(page, chatLunga());
+    for (const larghezza of [1280, 900, 600]) {
+      await page.setViewportSize({ width: larghezza, height: 700 });
+      await page.goto("/");
+      const barra = (await page.locator(".barra").boundingBox())!;
+      const area = (await page.locator(".area").boundingBox())!;
+      // barra a sinistra, alta quanto la finestra, area a destra
+      expect(barra.x).toBe(0);
+      expect(barra.height).toBe(700);
+      expect(area.x).toBeGreaterThanOrEqual(barra.width - 1);
+      expect(area.y).toBe(0);
+    }
+  });
+});

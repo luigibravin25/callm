@@ -335,11 +335,12 @@ describe("streaming", () => {
     return archivio;
   }
 
-  async function conStreaming(archivio = archivioFinto()) {
+  async function conStreaming(archivio = archivioFinto(), msPerParola = 0) {
     api.impostazioni.mockResolvedValue(ok({ streaming: true }));
     const f = flussoFinto();
     const a = creaApplicazione(api as unknown as Api, conferma as unknown as (t: string) => boolean,
-      ridisegna as unknown as () => void, f.flusso as unknown as typeof inviaInFlusso, archivio);
+      ridisegna as unknown as () => void, f.flusso as unknown as typeof inviaInFlusso, archivio,
+      msPerParola);
     await a.avvia();
     return { a, f, archivio };
   }
@@ -455,6 +456,56 @@ describe("streaming", () => {
     expect(s.errore).toBe(MSG_ERRORE_PAGINA);
     expect(s.bozza).toBe("x");
     expect(s.provvisoria).toBeNull();
+  });
+
+  test("parole mostrate a ritmo costante anche se arrivano insieme", async () => {
+    vi.useFakeTimers();
+    try {
+      const { a, f } = await conStreaming(archivioFinto(), 150);
+      a.aggiornaBozza(1, "Che ore sono?");
+      const invio = a.invia(1);
+      const s = a.stato.perChat.get(1)!;
+      f.manda({ tipo: "testo", dati: { testo: "A " } });
+      f.manda({ tipo: "testo", dati: { testo: "Tokyo " } });
+      f.manda({ tipo: "testo", dati: { testo: "sono." } });
+      expect(s.testoInArrivo).toBe("");
+      await vi.advanceTimersByTimeAsync(150);
+      expect(s.testoInArrivo).toBe("A ");
+      await vi.advanceTimersByTimeAsync(150);
+      expect(s.testoInArrivo).toBe("A Tokyo ");
+      // la fine arriva prima che le parole siano uscite: la risposta aspetta l'ultima parola
+      f.chiudi(ok(turno("Che ore sono?")));
+      await vi.advanceTimersByTimeAsync(10);
+      expect(s.messaggi).toEqual([]);
+      expect(s.provvisoria).toBe("Che ore sono?");
+      await vi.advanceTimersByTimeAsync(300);
+      await invio;
+      expect(s.messaggi.map((m) => m.testo)).toEqual(["Che ore sono?", "Sono le 17:50."]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("una nuova bozza svuota anche le parole in coda", async () => {
+    vi.useFakeTimers();
+    try {
+      const { a, f } = await conStreaming(archivioFinto(), 150);
+      a.aggiornaBozza(1, "x");
+      const invio = a.invia(1);
+      const s = a.stato.perChat.get(1)!;
+      f.manda({ tipo: "testo", dati: { testo: "vecchia " } });
+      f.manda({ tipo: "testo", dati: { testo: "bozza " } });
+      await vi.advanceTimersByTimeAsync(150);
+      f.manda({ tipo: "bozza", dati: {} });
+      f.manda({ tipo: "testo", dati: { testo: "Nuova." } });
+      await vi.advanceTimersByTimeAsync(150);
+      expect(s.testoInArrivo).toBe("Nuova.");
+      f.chiudi(ok(turno("x")));
+      await vi.advanceTimersByTimeAsync(300);
+      await invio;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("log spento di base, acceso e ricordato", async () => {
