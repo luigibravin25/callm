@@ -78,6 +78,9 @@ Se il database non risponde all'avvio il servizio esce entro pochi secondi (time
 l6-postgres? DATABASE_URL è giusta?». Durante l'uso lo stesso motivo compare nel log `[backend]`.
 
 ## Endpoint
+Il front-end (`../frontend`) genera tipi e chiamate da questo OpenAPI: dopo una modifica all'API
+eseguire `npm run genera-api` in `L6/frontend` (lo controlla `tests/test_openapi_frontend.py`).
+
 
 | Metodo e percorso | Corpo | Risposta |
 |---|---|---|
