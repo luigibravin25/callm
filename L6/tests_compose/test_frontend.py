@@ -50,3 +50,10 @@ def test_dockerignore_del_frontend():
     assert ".env" in voci
     # tsc --noEmit (dentro npm run build) controlla anche tests/ e *.config.ts: non vanno esclusi
     assert not any("tests" in v or "config.ts" in v for v in voci)
+
+
+def test_nginx_non_trattiene_lo_stream():
+    # gli eventi SSE passano subito al browser, senza buffer ne' cache del proxy
+    testo = leggi("nginx.conf")
+    assert "proxy_buffering off;" in testo
+    assert "proxy_cache off;" in testo

@@ -148,3 +148,8 @@ def test_a_capo_unix_per_i_file_docker():
     for regola in ("Dockerfile text eol=lf", "*.conf text eol=lf", "*.yaml text eol=lf",
                    ".dockerignore text eol=lf"):
         assert regola in righe, regola
+
+
+def test_streaming_nel_backend():
+    # STREAMING dal .env, attivo se manca (prova.env non la imposta)
+    assert servizi()["backend"]["environment"]["STREAMING"] == "true"
