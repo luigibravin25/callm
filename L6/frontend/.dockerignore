@@ -1,0 +1,7 @@
+# fuori dal contesto di build del front-end: segreti, pacchetti (si reinstallano con npm ci), build e
+# risultati dei test
+.env
+node_modules/
+dist/
+test-results/
+playwright-report/

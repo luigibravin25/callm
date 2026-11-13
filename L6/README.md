@@ -140,6 +140,49 @@ Il front-end parlerà solo con il back-end in `L6/backend/` (FastAPI, porta 8001
 in PostgreSQL (container Docker `l6-postgres`) e inoltra le domande all'agente. Avvio, endpoint,
 errori e test: [`backend/README.md`](backend/README.md).
 
+## Front-end (step 8)
+
+Interfaccia di chat nel browser in `L6/frontend/` (Vite + TypeScript): parla solo con il back-end
+attraverso `/api`. Avvio in sviluppo e test: [`frontend/README.md`](frontend/README.md).
+
+## Avvio con Docker Compose (step 9)
+
+Quattro container con un solo comando: `frontend` (nginx, unica porta pubblicata), `backend`,
+`agente` (con il server MCP stdio dentro, non esposto), `database` (PostgreSQL, volume `l6_dati-db`).
+LM Studio resta sull'host: l'agente lo raggiunge con `host.docker.internal`.
+
+```
+browser → 127.0.0.1:8080 (frontend: nginx) ── /api → backend:8001 → agente:8000 → LM Studio sull'host
+                                                        └→ database:5432
+```
+
+Prerequisiti: Docker Desktop acceso; LM Studio con `google/gemma-4-e2b` caricato e il server avviato.
+In `L6/.env` (da `.env.example`) servono `POSTGRES_USER`, `POSTGRES_PASSWORD` (solo lettere, cifre, `-` e `_`) e
+`POSTGRES_DB`; gli indirizzi interni li fissa `compose.yaml`, le altre righe restano per l'uso locale.
+
+```powershell
+# da L6\
+docker compose up -d --build        # costruisce le immagini e avvia i quattro servizi
+docker compose ps                   # stato: tutti "healthy" dopo qualche secondo
+start http://127.0.0.1:8080         # interfaccia di chat
+
+docker compose logs -f agente       # log dell'agente ([router], [mcp] tools/call, ...)
+docker compose exec -it agente python -m app.cli   # CLI dentro il container dell'agente
+
+docker compose restart agente       # dopo una modifica a config/ambito.toml o config/preferenze.json
+docker compose down                 # ferma e rimuove i container: le chat restano nel volume
+docker compose down -v              # ATTENZIONE: cancella anche il volume con tutte le chat
+```
+
+- Solo `127.0.0.1:8080` è pubblicata (solo da questo computer); back-end, agente e database sono
+  raggiungibili solo sulla rete interna di Compose.
+- I servizi ripartono da soli (`restart: unless-stopped`) dopo un crash o un riavvio di Docker.
+- `config/` dell'agente è montata dall'host in sola lettura: si modifica sul PC, poi `restart agente`.
+- Linux: `extra_hosts: host-gateway` fa esistere `host.docker.internal`; LM Studio deve accettare
+  connessioni non solo da 127.0.0.1 (opzione «Serve on Local Network»).
+- Test della configurazione (da `L6\`): `& .\venv\Scripts\python.exe -m pytest tests_compose -q`;
+  prova reale completa (build, chat con tooltime, down/up): `$env:RUN_COMPOSE = "1"` prima.
+
 ## Requisiti
 
 - Python 3.14 e LM Studio sull'host con `google/gemma-4-e2b` caricato (Context Length almeno 16384).

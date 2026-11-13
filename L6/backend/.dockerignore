@@ -1,0 +1,8 @@
+# fuori dal contesto di build del back-end: segreti, test, cache, documentazione
+.env
+tests/
+__pycache__/
+.pytest_cache/
+venv/
+docs/
+README.md

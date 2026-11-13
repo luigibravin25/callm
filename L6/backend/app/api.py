@@ -225,7 +225,8 @@ def main() -> None:
         motore.dispose()
         # motivo del driver: porta chiusa (container spento) o password sbagliata si distinguono
         raise SystemExit(f"Database non raggiungibile su {url}: {motivo_database(errore)}. "
-                         "È avviato il container l6-postgres? DATABASE_URL è giusta?") from None
+                         "È avviato il database (il container di sviluppo o il servizio di Compose)? "
+                         "DATABASE_URL è giusta?") from None
     log.info("database pronto (tabelle chat, messaggi) su %s", url)
     log.info("agente: %s (timeout %d s); documentazione su /docs", impostazioni.agente_url,
              impostazioni.agente_timeout)

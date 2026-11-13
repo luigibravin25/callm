@@ -1,0 +1,109 @@
+# Applicazione completa (step 9): quattro container, un solo comando da L6:
+#   docker compose up -d --build   →   http://127.0.0.1:8080
+# Le variabili arrivano da L6/.env (escluso da Git, vedi .env.example). Gli indirizzi interni li fissa
+# questo file: quelli locali del .env (127.0.0.1) dentro i container non valgono.
+# LM Studio resta sull'host; l'agente lo raggiunge con host.docker.internal.
+
+services:
+  # interfaccia di chat: nginx con i file statici e il proxy /api verso il back-end
+  frontend:
+    build: ./frontend
+    # unica porta pubblicata, solo su questo computer (127.0.0.1)
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      # nginx parte quando il back-end risponde (il proxy risolve "backend" all'avvio)
+      backend:
+        condition: service_healthy
+    healthcheck:
+      # alpine non ha curl: wget di busybox
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # API per il front-end: chat in PostgreSQL, domande inoltrate all'agente
+  backend:
+    build: ./backend
+    environment:
+      # database e agente per nome sulla rete interna di Compose; credenziali da .env
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?imposta POSTGRES_USER in L6/.env (vedi .env.example)}:${POSTGRES_PASSWORD:?imposta POSTGRES_PASSWORD in L6/.env (vedi .env.example)}@database:5432/${POSTGRES_DB:?imposta POSTGRES_DB in L6/.env (vedi .env.example)}
+      AGENTE_URL: http://agente:8000
+      AGENTE_TIMEOUT: ${AGENTE_TIMEOUT:-300}
+      # in ascolto su tutte le interfacce del container (nessuna porta pubblicata sull'host)
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORTA: "8001"
+    depends_on:
+      # avvio solo a database pronto; l'agente basta che sia partito (se non risponde → 503)
+      database:
+        condition: service_healthy
+      agente:
+        condition: service_started
+    healthcheck:
+      # immagine slim senza curl: controllo con Python; /chat passa anche dal database
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/chat', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # grafo LangGraph con il server MCP stdio (processo nel container); NON esposto
+  agente:
+    build: ./assistente-laboratorio
+    environment:
+      # LM Studio sull'host: 127.0.0.1 nel container sarebbe il container stesso
+      LM_BASE_URL: http://host.docker.internal:1234/v1
+      LM_MODEL: ${LM_MODEL:-google/gemma-4-e2b}
+      MAX_STEPS: ${MAX_STEPS:-5}
+      FUSO_PREDEFINITO: ${FUSO_PREDEFINITO:-Europe/Rome}
+      MAX_REVISIONI: ${MAX_REVISIONI:-2}
+      SOGLIA_RIASSUNTO: ${SOGLIA_RIASSUNTO:-16}
+      MESSAGGI_RECENTI: ${MESSAGGI_RECENTI:-6}
+      # file di configurazione relativi a /app (montati dall'host, sotto)
+      AMBITO_FILE: config/ambito.toml
+      PREFERENZE_FILE: config/preferenze.json
+      # servizio in ascolto per il back-end sulla rete interna
+      AGENTE_HOST: 0.0.0.0
+      AGENTE_PORTA: "8000"
+      # per la CLI dentro il container: docker compose exec -it agente python -m app.cli
+      AGENTE_URL: http://127.0.0.1:8000
+    volumes:
+      # ambito e preferenze dall'host, in sola lettura: dopo una modifica "docker compose restart agente"
+      - ./assistente-laboratorio/config:/app/config:ro
+    extra_hosts:
+      # su Linux host.docker.internal non esiste da solo; su Docker Desktop è innocuo
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      # solo "vivo": /stato dipende da LM Studio (spento → 503) e non deve rendere l'agente malato
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # PostgreSQL con l'immagine ufficiale; dati nel volume dati-db; NON esposto
+  database:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?imposta POSTGRES_USER in L6/.env (vedi .env.example)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?imposta POSTGRES_PASSWORD in L6/.env (vedi .env.example)}
+      POSTGRES_DB: ${POSTGRES_DB:?imposta POSTGRES_DB in L6/.env (vedi .env.example)}
+    volumes:
+      # postgres 18 tiene i dati sotto /var/lib/postgresql (come il container di sviluppo l6-postgres)
+      - dati-db:/var/lib/postgresql
+    healthcheck:
+      # $$: le variabili le espande la shell del container, non Compose
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  # chat e messaggi: restano dopo "docker compose down"; si cancellano solo con "down -v"
+  dati-db:
