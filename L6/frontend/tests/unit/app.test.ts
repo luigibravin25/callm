@@ -37,6 +37,8 @@ beforeEach(() => {
     leggi: vi.fn(async (id: number) => ok(completa(id))),
     invia: vi.fn(async (_id: number, testo: string) => ok(turno(testo))),
     elimina: vi.fn(async () => ok(null)),
+    // streaming non disponibile: i test di questo file usano l'invio senza stream
+    impostazioni: vi.fn(async () => ok({ streaming: false })),
   };
   conferma = vi.fn(() => true);
   ridisegna = vi.fn();

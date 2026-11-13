@@ -6,6 +6,8 @@ export const MSG_RETE =
 export const MSG_CHAT_SPARITA = "La chat non esiste più.";
 export const MSG_INVITO = "Nessuna chat: crea la prima con + Nuova chat";
 export const MSG_NESSUN_MESSAGGIO = "nessun messaggio";
+// stream della risposta finito senza l'evento di fine (step 10)
+export const MSG_FLUSSO_INTERROTTO = "Connessione interrotta prima della fine della risposta.";
 
 // back-end spento o risposta senza il corpo {errore, messaggio} (per esempio dal proxy di Vite)
 export function MSG_BACKEND_GIU(status: number): string {
