@@ -21,7 +21,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # parti del back-end: operazioni, client dell'agente, schemi
 from app import servizio
 from app.client_agente import ClientAgente, ErroreAgente
-from app.schemi import (ChatCompleta, ChatCreata, ChatInElenco, Errore, NuovoMessaggio, Turno)
+from app.schemi import (ChatCompleta, ChatCreata, ChatInElenco, Errore, Impostazioni,
+                         NuovoMessaggio, Turno)
 from app.servizio import ChatNonTrovata
 
 # logger del back-end: nel terminale compare come [backend]
@@ -151,7 +152,7 @@ def _registra_errori(app: FastAPI) -> None:
 
 
 # crea l'applicazione; i test passano un database di prova e un agente finto
-def crea_app(fabbrica: sessionmaker, client: ClientAgente) -> FastAPI:
+def crea_app(fabbrica: sessionmaker, client: ClientAgente, streaming: bool = True) -> FastAPI:
     # ciclo di vita: alla chiusura del servizio si chiudono le connessioni verso l'agente
     @asynccontextmanager
     async def ciclo_di_vita(app: FastAPI):
@@ -162,6 +163,11 @@ def crea_app(fabbrica: sessionmaker, client: ClientAgente) -> FastAPI:
     app = FastAPI(title="Assistente di laboratorio · Back-end", description=DESCRIZIONE,
                   version="7.0", lifespan=ciclo_di_vita)
     _registra_errori(app)
+
+    @app.get("/impostazioni", response_model=Impostazioni, tags=["impostazioni"])
+    def impostazioni() -> Impostazioni:
+        """Impostazioni per il front-end: streaming disponibile (variabile STREAMING)."""
+        return Impostazioni(streaming=streaming)
 
     @app.post("/chat", response_model=ChatCreata, status_code=201, tags=["chat"],
               responses={500: _ERR, 503: _ERR})
@@ -232,7 +238,9 @@ def main() -> None:
              impostazioni.agente_timeout)
     client = ClientAgente(impostazioni.agente_url, impostazioni.agente_timeout)
     # log_config=None: uvicorn usa la configurazione dei log appena fatta
-    uvicorn.run(crea_app(fabbrica_sessioni(motore), client), host=impostazioni.host,
+    app = crea_app(fabbrica_sessioni(motore), client, impostazioni.streaming)
+    log.info("streaming %s (STREAMING)", "attivo" if impostazioni.streaming else "disattivato")
+    uvicorn.run(app, host=impostazioni.host,
                 port=impostazioni.porta, log_config=None)
 
 

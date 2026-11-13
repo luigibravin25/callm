@@ -6,6 +6,28 @@
     "version": "7.0"
   },
   "paths": {
+    "/impostazioni": {
+      "get": {
+        "tags": [
+          "impostazioni"
+        ],
+        "summary": "Impostazioni",
+        "description": "Impostazioni per il front-end: streaming disponibile (variabile STREAMING).",
+        "operationId": "impostazioni_impostazioni_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Impostazioni"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat": {
       "get": {
         "tags": [
@@ -477,6 +499,20 @@
           "messaggio"
         ],
         "title": "Errore"
+      },
+      "Impostazioni": {
+        "properties": {
+          "streaming": {
+            "type": "boolean",
+            "title": "Streaming",
+            "description": "risposte in streaming disponibili (variabile STREAMING)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "streaming"
+        ],
+        "title": "Impostazioni"
       },
       "MessaggioChat": {
         "properties": {

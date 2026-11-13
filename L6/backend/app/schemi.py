@@ -76,3 +76,8 @@ class Turno(BaseModel):
 class Errore(BaseModel):
     errore: str = Field(description="codice stabile, es. agente_non_raggiungibile")
     messaggio: str = Field(description="spiegazione in italiano")
+
+
+# impostazioni lette dal front-end all'avvio (step 10)
+class Impostazioni(BaseModel):
+    streaming: bool = Field(description="risposte in streaming disponibili (variabile STREAMING)")
