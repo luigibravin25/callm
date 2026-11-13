@@ -177,3 +177,30 @@ def test_prova_reale_chat_http_con_tooltime():
     dati = r.json()
     assert [u["nome"] for u in dati["strumenti_usati"]] == ["tooltime"]
     assert dati["categoria"] == "conversazione" and dati["risposta"].strip()
+
+
+# Verifica lo streaming vero (step 10): POST /chat/stream con gemma, testo a pezzi, evento
+# strumento tooltime, fine con la risposta e lo strumento usato.
+def test_prova_reale_stream_con_tooltime():
+    import json
+    from fastapi.testclient import TestClient
+    from app.agente import prepara
+    from app.api import crea_app
+    from app.config import load_ambito, load_settings
+    s = load_settings()
+    ambito = load_ambito(s.ambito_file)
+    with TestClient(crea_app(lambda: prepara(s, ambito))) as client:
+        r = client.post("/chat/stream", json={"messaggio": "Che ore sono a Tokyo?"})
+    assert r.status_code == 200, r.text
+    eventi = []
+    for blocco in r.text.split("\n\n"):
+        righe = [x for x in blocco.splitlines() if x and not x.startswith(":")]
+        if righe:
+            eventi.append((righe[0][len("event: "):], json.loads(righe[1][len("data: "):])))
+    tipi = [t for t, _ in eventi]
+    assert tipi.count("testo") >= 2, tipi
+    assert ("strumento", "tooltime") in [(t, d.get("nome")) for t, d in eventi]
+    tipo, fine = eventi[-1]
+    assert tipo == "fine", eventi[-1]
+    assert [u["nome"] for u in fine["strumenti_usati"]] == ["tooltime"]
+    assert fine["risposta"].strip()
