@@ -6,7 +6,12 @@ test.skip(process.env.RUN_E2E !== "1",
 
 test("conversazione con tooltime dal browser", async ({ page }, info) => {
   await page.goto("/");
+  // elenco caricato; la nuova chat è aperta solo quando l'elenco ne ha una in più (la più recente
+  // potrebbe chiamarsi già «Nuova chat», per esempio dopo un turno fallito)
+  await page.waitForLoadState("networkidle");
+  const prima = await page.locator("#elenco-chat li").count();
   await page.click("#nuova-chat");
+  await expect(page.locator("#elenco-chat li")).toHaveCount(prima + 1);
   await expect(page.locator("#elenco-chat li.aperta .titolo")).toHaveText("Nuova chat");
   const id = await page.locator("#elenco-chat li.aperta").getAttribute("data-id");
   await page.fill("#campo", "Che ore sono a Tokyo?");
