@@ -153,7 +153,7 @@ test.describe("streaming", () => {
     await expect(page.locator("#menu-impostazioni")).toBeHidden();
     await page.click("#impostazioni");
     await expect(page.locator("#interruttore-streaming")).toBeChecked();
-    await expect(page.locator("#interruttore-log")).not.toBeChecked();
+    await expect(page.locator("#interruttore-log")).toBeChecked();
     await page.fill("#campo", "E a New York?");
     await page.press("#campo", "Enter");
     await expect(page.locator("#messaggi .msg.assistente .testo").last()).toHaveText("A New York sono le 03:50.");
@@ -227,6 +227,10 @@ test("log spento: solo i tre puntini durante l'attesa", async ({ page }) => {
   finto.attesaInvio = d.promessa;
   await simulaBackend(page, finto);
   await page.goto("/");
+  // il Log è acceso di base: lo si spegne dal menu
+  await page.click("#impostazioni");
+  await page.locator("#interruttore-log").uncheck();
+  await page.keyboard.press("Escape");
   await page.fill("#campo", "E a New York?");
   await page.press("#campo", "Enter");
   await expect(page.locator(".attesa .puntino")).toHaveCount(3);
@@ -272,4 +276,20 @@ test.describe("impaginazione", () => {
       expect(area.y).toBe(0);
     }
   });
+});
+
+
+test("log acceso di base: riga dello strumento senza aprire il menu", async ({ page }) => {
+  const finto = dueChat();
+  finto.streaming = true;
+  finto.eventi = [["fase", { fase: "pensa" }], ["strumento", { nome: "tooltime", argomenti: {} }]];
+  const d = differita();
+  finto.attesaInvio = d.promessa;
+  await simulaBackend(page, finto);
+  await page.goto("/");
+  await page.fill("#campo", "E a New York?");
+  await page.press("#campo", "Enter");
+  await expect(page.locator(".stato-attesa")).toContainText("Sto pensando");
+  d.risolvi();
+  await expect(page.locator("#messaggi .strumenti").last()).toHaveText("🕒 tooltime");
 });

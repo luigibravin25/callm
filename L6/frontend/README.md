@@ -41,8 +41,9 @@ npm run preview        # http://127.0.0.1:5173
   scrive, una parola ogni 150 ms (la bocca del volto si muove). Nel fumetto: «Sto pensando», «🕒 Sto usando tooltime…», la bozza con l'etichetta «bozza, in
   revisione», «Il revisore sta controllando…» e, se il revisore rifiuta, «Il revisore ha chiesto una
   correzione: …». Alla fine resta solo la risposta approvata (quella salvata). Il pulsante ⚙ (Settings) sotto il campo
-  apre gli interruttori «Streaming» e «Log» (scelte ricordate nel browser): senza streaming la risposta
-  arriva intera; con il Log spento (predefinito) durante l'attesa si vedono solo i tre puntini.
+  apre gli interruttori «Streaming» e «Log», accesi di base (scelte ricordate nel browser): senza
+  streaming la risposta arriva intera; con il Log spento durante l'attesa si vedono solo i tre puntini
+  e lo strumento solo nella risposta finale.
 - Le tue domande sono fumetti a destra; le risposte hanno a sinistra il volto dell'assistente,
   che muove la bocca mentre la risposta appena arrivata compare parola per parola (effetto grafico:
   la risposta è già completa; lo streaming vero è lo step 10). Con «riduci movimento» del sistema

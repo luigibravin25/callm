@@ -38,7 +38,7 @@ export interface Stato {
 
 export function statoIniziale(): Stato {
   return { chat: [], aperta: null, perChat: new Map(), erroreBarra: null, erroreApertura: null,
-    streamingDisponibile: false, streamingScelto: false, logVisibile: false };
+    streamingDisponibile: false, streamingScelto: false, logVisibile: true };
 }
 
 // dati della chat id, creati vuoti alla prima richiesta

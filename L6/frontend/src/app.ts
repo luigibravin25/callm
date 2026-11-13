@@ -159,8 +159,8 @@ export function creaApplicazione(
     const esito = await api.impostazioni();
     stato.streamingDisponibile = esito.ok && esito.dati.streaming;
     stato.streamingScelto = stato.streamingDisponibile && archivio.leggi(CHIAVE_STREAMING) !== "false";
-    // dettagli dell'attesa: spenti finché l'utente non li accende
-    stato.logVisibile = archivio.leggi(CHIAVE_LOG) === "true";
+    // dettagli dell'attesa (strumento in uso, revisore): accesi finché l'utente non li spegne
+    stato.logVisibile = archivio.leggi(CHIAVE_LOG) !== "false";
   }
 
   // rilegge l'elenco; errore nella barra (con «Riprova» se richiesto); true se riuscita

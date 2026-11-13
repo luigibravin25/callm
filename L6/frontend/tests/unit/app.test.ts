@@ -520,7 +520,7 @@ describe("streaming", () => {
   });
 
   test("log spento: la risposta già arrivata uguale non si ripete", async () => {
-    const { a, f } = await conStreaming();
+    const { a, f } = await conStreaming(archivioFinto({ log: "false" }));
     a.aggiornaBozza(1, "Che ore sono?");
     const invio = a.invia(1);
     f.manda({ tipo: "testo", dati: { testo: "Sono le 17:50." } });
@@ -530,7 +530,7 @@ describe("streaming", () => {
   });
 
   test("log spento: risposta definitiva diversa dalla bozza esce parola per parola", async () => {
-    const { a, f } = await conStreaming();
+    const { a, f } = await conStreaming(archivioFinto({ log: "false" }));
     a.aggiornaBozza(1, "Che ore sono?");
     const invio = a.invia(1);
     f.manda({ tipo: "testo", dati: { testo: "Bozza incompleta." } });
@@ -539,17 +539,17 @@ describe("streaming", () => {
     expect(a.stato.perChat.get(1)!.daRivelare).toBe(11);
   });
 
-  test("log spento di base, acceso e ricordato", async () => {
+  test("log acceso di base, spento e ricordato", async () => {
     const { a, archivio } = await conStreaming();
-    expect(a.stato.logVisibile).toBe(false);
-    a.impostaLog(true);
     expect(a.stato.logVisibile).toBe(true);
-    expect(archivio.scrivi).toHaveBeenCalledWith("log", "true");
+    a.impostaLog(false);
+    expect(a.stato.logVisibile).toBe(false);
+    expect(archivio.scrivi).toHaveBeenCalledWith("log", "false");
   });
 
-  test("log acceso letto all'avvio", async () => {
-    const { a } = await conStreaming(archivioFinto({ log: "true" }));
-    expect(a.stato.logVisibile).toBe(true);
+  test("log spento letto all'avvio", async () => {
+    const { a } = await conStreaming(archivioFinto({ log: "false" }));
+    expect(a.stato.logVisibile).toBe(false);
   });
 
   test("streaming non disponibile ignora la scelta salvata", async () => {
