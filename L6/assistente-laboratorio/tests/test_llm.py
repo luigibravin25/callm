@@ -74,3 +74,36 @@ def test_router_llm_usa_lo_schema_dell_ambito():
     schema = build_router_llm(IMPOSTAZIONI, AMBITO).first.kwargs["response_format"]
     enum = schema.model_json_schema()["properties"]["argomento"]["enum"]
     assert enum == ["ora_data_fusi", "altro"]
+
+
+# Verifica che router, revisore e riassunto non vadano in streaming nemmeno quando il grafo gira in
+# streaming (step 10): stessa chiamata a LM Studio di oggi; il modello dell'agente invece si'.
+def test_router_revisore_riassunto_senza_streaming():
+    from app.llm import build_revisore_llm, build_riassunto_llm
+    # i modelli strutturati sono una catena: il ChatOpenAI sta nel primo passo
+    assert build_router_llm(IMPOSTAZIONI, AMBITO).first.bound.disable_streaming is True
+    assert build_revisore_llm(IMPOSTAZIONI).first.bound.disable_streaming is True
+    assert build_riassunto_llm(IMPOSTAZIONI).disable_streaming is True
+    assert not build_llm(IMPOSTAZIONI, []).disable_streaming
+
+
+# Verifica il modello finto a pezzi: dentro un grafo in streaming produce piu' pezzi di testo dal
+# nodo che chiama invoke, e regge anche un messaggio con sole chiamate a strumenti.
+def test_modello_flusso_finto():
+    from langchain_core.messages import AIMessage, AIMessageChunk
+    from langgraph.graph import START, END, MessagesState, StateGraph
+    from tests.finti import ModelloFlussoFinto
+    finto = ModelloFlussoFinto(risposte=[AIMessage("Sono le 9 a Roma."),
+        AIMessage("", tool_calls=[{"name": "tooltime", "args": {}, "id": "c1"}])])
+    g = StateGraph(MessagesState)
+    g.add_node("modello", lambda s: {"messages": [finto.invoke(s["messages"])]})
+    g.add_edge(START, "modello")
+    g.add_edge("modello", END)
+    grafo = g.compile()
+    pezzi = [m for m, meta in grafo.stream({"messages": [("user", "ora?")]}, stream_mode="messages")
+             if isinstance(m, AIMessageChunk) and m.content and meta["langgraph_node"] == "modello"]
+    assert len(pezzi) >= 3
+    assert "".join(p.content for p in pezzi) == "Sono le 9 a Roma."
+    # seconda risposta: nessun testo, una chiamata a strumento (in streaming non solleva)
+    finale = grafo.invoke({"messages": [("user", "ora?")]})["messages"][-1]
+    assert finale.tool_calls[0]["name"] == "tooltime"

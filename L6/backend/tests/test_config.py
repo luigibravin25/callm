@@ -5,7 +5,8 @@ from app.config import (AGENTE_TIMEOUT_PREDEFINITO, AGENTE_URL_PREDEFINITO, HOST
                         PORTA_PREDEFINITA, leggi_impostazioni, maschera_url)
 
 URL_DB = "postgresql+psycopg://assistente:segreta@127.0.0.1:5433/assistente"
-VARIABILI = ("DATABASE_URL", "AGENTE_URL", "AGENTE_TIMEOUT", "BACKEND_HOST", "BACKEND_PORTA")
+VARIABILI = ("DATABASE_URL", "AGENTE_URL", "AGENTE_TIMEOUT", "BACKEND_HOST", "BACKEND_PORTA",
+             "STREAMING")
 
 
 # ambiente pulito: solo le variabili che il test imposta
@@ -63,3 +64,21 @@ def test_maschera_url():
     assert maschera_url(URL_DB) == "postgresql+psycopg://assistente:***@127.0.0.1:5433/assistente"
     senza = "postgresql+psycopg://assistente@127.0.0.1:5433/assistente"
     assert maschera_url(senza) == senza
+
+
+# Verifica STREAMING (step 10): assente → attivo; valori ammessi senza maiuscole; altro → errore.
+@pytest.mark.parametrize("valore, atteso", [(None, True), ("true", True), ("TRUE", True), ("1", True),
+                                            ("sì", True), ("si", True), ("false", False),
+                                            ("0", False), ("No", False), (" false ", False)])
+def test_streaming(ambiente, valore, atteso):
+    ambiente.setenv("DATABASE_URL", URL_DB)
+    if valore is not None:
+        ambiente.setenv("STREAMING", valore)
+    assert leggi_impostazioni().streaming is atteso
+
+
+def test_streaming_non_valido(ambiente):
+    ambiente.setenv("DATABASE_URL", URL_DB)
+    ambiente.setenv("STREAMING", "forse")
+    with pytest.raises(ValueError, match="STREAMING"):
+        leggi_impostazioni()

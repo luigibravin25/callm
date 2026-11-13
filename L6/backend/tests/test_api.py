@@ -271,3 +271,12 @@ def test_client_agente_chiuso_alla_chiusura(fabbrica):
     with TestClient(crea_app(fabbrica, client)):
         assert not client._http.is_closed
     assert client._http.is_closed
+
+
+# Verifica GET /impostazioni (step 10): il front-end sa se lo streaming e' disponibile.
+@pytest.mark.parametrize("streaming", [True, False])
+def test_impostazioni(streaming):
+    with TestClient(crea_app(None, client_finto(AgenteFinto()), streaming=streaming)) as c:
+        r = c.get("/impostazioni")
+    assert r.status_code == 200
+    assert r.json() == {"streaming": streaming}

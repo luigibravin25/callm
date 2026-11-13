@@ -6,13 +6,16 @@ Avvio: python -m app.api (DATABASE_URL, AGENTE_URL, AGENTE_TIMEOUT, BACKEND_HOST
 """
 # librerie standard: log, valori ammessi nei messaggi di Pydantic, ciclo di vita del servizio
 import logging
+import time
+import threading
 import re
 from contextlib import asynccontextmanager
 
 # FastAPI: applicazione, percorsi, errori di validazione, risposte; errori HTTP di Starlette
+import anyio
 from fastapi import FastAPI, Path, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.exc import TimeoutError as AttesaPool
 from sqlalchemy.orm import sessionmaker
@@ -21,7 +24,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # parti del back-end: operazioni, client dell'agente, schemi
 from app import servizio
 from app.client_agente import ClientAgente, ErroreAgente
-from app.schemi import (ChatCompleta, ChatCreata, ChatInElenco, Errore, NuovoMessaggio, Turno)
+from app.db import Chat
+from app.schemi import (ChatCompleta, ChatCreata, ChatInElenco, Errore, EventiFlusso,
+                         Impostazioni, NuovoMessaggio, Turno)
+from app.sse import con_ping, formatta
 from app.servizio import ChatNonTrovata
 
 # logger del back-end: nel terminale compare come [backend]
@@ -30,6 +36,7 @@ log = logging.getLogger("backend")
 ID_MASSIMO = 2_147_483_647  # limite della colonna integer di PostgreSQL
 MSG_DATABASE = "Il database non è raggiungibile: dettagli nel log del back-end."
 MSG_INTERNO = "Errore interno del back-end: dettagli nel log."
+MSG_STREAMING_DISATTIVATO = "Lo streaming è disattivato (STREAMING=false)."
 DESCRIZIONE = """Back-end dell'assistente di laboratorio: chat salvate in PostgreSQL, domande
 inoltrate all'agente. Il front-end parla solo con questo servizio.
 
@@ -150,8 +157,48 @@ def _registra_errori(app: FastAPI) -> None:
         return _errore(500, "errore_interno", MSG_INTERNO)
 
 
+# chiude il generatore; se un next() e' ancora in corso in un altro thread (annullamento a meta'
+# lettura) close() solleva ValueError: si riprova finche' finisce (al massimo un ping, ~5 s)
+def _chiudi(generatore) -> None:
+    for _ in range(200):
+        try:
+            generatore.close()
+            return
+        except ValueError:
+            time.sleep(0.05)
+
+
+# corpo asincrono di una StreamingResponse da un generatore sincrono. Ogni next() gira in un thread
+# che si puo' abbandonare: se il client va via la cancellazione arriva subito (senza aspettare il
+# prossimo ping), alla_chiusura avvisa la sorgente e il generatore si chiude appena il next() in
+# corso finisce
+async def _corpo(generatore, alla_chiusura=None):
+    finito = False
+    try:
+        while True:
+            parte = await anyio.to_thread.run_sync(_prossimo, generatore, abandon_on_cancel=True)
+            if parte is _FINE_GENERATORE:
+                finito = True
+                return
+            yield parte
+    finally:
+        if not finito and alla_chiusura is not None:
+            alla_chiusura()
+        # scope protetto: la chiusura avviene anche se il task e' stato annullato
+        with anyio.CancelScope(shield=True):
+            await anyio.to_thread.run_sync(_chiudi, generatore)
+
+
+# prossimo elemento o il segnale di fine (StopIteration non attraversa bene i thread)
+_FINE_GENERATORE = object()
+
+
+def _prossimo(generatore):
+    return next(generatore, _FINE_GENERATORE)
+
+
 # crea l'applicazione; i test passano un database di prova e un agente finto
-def crea_app(fabbrica: sessionmaker, client: ClientAgente) -> FastAPI:
+def crea_app(fabbrica: sessionmaker, client: ClientAgente, streaming: bool = True) -> FastAPI:
     # ciclo di vita: alla chiusura del servizio si chiudono le connessioni verso l'agente
     @asynccontextmanager
     async def ciclo_di_vita(app: FastAPI):
@@ -162,6 +209,11 @@ def crea_app(fabbrica: sessionmaker, client: ClientAgente) -> FastAPI:
     app = FastAPI(title="Assistente di laboratorio · Back-end", description=DESCRIZIONE,
                   version="7.0", lifespan=ciclo_di_vita)
     _registra_errori(app)
+
+    @app.get("/impostazioni", response_model=Impostazioni, tags=["impostazioni"])
+    def impostazioni() -> Impostazioni:
+        """Impostazioni per il front-end: streaming disponibile (variabile STREAMING)."""
+        return Impostazioni(streaming=streaming)
 
     @app.post("/chat", response_model=ChatCreata, status_code=201, tags=["chat"],
               responses={500: _ERR, 503: _ERR})
@@ -191,6 +243,37 @@ def crea_app(fabbrica: sessionmaker, client: ClientAgente) -> FastAPI:
         fallisce la domanda non resta salvata e arriva l'errore (riprovare con lo stesso testo)."""
         domanda, risposta = servizio.invia_messaggio(fabbrica, client, chat_id, corpo.testo)
         return Turno(domanda=domanda, risposta=risposta)
+
+    # lo stesso turno in streaming (step 10): eventi SSE fase, bozza, testo, strumento, revisione,
+    # fine (Turno salvato) oppure errore; ": ping" ogni 5 s nei silenzi
+    @app.post("/chat/{chat_id}/messaggi/stream", tags=["chat"], response_class=StreamingResponse,
+              responses={**ERRORI_INVIO, 409: _ERR, 200: {
+                  "model": EventiFlusso, "description": "Eventi SSE del turno (un campo per tipo)",
+                  "content": {"text/event-stream": {}}}})
+    def invia_stream(corpo: NuovoMessaggio, chat_id: int = ChatId):
+        """Come l'invio di un messaggio, ma la risposta arriva a pezzi mentre il modello la scrive.
+        Si salva solo a fine turno; con un errore o un client che chiude, la domanda si cancella."""
+        if not streaming:
+            return _errore(409, "streaming_disattivato", MSG_STREAMING_DISATTIVATO)
+        # chat inesistente: 404 in JSON prima dello stream
+        with fabbrica() as s:
+            if s.get(Chat, chat_id) is None:
+                raise ChatNonTrovata(chat_id)
+
+        # impostato alla chiusura del browser: il turno smette di leggere l'agente e non salva
+        annullato = threading.Event()
+
+        def righe():
+            for tipo, dati in servizio.invia_in_flusso(fabbrica, client, chat_id, corpo.testo,
+                                                       annullato):
+                if tipo == "fine":
+                    dati = Turno(**dati).model_dump(mode="json")
+                yield formatta(tipo, dati)
+
+        return StreamingResponse(_corpo(con_ping(righe(), alla_chiusura=annullato.set),
+                                        alla_chiusura=annullato.set),
+                                 media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @app.delete("/chat/{chat_id}", status_code=204, response_class=Response, tags=["chat"],
                 responses=ERRORI_LETTURA)
@@ -232,7 +315,9 @@ def main() -> None:
              impostazioni.agente_timeout)
     client = ClientAgente(impostazioni.agente_url, impostazioni.agente_timeout)
     # log_config=None: uvicorn usa la configurazione dei log appena fatta
-    uvicorn.run(crea_app(fabbrica_sessioni(motore), client), host=impostazioni.host,
+    app = crea_app(fabbrica_sessioni(motore), client, impostazioni.streaming)
+    log.info("streaming %s (STREAMING)", "attivo" if impostazioni.streaming else "disattivato")
+    uvicorn.run(app, host=impostazioni.host,
                 port=impostazioni.porta, log_config=None)
 
 

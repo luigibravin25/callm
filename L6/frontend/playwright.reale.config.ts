@@ -3,6 +3,8 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "tests/reale",
+  // una prova alla volta: lavorano sullo stesso back-end (contano le chat create) e su un solo modello
+  workers: 1,
   // una risposta vera con revisioni può durare minuti
   timeout: 360_000,
   use: {

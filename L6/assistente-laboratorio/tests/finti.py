@@ -69,3 +69,53 @@ def tooltime_finto(registro: list):
         registro.append({"fuso": fuso, "parte": parte})
         return orologio.ora_corrente(fuso, parte)
     return tooltime
+
+
+# finto modello dell'agente A PEZZI (step 10): e' un vero BaseChatModel, cosi' il grafo in
+# streaming (stream_mode "messages") riceve il testo parola per parola anche se il nodo chiama
+# invoke; senza streaming restituisce il messaggio intero. Una risposta preparata per chiamata.
+import json
+import re
+
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessageChunk
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
+from pydantic import PrivateAttr
+
+
+class ModelloFlussoFinto(BaseChatModel):
+    risposte: list  # AIMessage da restituire in ordine (finite, si ripete l'ultima)
+    _usate: int = PrivateAttr(default=0)
+
+    @property
+    def _llm_type(self) -> str:
+        return "modello-flusso-finto"
+
+    # il grafo associa gli strumenti al modello: qui non serve, si restituisce lo stesso oggetto
+    def bind_tools(self, strumenti, **kwargs):
+        return self
+
+    # prossima risposta preparata (copia nuova: add_messages assegna gli id)
+    def _prossima(self):
+        i = min(self._usate, len(self.risposte) - 1)
+        self._usate += 1
+        return self.risposte[i].model_copy(deep=True)
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        return ChatResult(generations=[ChatGeneration(message=self._prossima())])
+
+    # streaming: il testo parola per parola (spazi conservati), poi le chiamate a strumenti
+    def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+        risposta = self._prossima()
+        for pezzo in re.findall(r"\S+\s*|\s+", str(risposta.content)):
+            chunk = ChatGenerationChunk(message=AIMessageChunk(content=pezzo))
+            if run_manager:
+                run_manager.on_llm_new_token(pezzo, chunk=chunk)
+            yield chunk
+        if risposta.tool_calls:
+            yield ChatGenerationChunk(message=AIMessageChunk(content="", tool_call_chunks=[
+                {"name": c["name"], "args": json.dumps(c["args"]), "id": c["id"], "index": i}
+                for i, c in enumerate(risposta.tool_calls)]))
+        elif not str(risposta.content):
+            # risposta vuota: un pezzo vuoto, cosi' lo streaming produce comunque un messaggio
+            yield ChatGenerationChunk(message=AIMessageChunk(content=""))

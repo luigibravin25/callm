@@ -76,3 +76,40 @@ class Turno(BaseModel):
 class Errore(BaseModel):
     errore: str = Field(description="codice stabile, es. agente_non_raggiungibile")
     messaggio: str = Field(description="spiegazione in italiano")
+
+
+# impostazioni lette dal front-end all'avvio (step 10)
+class Impostazioni(BaseModel):
+    streaming: bool = Field(description="risposte in streaming disponibili (variabile STREAMING)")
+
+
+# ---------- eventi dello streaming (step 10): POST /chat/{id}/messaggi/stream ----------
+# Ogni evento SSE e' "event: <tipo>" + "data: <JSON>". Tipi: fase, bozza ({}), testo, strumento,
+# revisione, fine (Turno), errore (Errore). Gli schemi servono al front-end (tipi generati).
+
+class EventoFase(BaseModel):
+    fase: Literal["pensa", "revisore"] = Field(description="pensa: inizio del turno; revisore: "
+                                                           "controllo della bozza")
+
+
+class EventoTesto(BaseModel):
+    testo: str = Field(description="pezzo di testo della bozza in arrivo")
+
+
+class EventoStrumento(BaseModel):
+    nome: str
+    argomenti: dict = Field(description="argomenti della chiamata (non mostrati nella pagina)")
+
+
+class EventoRevisione(BaseModel):
+    motivo: str = Field(description="perche' il revisore ha rifiutato la bozza")
+
+
+# raccolta degli schemi per la documentazione della risposta 200 (un campo per tipo di evento)
+class EventiFlusso(BaseModel):
+    fase: EventoFase | None = None
+    testo: EventoTesto | None = None
+    strumento: EventoStrumento | None = None
+    revisione: EventoRevisione | None = None
+    fine: Turno | None = None
+    errore: Errore | None = None

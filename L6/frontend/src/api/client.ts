@@ -22,6 +22,8 @@ export interface Api {
   leggi(id: number): Promise<Esito<ChatCompleta>>;
   invia(id: number, testo: string): Promise<Esito<Turno>>;
   elimina(id: number): Promise<Esito<null>>;
+  // step 10: streaming disponibile (variabile STREAMING del back-end)
+  impostazioni(): Promise<Esito<{ streaming: boolean }>>;
 }
 
 // risposta d'errore → messaggio: il corpo {errore, messaggio} del back-end (o dell'agente inoltrato)
@@ -66,5 +68,6 @@ export function creaApi(opzioni: { baseUrl?: string; fetch?: typeof fetch } = {}
     invia: (id, testo) =>
       esito(() => client.POST("/chat/{chat_id}/messaggi", { ...percorso(id), body: { testo } })),
     elimina: (id) => esito(() => client.DELETE("/chat/{chat_id}", percorso(id)), true),
+    impostazioni: () => esito(() => client.GET("/impostazioni")),
   };
 }

@@ -50,6 +50,7 @@ volume `l6-pgdata` anche con `docker restart` o `docker rm`. Ricreare il databas
 | `AGENTE_TIMEOUT` | `300` | secondi di attesa massima per un turno dell'agente |
 | `BACKEND_HOST` | `127.0.0.1` | |
 | `BACKEND_PORTA` | `8001` | |
+| `STREAMING` | `true` | risposte in streaming (step 10): `true/false/1/0/sì/no`; `false` = 409 sull'endpoint di stream |
 | `TEST_DATABASE_URL` | — | solo per i test; il nome del database deve finire con `_test` |
 
 La password non compare mai nei log né negli errori (`***`).
@@ -88,6 +89,8 @@ eseguire `npm run genera-api` in `L6/frontend` (lo controlla `tests/test_openapi
 | `GET /chat/{id}` | — | 200 `{id, titolo, creata_il, ultimo_messaggio_il, messaggi: [{id, ruolo, testo, strumenti, creato_il}]}` |
 | `POST /chat/{id}/messaggi` | `{"testo": "..."}` | 200 `{domanda, risposta}` (due messaggi) |
 | `DELETE /chat/{id}` | — | 204 |
+| `GET /impostazioni` | — | 200 `{streaming}` (step 10) |
+| `POST /chat/{id}/messaggi/stream` | `{"testo": "..."}` | 200 `text/event-stream`: eventi `fase`, `bozza`, `testo`, `strumento`, `revisione`, poi `fine` (`{domanda, risposta}` salvate) o `errore`; `: ping` ogni 5 s. Si salva solo a `fine`; errore o client chiuso → domanda cancellata (entro ~5 s, il ping dell'agente). `AGENTE_TIMEOUT` vale per tutto il turno anche con i ping (oltre: 504 `agente_in_timeout`) |
 
 Date in ISO 8601 UTC. `id` è un intero tra 1 e 2147483647.
 

@@ -22,6 +22,8 @@ function appFinta(): Applicazione {
     aggiornaBozza: vi.fn(),
     chiudiErrore: vi.fn(),
     riprovaElenco: vi.fn(async () => {}),
+    impostaStreaming: vi.fn(),
+    impostaLog: vi.fn(),
   };
 }
 
@@ -298,4 +300,191 @@ describe("vista", () => {
     barra.querySelector<HTMLButtonElement>("button.riprova")!.click();
     expect(app.riprovaElenco).toHaveBeenCalled();
   });
+});
+
+// ---------- step 10: streaming nella vista ----------
+describe("streaming", () => {
+  // chat 1 aperta e in attesa, con lo stato dello streaming dato
+  function inAttesa(campi: Partial<ReturnType<typeof datiChat>>) {
+    const d = conChat([]);
+    Object.assign(d, { provvisoria: "Che ore sono?" }, campi);
+    app.stato.logVisibile = true;
+    return d;
+  }
+
+  test("riga Sto pensando", () => {
+    inAttesa({ fase: "pensa" });
+    montaVista(radice, app).disegna();
+    expect(radice.querySelector(".stato-attesa")!.textContent).toContain("Sto pensando");
+  });
+
+  test("riga dello strumento con la sua icona", () => {
+    inAttesa({ fase: "strumento", strumentoInUso: "tooltime" });
+    montaVista(radice, app).disegna();
+    expect(radice.querySelector(".stato-attesa")!.textContent).toBe("🕒 Sto usando tooltime…");
+  });
+
+  test("bozza con l'etichetta e avviso del revisore", () => {
+    inAttesa({ fase: "pensa", testoInArrivo: "A Tokyo sono", avvisoRevisore: "manca l'ora di Roma" });
+    montaVista(radice, app).disegna();
+    expect(radice.querySelector(".attesa .testo")!.textContent).toBe("A Tokyo sono");
+    expect(radice.querySelector(".etichetta-bozza")!.textContent).toBe("bozza, in revisione");
+    expect(radice.querySelector(".avviso-revisore")!.textContent)
+      .toBe("Il revisore ha chiesto una correzione: manca l'ora di Roma");
+    // con il testo in arrivo niente «Sto pensando»
+    expect(radice.querySelector(".stato-attesa")).toBeNull();
+  });
+
+  test("Il revisore sta controllando", () => {
+    inAttesa({ fase: "revisore", testoInArrivo: "A Tokyo sono le 20." });
+    montaVista(radice, app).disegna();
+    expect(radice.querySelector(".stato-attesa")!.textContent).toBe("Il revisore sta controllando…");
+    expect(radice.querySelector(".etichetta-bozza")).not.toBeNull();
+  });
+
+  test("bocca che parla mentre arriva il testo, ferma dopo 400 ms", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(10_000);
+      inAttesa({ fase: "pensa", testoInArrivo: "Sono", ultimoPezzo: 10_000 });
+      montaVista(radice, app).disegna();
+      expect(radice.querySelector(".attesa .volto.parla")).not.toBeNull();
+      // nessun pezzo nuovo: la vista si ridisegna da sola e la bocca si ferma
+      vi.advanceTimersByTime(450);
+      expect(radice.querySelector(".attesa .volto.parla")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("interruttore assente se lo streaming non è disponibile", () => {
+    conChat([]);
+    app.stato.streamingDisponibile = false;
+    montaVista(radice, app).disegna();
+    expect(radice.querySelector<HTMLElement>("#interruttore-streaming")?.closest("label")?.hidden ?? true).toBe(true);
+  });
+
+  test("interruttore presente e collegato", () => {
+    conChat([]);
+    app.stato.streamingDisponibile = true;
+    app.stato.streamingScelto = true;
+    montaVista(radice, app).disegna();
+    const casella = radice.querySelector<HTMLInputElement>("#interruttore-streaming")!;
+    expect(casella.closest("label")!.hidden).toBe(false);
+    expect(casella.closest("label")!.textContent).toContain("Streaming");
+    expect(casella.getAttribute("role")).toBe("switch");
+    expect(casella.checked).toBe(true);
+    casella.click();
+    expect(app.impostaStreaming).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("streaming: correzioni della revisione", () => {
+  test("la vista segue il testo in arrivo", () => {
+    const d = conChat([]);
+    d.provvisoria = "x";
+    d.fase = "pensa";
+    const vista = montaVista(radice, app);
+    const messaggi = radice.querySelector<HTMLElement>("#messaggi")!;
+    let scorrimenti = 0;
+    Object.defineProperty(messaggi, "scrollTop", { set: () => { scorrimenti++; }, get: () => 0 });
+    vista.disegna();
+    const dopoIlPrimo = scorrimenti;
+    d.testoInArrivo = "A Tokyo";
+    vista.disegna();
+    d.testoInArrivo = "A Tokyo sono le 20.";
+    vista.disegna();
+    expect(scorrimenti).toBe(dopoIlPrimo + 2);
+  });
+
+  test("riga dello strumento anche con testo scritto insieme alla chiamata", () => {
+    const d = conChat([]);
+    Object.assign(d, { provvisoria: "x", fase: "strumento", strumentoInUso: "tooltime",
+      testoInArrivo: "Controllo l'ora…" });
+    app.stato.logVisibile = true;
+    montaVista(radice, app).disegna();
+    expect(radice.querySelector(".stato-attesa")!.textContent).toBe("🕒 Sto usando tooltime…");
+  });
+});
+
+
+test("area dei messaggi occupata durante l'attesa (lettori di schermo)", () => {
+  const d = conChat([]);
+  const vista = montaVista(radice, app);
+  vista.disegna();
+  const messaggi = radice.querySelector("#messaggi")!;
+  expect(messaggi.getAttribute("aria-busy")).toBe("false");
+  d.provvisoria = "x";
+  vista.disegna();
+  expect(messaggi.getAttribute("aria-busy")).toBe("true");
+});
+
+
+describe("menu delle impostazioni e log", () => {
+  test("con il log spento solo i tre puntini, poi il testo senza etichetta", () => {
+    const d = conChat([]);
+    Object.assign(d, { provvisoria: "x", fase: "strumento", strumentoInUso: "tooltime",
+      avvisoRevisore: "manca", testoInArrivo: "" });
+    app.stato.logVisibile = false;
+    const vista = montaVista(radice, app);
+    vista.disegna();
+    expect(radice.querySelectorAll(".attesa .puntino")).toHaveLength(3);
+    expect(radice.querySelector(".stato-attesa")).toBeNull();
+    expect(radice.querySelector(".avviso-revisore")).toBeNull();
+    d.testoInArrivo = "A Tokyo";
+    vista.disegna();
+    expect(radice.querySelector(".attesa .testo")!.textContent).toBe("A Tokyo");
+    expect(radice.querySelector(".etichetta-bozza")).toBeNull();
+    expect(radice.querySelector(".stato-attesa")).toBeNull();
+  });
+
+  test("menu nascosto, si apre con il pulsante ⚙ e si chiude con Esc", () => {
+    conChat([]);
+    montaVista(radice, app).disegna();
+    const pulsante = radice.querySelector<HTMLButtonElement>("#impostazioni")!;
+    const menu = radice.querySelector<HTMLElement>("#menu-impostazioni")!;
+    expect(pulsante.getAttribute("aria-label")).toBe("Impostazioni");
+    expect(menu.hidden).toBe(true);
+    pulsante.click();
+    expect(menu.hidden).toBe(false);
+    expect(pulsante.getAttribute("aria-expanded")).toBe("true");
+    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(menu.hidden).toBe(true);
+  });
+
+  test("interruttore Log nel menu collegato", () => {
+    conChat([]);
+    app.stato.logVisibile = false;
+    montaVista(radice, app).disegna();
+    const log = radice.querySelector<HTMLInputElement>("#menu-impostazioni #interruttore-log")!;
+    expect(log.getAttribute("role")).toBe("switch");
+    expect(log.closest("label")!.textContent).toContain("Log");
+    expect(log.checked).toBe(false);
+    log.click();
+    expect(app.impostaLog).toHaveBeenCalledWith(true);
+  });
+});
+
+test("menu: Esc anche dal pulsante ⚙ e clic fuori lo chiudono", () => {
+  conChat([]);
+  montaVista(radice, app).disegna();
+  const pulsante = radice.querySelector<HTMLButtonElement>("#impostazioni")!;
+  const menu = radice.querySelector<HTMLElement>("#menu-impostazioni")!;
+  pulsante.click();
+  pulsante.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  expect(menu.hidden).toBe(true);
+  pulsante.click();
+  expect(menu.hidden).toBe(false);
+  // clic dentro il menu: resta aperto; clic fuori: si chiude
+  menu.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(menu.hidden).toBe(false);
+  radice.querySelector<HTMLElement>("#messaggi")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  expect(menu.hidden).toBe(true);
+});
+
+
+test("ingranaggio con la scritta Settings al passaggio del mouse", () => {
+  conChat([]);
+  montaVista(radice, app).disegna();
+  expect(radice.querySelector<HTMLButtonElement>("#impostazioni")!.title).toBe("Settings");
 });

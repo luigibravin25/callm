@@ -6,6 +6,28 @@
     "version": "7.0"
   },
   "paths": {
+    "/impostazioni": {
+      "get": {
+        "tags": [
+          "impostazioni"
+        ],
+        "summary": "Impostazioni",
+        "description": "Impostazioni per il front-end: streaming disponibile (variabile STREAMING).",
+        "operationId": "impostazioni_impostazioni_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Impostazioni"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat": {
       "get": {
         "tags": [
@@ -353,6 +375,134 @@
           }
         }
       }
+    },
+    "/chat/{chat_id}/messaggi/stream": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Invia Stream",
+        "description": "Come l'invio di un messaggio, ma la risposta arriva a pezzi mentre il modello la scrive.\nSi salva solo a fine turno; con un errore o un client che chiude, la domanda si cancella.",
+        "operationId": "invia_stream_chat__chat_id__messaggi_stream_post",
+        "parameters": [
+          {
+            "name": "chat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2147483647,
+              "minimum": 1,
+              "description": "identificativo della chat",
+              "title": "Chat Id"
+            },
+            "description": "identificativo della chat"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NuovoMessaggio"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Eventi SSE del turno (un campo per tipo)",
+            "content": {
+              "text/event-stream": {},
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventiFlusso"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Errore"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Errore"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Errore"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Errore"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Errore"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Errore"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Errore"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Errore"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -477,6 +627,152 @@
           "messaggio"
         ],
         "title": "Errore"
+      },
+      "EventiFlusso": {
+        "properties": {
+          "fase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventoFase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "testo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventoTesto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "strumento": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventoStrumento"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revisione": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventoRevisione"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Turno"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errore": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Errore"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "EventiFlusso"
+      },
+      "EventoFase": {
+        "properties": {
+          "fase": {
+            "type": "string",
+            "enum": [
+              "pensa",
+              "revisore"
+            ],
+            "title": "Fase",
+            "description": "pensa: inizio del turno; revisore: controllo della bozza"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fase"
+        ],
+        "title": "EventoFase"
+      },
+      "EventoRevisione": {
+        "properties": {
+          "motivo": {
+            "type": "string",
+            "title": "Motivo",
+            "description": "perche' il revisore ha rifiutato la bozza"
+          }
+        },
+        "type": "object",
+        "required": [
+          "motivo"
+        ],
+        "title": "EventoRevisione"
+      },
+      "EventoStrumento": {
+        "properties": {
+          "nome": {
+            "type": "string",
+            "title": "Nome"
+          },
+          "argomenti": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Argomenti",
+            "description": "argomenti della chiamata (non mostrati nella pagina)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nome",
+          "argomenti"
+        ],
+        "title": "EventoStrumento"
+      },
+      "EventoTesto": {
+        "properties": {
+          "testo": {
+            "type": "string",
+            "title": "Testo",
+            "description": "pezzo di testo della bozza in arrivo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "testo"
+        ],
+        "title": "EventoTesto"
+      },
+      "Impostazioni": {
+        "properties": {
+          "streaming": {
+            "type": "boolean",
+            "title": "Streaming",
+            "description": "risposte in streaming disponibili (variabile STREAMING)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "streaming"
+        ],
+        "title": "Impostazioni"
       },
       "MessaggioChat": {
         "properties": {

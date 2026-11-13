@@ -37,6 +37,13 @@ npm run preview        # http://127.0.0.1:5173
 - **+ Nuova chat** crea una chat; l'elenco mostra titolo e data dell'ultimo messaggio, le più recenti
   in cima. All'apertura si apre la chat più recente.
 - 🗑 elimina la chat dopo una conferma (non si può annullare).
+- **Streaming** (step 10, se il back-end ha `STREAMING=true`): la risposta arriva mentre il modello la
+  scrive, una parola ogni 150 ms (la bocca del volto si muove). Nel fumetto: «Sto pensando», «🕒 Sto usando tooltime…», la bozza con l'etichetta «bozza, in
+  revisione», «Il revisore sta controllando…» e, se il revisore rifiuta, «Il revisore ha chiesto una
+  correzione: …». Alla fine resta solo la risposta approvata (quella salvata). Il pulsante ⚙ (Settings) sotto il campo
+  apre gli interruttori «Streaming» e «Log», accesi di base (scelte ricordate nel browser): senza
+  streaming la risposta arriva intera; con il Log spento durante l'attesa si vedono solo i tre puntini
+  e lo strumento solo nella risposta finale.
 - Le tue domande sono fumetti a destra; le risposte hanno a sinistra il volto dell'assistente,
   che muove la bocca mentre la risposta appena arrivata compare parola per parola (effetto grafico:
   la risposta è già completa; lo streaming vero è lo step 10). Con «riduci movimento» del sistema

@@ -2,7 +2,8 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Api, ChatCompleta, ChatInElenco, Esito, Messaggio, Turno } from "../../src/api/client";
 import { creaApplicazione, type Applicazione } from "../../src/app";
-import { MSG_CHAT_SPARITA, testoConferma } from "../../src/formato";
+import type { EventoFlusso, inviaInFlusso } from "../../src/api/flusso";
+import { MSG_CHAT_SPARITA, MSG_ERRORE_PAGINA, testoConferma } from "../../src/formato";
 import { inAttesa } from "../../src/stato";
 
 // dati di prova
@@ -37,6 +38,8 @@ beforeEach(() => {
     leggi: vi.fn(async (id: number) => ok(completa(id))),
     invia: vi.fn(async (_id: number, testo: string) => ok(turno(testo))),
     elimina: vi.fn(async () => ok(null)),
+    // streaming non disponibile: i test di questo file usano l'invio senza stream
+    impostazioni: vi.fn(async () => ok({ streaming: false })),
   };
   conferma = vi.fn(() => true);
   ridisegna = vi.fn();
@@ -306,5 +309,258 @@ describe("apertura e creazione", () => {
     await app.nuovaChat();
     expect(app.stato.erroreBarra).toEqual({ messaggio: "DB giù", riprova: false });
     expect(app.stato.aperta).toBe(1);
+  });
+});
+
+// ---------- step 10: streaming ----------
+describe("streaming", () => {
+  // flusso finto: il test manda gli eventi con `manda` e chiude con `chiudi`
+  function flussoFinto() {
+    let suEvento: (e: EventoFlusso) => void = () => {};
+    let chiudi!: (esito: Esito<Turno>) => void;
+    const flusso = vi.fn((_id: number, _testo: string, se: (e: EventoFlusso) => void) => {
+      suEvento = se;
+      return new Promise<Esito<Turno>>((r) => { chiudi = r; });
+    });
+    return { flusso, manda: (e: EventoFlusso) => suEvento(e), chiudi: (e: Esito<Turno>) => chiudi(e) };
+  }
+
+  // archivio finto a chiavi (streaming, log), come localStorage
+  function archivioFinto(valori: Record<string, string> = {}) {
+    const archivio = {
+      valori: { ...valori },
+      leggi: vi.fn((chiave: string) => archivio.valori[chiave] ?? null),
+      scrivi: vi.fn((chiave: string, v: string) => { archivio.valori[chiave] = v; }),
+    };
+    return archivio;
+  }
+
+  async function conStreaming(archivio = archivioFinto(), msPerParola = 0) {
+    api.impostazioni.mockResolvedValue(ok({ streaming: true }));
+    const f = flussoFinto();
+    const a = creaApplicazione(api as unknown as Api, conferma as unknown as (t: string) => boolean,
+      ridisegna as unknown as () => void, f.flusso as unknown as typeof inviaInFlusso, archivio,
+      msPerParola);
+    await a.avvia();
+    return { a, f, archivio };
+  }
+
+  test("evento bozza azzera il testo in arrivo, testo accumulato", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    const s = a.stato.perChat.get(1)!;
+    expect(s.fase).toBe("pensa");
+    f.manda({ tipo: "bozza", dati: {} });
+    f.manda({ tipo: "testo", dati: { testo: "Sono " } });
+    f.manda({ tipo: "testo", dati: { testo: "le 9." } });
+    expect(s.testoInArrivo).toBe("Sono le 9.");
+    expect(s.ultimoPezzo).toBeGreaterThan(0);
+    f.manda({ tipo: "bozza", dati: {} });
+    expect(s.testoInArrivo).toBe("");
+    f.chiudi(ok(turno("Che ore sono?")));
+    await invio;
+  });
+
+  test("strumento imposta la fase e revisione l'avviso", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "x");
+    const invio = a.invia(1);
+    const s = a.stato.perChat.get(1)!;
+    f.manda({ tipo: "strumento", dati: { nome: "tooltime", argomenti: {} } });
+    expect([s.fase, s.strumentoInUso]).toEqual(["strumento", "tooltime"]);
+    f.manda({ tipo: "fase", dati: { fase: "revisore" } });
+    expect(s.fase).toBe("revisore");
+    f.manda({ tipo: "revisione", dati: { motivo: "manca Tokyo" } });
+    expect(s.avvisoRevisore).toBe("manca Tokyo");
+    f.chiudi(ok(turno("x")));
+    await invio;
+  });
+
+  test("fine sostituisce il testo in arrivo", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.manda({ tipo: "testo", dati: { testo: "bozza vecchia" } });
+    f.manda({ tipo: "revisione", dati: { motivo: "m" } });
+    f.chiudi(ok(turno("Che ore sono?")));
+    await invio;
+    const s = a.stato.perChat.get(1)!;
+    expect(s.messaggi.map((m) => m.testo)).toEqual(["Che ore sono?", "Sono le 17:50."]);
+    // la bozza mostrata era diversa: la risposta definitiva esce parola per parola
+    expect(s.daRivelare).toBe(11);
+    expect([s.testoInArrivo, s.avvisoRevisore, s.fase, s.provvisoria]).toEqual(["", null, null, null]);
+    expect(api.invia).not.toHaveBeenCalled();
+  });
+
+  test("errore rimette la domanda", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.manda({ tipo: "testo", dati: { testo: "A met" } });
+    f.chiudi({ ok: false, errore: { codice: "flusso_interrotto", messaggio: "Connessione interrotta" } });
+    await invio;
+    const s = a.stato.perChat.get(1)!;
+    expect([s.errore, s.bozza, s.testoInArrivo]).toEqual(["Connessione interrotta", "Che ore sono?", ""]);
+    expect(s.messaggi).toEqual([]);
+  });
+
+  test("eventi alla chat di partenza", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "x");
+    const invio = a.invia(1);
+    await a.apri(2);
+    f.manda({ tipo: "testo", dati: { testo: "per la chat 1" } });
+    expect(a.stato.perChat.get(1)!.testoInArrivo).toBe("per la chat 1");
+    expect(a.stato.perChat.get(2)!.testoInArrivo).toBe("");
+    f.chiudi(ok(turno("x")));
+    await invio;
+  });
+
+  test("streaming scelto salvato", async () => {
+    const { a, archivio } = await conStreaming();
+    expect(a.stato.streamingDisponibile && a.stato.streamingScelto).toBe(true);
+    a.impostaStreaming(false);
+    expect(a.stato.streamingScelto).toBe(false);
+    expect(archivio.scrivi).toHaveBeenCalledWith("streaming", "false");
+  });
+
+  test("senza streaming scelto invia come oggi", async () => {
+    const { a, f } = await conStreaming(archivioFinto({ streaming: "false" }));
+    expect(a.stato.streamingScelto).toBe(false);
+    a.aggiornaBozza(1, "x");
+    await a.invia(1);
+    expect(f.flusso).not.toHaveBeenCalled();
+    expect(api.invia).toHaveBeenCalled();
+    expect(a.stato.perChat.get(1)!.daRivelare).toBe(11);
+  });
+
+  test("streaming spento a pagina aperta: si riprova senza stream e l'interruttore sparisce", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.chiudi({ ok: false, errore: { codice: "streaming_disattivato", messaggio: "Lo streaming è disattivato." } });
+    await invio;
+    expect(a.stato.streamingDisponibile).toBe(false);
+    expect(api.invia).toHaveBeenCalledWith(1, "Che ore sono?");
+    const s = a.stato.perChat.get(1)!;
+    expect(s.errore).toBeNull();
+    expect(s.messaggi.map((m) => m.testo)).toEqual(["Che ore sono?", "Sono le 17:50."]);
+  });
+
+  test("errore della pagina durante lo stream: messaggio chiaro, domanda nel campo", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "x");
+    f.flusso.mockRejectedValueOnce(new TypeError("bug"));
+    await a.invia(1);
+    const s = a.stato.perChat.get(1)!;
+    expect(s.errore).toBe(MSG_ERRORE_PAGINA);
+    expect(s.bozza).toBe("x");
+    expect(s.provvisoria).toBeNull();
+  });
+
+  test("parole mostrate a ritmo costante anche se arrivano insieme", async () => {
+    vi.useFakeTimers();
+    try {
+      const { a, f } = await conStreaming(archivioFinto(), 150);
+      a.aggiornaBozza(1, "Che ore sono?");
+      const invio = a.invia(1);
+      const s = a.stato.perChat.get(1)!;
+      f.manda({ tipo: "testo", dati: { testo: "A " } });
+      f.manda({ tipo: "testo", dati: { testo: "Tokyo " } });
+      f.manda({ tipo: "testo", dati: { testo: "sono." } });
+      expect(s.testoInArrivo).toBe("");
+      await vi.advanceTimersByTimeAsync(150);
+      expect(s.testoInArrivo).toBe("A ");
+      await vi.advanceTimersByTimeAsync(150);
+      expect(s.testoInArrivo).toBe("A Tokyo ");
+      // la fine arriva prima che le parole siano uscite: la risposta aspetta l'ultima parola
+      f.chiudi(ok(turno("Che ore sono?")));
+      await vi.advanceTimersByTimeAsync(10);
+      expect(s.messaggi).toEqual([]);
+      expect(s.provvisoria).toBe("Che ore sono?");
+      await vi.advanceTimersByTimeAsync(300);
+      await invio;
+      expect(s.messaggi.map((m) => m.testo)).toEqual(["Che ore sono?", "Sono le 17:50."]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("una nuova bozza svuota anche le parole in coda", async () => {
+    vi.useFakeTimers();
+    try {
+      const { a, f } = await conStreaming(archivioFinto(), 150);
+      a.aggiornaBozza(1, "x");
+      const invio = a.invia(1);
+      const s = a.stato.perChat.get(1)!;
+      f.manda({ tipo: "testo", dati: { testo: "vecchia " } });
+      f.manda({ tipo: "testo", dati: { testo: "bozza " } });
+      await vi.advanceTimersByTimeAsync(150);
+      f.manda({ tipo: "bozza", dati: {} });
+      f.manda({ tipo: "testo", dati: { testo: "Nuova." } });
+      await vi.advanceTimersByTimeAsync(150);
+      expect(s.testoInArrivo).toBe("Nuova.");
+      f.chiudi(ok(turno("x")));
+      await vi.advanceTimersByTimeAsync(300);
+      await invio;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("log acceso: anche la risposta definitiva esce parola per parola", async () => {
+    const { a, f } = await conStreaming(archivioFinto({ log: "true" }));
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.manda({ tipo: "testo", dati: { testo: "Sono le 17:50." } });
+    f.chiudi(ok(turno("Che ore sono?")));
+    await invio;
+    expect(a.stato.perChat.get(1)!.daRivelare).toBe(11);
+  });
+
+  test("log spento: la risposta già arrivata uguale non si ripete", async () => {
+    const { a, f } = await conStreaming(archivioFinto({ log: "false" }));
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.manda({ tipo: "testo", dati: { testo: "Sono le 17:50." } });
+    f.chiudi(ok(turno("Che ore sono?")));
+    await invio;
+    expect(a.stato.perChat.get(1)!.daRivelare).toBeNull();
+  });
+
+  test("log spento: risposta definitiva diversa dalla bozza esce parola per parola", async () => {
+    const { a, f } = await conStreaming(archivioFinto({ log: "false" }));
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.manda({ tipo: "testo", dati: { testo: "Bozza incompleta." } });
+    f.chiudi(ok(turno("Che ore sono?")));
+    await invio;
+    expect(a.stato.perChat.get(1)!.daRivelare).toBe(11);
+  });
+
+  test("log acceso di base, spento e ricordato", async () => {
+    const { a, archivio } = await conStreaming();
+    expect(a.stato.logVisibile).toBe(true);
+    a.impostaLog(false);
+    expect(a.stato.logVisibile).toBe(false);
+    expect(archivio.scrivi).toHaveBeenCalledWith("log", "false");
+  });
+
+  test("log spento letto all'avvio", async () => {
+    const { a } = await conStreaming(archivioFinto({ log: "false" }));
+    expect(a.stato.logVisibile).toBe(false);
+  });
+
+  test("streaming non disponibile ignora la scelta salvata", async () => {
+    api.impostazioni.mockResolvedValue(ok({ streaming: false }));
+    const f = flussoFinto();
+    const a = creaApplicazione(api as unknown as Api, conferma as unknown as (t: string) => boolean,
+      ridisegna as unknown as () => void, f.flusso as unknown as typeof inviaInFlusso, archivioFinto({ streaming: "true" }));
+    await a.avvia();
+    expect([a.stato.streamingDisponibile, a.stato.streamingScelto]).toEqual([false, false]);
+    a.aggiornaBozza(1, "x");
+    await a.invia(1);
+    expect(f.flusso).not.toHaveBeenCalled();
   });
 });

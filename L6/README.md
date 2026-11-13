@@ -145,6 +145,22 @@ errori e test: [`backend/README.md`](backend/README.md).
 Interfaccia di chat nel browser in `L6/frontend/` (Vite + TypeScript): parla solo con il back-end
 attraverso `/api`. Avvio in sviluppo e test: [`frontend/README.md`](frontend/README.md).
 
+## Streaming della risposta (step 10)
+
+Con `STREAMING=true` (predefinito) il testo arriva al browser mentre il modello lo scrive, attraverso
+tutta la catena con Server-Sent Events: agente `POST /chat/stream` → back-end
+`POST /chat/{id}/messaggi/stream` → browser. Eventi: `fase`, `bozza`, `testo`, `strumento`, `revisione`,
+`fine`, `errore`; `: ping` ogni 5 s nei silenzi. Con il revisore attivo la bozza in diretta è segnata
+«bozza, in revisione»; si salva solo la risposta approvata (`fine`). Errore a metà o pagina chiusa: la
+domanda non viene salvata. Router, revisore e riassunto non vanno in streaming. Per vedere gli eventi:
+
+```powershell
+$id = (curl.exe -s -X POST http://127.0.0.1:8080/api/chat | ConvertFrom-Json).id
+curl.exe -N -X POST "http://127.0.0.1:8080/api/chat/$id/messaggi/stream" -H "Content-Type: application/json" -d '{\"testo\": \"Che ore sono a Tokyo?\"}'
+```
+
+`STREAMING=false` (in `.env`, poi `docker compose up -d backend`): comportamento dello step 9.
+
 ## Avvio con Docker Compose (step 9)
 
 Quattro container con un solo comando: `frontend` (nginx, unica porta pubblicata), `backend`,

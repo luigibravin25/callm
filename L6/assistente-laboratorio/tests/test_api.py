@@ -390,3 +390,124 @@ def test_cronologia_restituita_si_puo_ripassare(client_per):
     assert riassunto == "Riassunto."
     RichiestaChat.model_validate({"messaggio": "x", "cronologia": cronologia,
                                   "riassunto": riassunto})
+
+
+# ---------- step 10: POST /chat/stream ----------
+
+# eventi SSE di un corpo text/event-stream: [(tipo, dati)] (i commenti di ping si ignorano)
+def _eventi_sse(testo: str) -> list[tuple[str, dict]]:
+    eventi = []
+    for blocco in testo.split("\n\n"):
+        righe = [r for r in blocco.splitlines() if r and not r.startswith(":")]
+        if not righe:
+            continue
+        tipo = next(r[len("event: "):] for r in righe if r.startswith("event: "))
+        dati = json.loads(next(r[len("data: "):] for r in righe if r.startswith("data: ")))
+        eventi.append((tipo, dati))
+    return eventi
+
+
+def _client_flusso(modello):
+    from tests.finti import ModelloFlussoFinto  # noqa: F401 (usato dai chiamanti)
+    return TestClient(crea_app(lambda: _agente(modello)), raise_server_exceptions=False)
+
+
+# Verifica lo stream: tipo di contenuto, testo a pezzi, fine con lo stesso corpo di POST /chat.
+def test_stream_testo_a_pezzi():
+    from tests.finti import ModelloFlussoFinto
+    with _client_flusso(ModelloFlussoFinto(risposte=[AIMessage("A Roma sono le 12.")])) as c:
+        r = c.post("/chat/stream", json={"messaggio": "Che ore sono?"})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    eventi = _eventi_sse(r.text)
+    assert [t for t, _ in eventi].count("testo") >= 2
+    tipo, fine = eventi[-1]
+    assert tipo == "fine"
+    assert fine["risposta"] == "A Roma sono le 12."
+    assert fine["cronologia"][-1] == {"role": "assistant", "content": "A Roma sono le 12."}
+    # con lo stesso modello POST /chat restituisce la stessa risposta
+    with _client_flusso(ModelloFlussoFinto(risposte=[AIMessage("A Roma sono le 12.")])) as c:
+        assert c.post("/chat", json={"messaggio": "Che ore sono?"}).json()["risposta"] == fine["risposta"]
+
+
+# Verifica che gli errori di validazione arrivino in JSON prima dello stream.
+def test_stream_errore_di_validazione_prima():
+    from tests.finti import ModelloFlussoFinto
+    with _client_flusso(ModelloFlussoFinto(risposte=[AIMessage("x")])) as c:
+        r = c.post("/chat/stream", json={"cronologia": []})
+    assert r.status_code == 422
+    assert r.json()["errore"] == "richiesta_non_valida"
+
+
+# Verifica un errore del modello a meta': evento errore con il codice di sempre.
+def test_stream_errore_a_meta():
+    from tests.finti import ModelloFlussoFinto
+
+    class Rotto(ModelloFlussoFinto):
+        def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+            raise APIConnectionError(request=RICHIESTA)
+
+    with _client_flusso(Rotto(risposte=[AIMessage("x")])) as c:
+        r = c.post("/chat/stream", json={"messaggio": "Che ore sono?"})
+    assert r.status_code == 200
+    tipo, dati = _eventi_sse(r.text)[-1]
+    assert tipo == "errore" and dati["errore"] == "modello_non_raggiungibile"
+
+
+# Verifica che la tabella degli errori sia una sola (gestori e stream usano la stessa funzione).
+def test_errore_da_eccezione():
+    from app.api import CronologiaNonValida, errore_da_eccezione
+    risposta = httpx.Response(500, request=RICHIESTA)
+    casi = [(APITimeoutError(request=RICHIESTA), 504, "modello_in_timeout"),
+            (APIConnectionError(request=RICHIESTA), 503, "modello_non_raggiungibile"),
+            (APIStatusError("x", response=risposta, body=None), 502, "errore_del_modello"),
+            (ErroreMCP("giù"), 503, "mcp_non_disponibile"),
+            (PromptNonValido("no"), 422, "prompt_non_valido"),
+            (CronologiaNonValida("rotta"), 422, "richiesta_non_valida"),
+            (RuntimeError("boh"), 500, "errore_interno")]
+    for eccezione, status, errore in casi:
+        assert errore_da_eccezione(eccezione)[:2] == (status, errore), eccezione
+
+
+# Verifica che l'OpenAPI documenti lo stream.
+def test_openapi_con_lo_stream():
+    from tests.finti import ModelloFlussoFinto
+    with _client_flusso(ModelloFlussoFinto(risposte=[AIMessage("x")])) as c:
+        spec = c.get("/openapi.json").json()
+    assert "text/event-stream" in spec["paths"]["/chat/stream"]["post"]["responses"]["200"]["content"]
+
+
+# Verifica che il corpo dello stream chiuda subito il generatore quando la risposta viene annullata
+# (client disconnesso), senza aspettare il garbage collector.
+def test_corpo_chiude_il_generatore_quando_annullato():
+    import asyncio
+    import contextlib
+    import threading
+    import time
+    from app.api import _corpo
+    chiuso = threading.Event()
+
+    def generatore():
+        try:
+            while True:
+                yield "x"
+                time.sleep(0.01)
+        finally:
+            chiuso.set()
+
+    async def principale():
+        g = generatore()  # resta referenziato: niente chiusura dal garbage collector
+
+        async def consuma():
+            async for _ in _corpo(g):
+                pass
+        compito = asyncio.create_task(consuma())
+        await asyncio.sleep(0.1)
+        compito.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await compito
+        await asyncio.sleep(0.1)
+        return chiuso.is_set(), g
+
+    chiuso_subito, _ = asyncio.run(principale())
+    assert chiuso_subito

@@ -1,7 +1,74 @@
 // orchestrazione: collega le azioni dell'utente alle chiamate al back-end e aggiorna lo stato per chat
-import type { Api } from "./api/client";
-import { MSG_CHAT_SPARITA, testoConferma } from "./formato";
-import { datiChat, inAttesa, statoIniziale, type Stato } from "./stato";
+import type { Api, Esito, Turno } from "./api/client";
+import { inviaInFlusso, type EventoFlusso } from "./api/flusso";
+import { MSG_CHAT_SPARITA, MSG_ERRORE_PAGINA, testoConferma } from "./formato";
+import { datiChat, inAttesa, statoIniziale, type Stato, type StatoChat } from "./stato";
+
+// dove si ricorda la scelta dell'interruttore «Streaming» (nel browser: localStorage)
+export interface Archivio {
+  leggi(chiave: string): string | null;
+  scrivi(chiave: string, valore: string): void;
+}
+
+// chiavi delle scelte del menu ⚙; localStorage può mancare o essere bloccato: nessun errore
+const CHIAVE_STREAMING = "streaming";
+const CHIAVE_LOG = "log";
+const archivioDelBrowser: Archivio = {
+  leggi: (chiave) => {
+    try {
+      return window.localStorage.getItem(chiave);
+    } catch {
+      return null;
+    }
+  },
+  scrivi: (chiave, valore) => {
+    try {
+      window.localStorage.setItem(chiave, valore);
+    } catch {
+      // scelta non ricordata: vale solo per questa pagina
+    }
+  },
+};
+
+// ritmo delle parole dello streaming: una ogni 150 ms (come la rivelazione senza streaming), anche se
+// il modello ne manda molte insieme: il testo si legge e la bocca del volto si vede muovere
+export const MS_PAROLA_STREAMING = 150;
+
+// un evento dello stream sullo stato della chat di partenza; il testo va nella coda delle parole
+function applica(dati: StatoChat, e: EventoFlusso, accoda: (testo: string) => void,
+  svuota: () => void): void {
+  switch (e.tipo) {
+    case "fase":
+      dati.fase = e.dati.fase;
+      break;
+    case "bozza":
+      // nuova risposta del modello: il testo precedente (anche quello in coda) si scarta
+      svuota();
+      dati.fase = "pensa";
+      dati.strumentoInUso = null;
+      dati.testoInArrivo = "";
+      break;
+    case "strumento":
+      dati.fase = "strumento";
+      dati.strumentoInUso = e.dati.nome;
+      break;
+    case "testo":
+      accoda(e.dati.testo);
+      break;
+    case "revisione":
+      dati.avvisoRevisore = e.dati.motivo;
+      break;
+  }
+}
+
+// a fine turno (riuscito o no) lo stato dello streaming torna vuoto
+function azzeraFlusso(dati: StatoChat): void {
+  dati.fase = null;
+  dati.strumentoInUso = null;
+  dati.testoInArrivo = "";
+  dati.avvisoRevisore = null;
+  dati.ultimoPezzo = 0;
+}
 
 // azioni disponibili alla vista
 export interface Applicazione {
@@ -14,6 +81,8 @@ export interface Applicazione {
   aggiornaBozza(id: number, testo: string): void;
   chiudiErrore(id: number): void;
   riprovaElenco(): Promise<void>;
+  impostaStreaming(si: boolean): void;    // interruttore della pagina (ricordato nel browser)
+  impostaLog(si: boolean): void;          // dettagli dell'attesa visibili (ricordato nel browser)
 }
 
 // conferma = window.confirm nel browser; ridisegna = aggiorna la vista dopo ogni cambio
@@ -21,8 +90,78 @@ export function creaApplicazione(
   api: Api,
   conferma: (testo: string) => boolean,
   ridisegna: () => void,
+  flusso: typeof inviaInFlusso = inviaInFlusso,
+  archivio: Archivio = archivioDelBrowser,
+  msPerParola: number = MS_PAROLA_STREAMING,
 ): Applicazione {
   const stato = statoIniziale();
+
+  // coda delle parole arrivate e non ancora mostrate, per chat; "attese" = chi aspetta la fine
+  type Coda = { parole: string[]; timer: ReturnType<typeof setInterval> | null; attese: (() => void)[] };
+  const code = new Map<StatoChat, Coda>();
+
+  function codaDi(dati: StatoChat): Coda {
+    let c = code.get(dati);
+    if (!c) {
+      c = { parole: [], timer: null, attese: [] };
+      code.set(dati, c);
+    }
+    return c;
+  }
+
+  // una parola mostrata: testo che cresce e bocca in movimento
+  function mostra(dati: StatoChat, parola: string): void {
+    dati.testoInArrivo += parola;
+    dati.ultimoPezzo = Date.now();
+    ridisegna();
+  }
+
+  // coda vuota: chi aspettava la fine delle parole (il turno finito) puo' proseguire
+  function liberaAttese(c: Coda): void {
+    if (c.timer !== null) clearInterval(c.timer);
+    c.timer = null;
+    c.attese.splice(0).forEach((f) => f());
+  }
+
+  // una parola in coda; il timer le fa uscire una alla volta (ritmo 0: subito, per i test)
+  function accoda(dati: StatoChat, parola: string): void {
+    if (msPerParola <= 0) {
+      mostra(dati, parola);
+      return;
+    }
+    const c = codaDi(dati);
+    c.parole.push(parola);
+    if (c.timer !== null) return;
+    c.timer = setInterval(() => {
+      const prossima = c.parole.shift();
+      if (prossima !== undefined) mostra(dati, prossima);
+      if (c.parole.length === 0) liberaAttese(c);
+    }, msPerParola);
+  }
+
+  // parole in coda scartate (nuova bozza, errore)
+  function svuota(dati: StatoChat): void {
+    const c = code.get(dati);
+    if (!c) return;
+    c.parole = [];
+    liberaAttese(c);
+  }
+
+  // si risolve quando tutte le parole arrivate sono state mostrate
+  function finitaCoda(dati: StatoChat): Promise<void> {
+    const c = code.get(dati);
+    if (!c || (c.timer === null && c.parole.length === 0)) return Promise.resolve();
+    return new Promise((r) => c.attese.push(r));
+  }
+
+  // streaming disponibile secondo il back-end; scelta salvata nel browser, predefinita = disponibile
+  async function leggiImpostazioni(): Promise<void> {
+    const esito = await api.impostazioni();
+    stato.streamingDisponibile = esito.ok && esito.dati.streaming;
+    stato.streamingScelto = stato.streamingDisponibile && archivio.leggi(CHIAVE_STREAMING) !== "false";
+    // dettagli dell'attesa (strumento in uso, revisore): accesi finché l'utente non li spegne
+    stato.logVisibile = archivio.leggi(CHIAVE_LOG) !== "false";
+  }
 
   // rilegge l'elenco; errore nella barra (con «Riprova» se richiesto); true se riuscita
   async function rileggiElenco(conRiprova: boolean): Promise<boolean> {
@@ -79,6 +218,7 @@ export function creaApplicazione(
   }
 
   async function avvia(): Promise<void> {
+    await leggiImpostazioni();
     if (await rileggiElenco(true)) await apriPrima();
   }
 
@@ -118,14 +258,46 @@ export function creaApplicazione(
     dati.provvisoria = testo;
     dati.bozza = "";
     dati.errore = null;
+    const inFlusso = stato.streamingDisponibile && stato.streamingScelto;
+    if (inFlusso) dati.fase = "pensa";
     ridisegna();
-    const esito = await api.invia(id, testo);
+    // con lo streaming gli eventi aggiornano la chat di partenza mentre arrivano
+    let esito: Esito<Turno>;
+    try {
+      esito = inFlusso
+        ? await flusso(id, testo, (e) => {
+          applica(dati, e, (t) => accoda(dati, t), () => svuota(dati));
+          ridisegna();
+        })
+        : await api.invia(id, testo);
+      // la risposta finale compare dopo l'ultima parola; con un errore le parole in coda si scartano
+      if (inFlusso && esito.ok) await finitaCoda(dati);
+      else svuota(dati);
+    } catch {
+      // errore della pagina stessa: la domanda torna nel campo, il turno non è stato salvato
+      esito = { ok: false, errore: { codice: "errore_pagina", messaggio: MSG_ERRORE_PAGINA } };
+    }
+    // streaming spento nel back-end mentre la pagina era aperta: niente più interruttore e la stessa
+    // domanda parte con l'invio senza stream
+    if (!esito.ok && esito.errore.codice === "streaming_disattivato") {
+      stato.streamingDisponibile = false;
+      stato.streamingScelto = false;
+      azzeraFlusso(dati);
+      ridisegna();
+      esito = await api.invia(id, testo);
+    }
     // l'esito va sempre alla chat di partenza, anche se ora è aperta un'altra
     dati.provvisoria = null;
+    // testo già mostrato come risposta normale: solo con lo streaming e il Log spento (con il Log
+    // acceso la bozza era nel riquadro dei dettagli, non era la risposta)
+    const giaMostrata = inFlusso && !stato.logVisibile && esito.ok
+      && dati.testoInArrivo.trim() === esito.dati.risposta.testo.trim();
+    azzeraFlusso(dati);
     if (esito.ok) {
       dati.messaggi.push(esito.dati.domanda, esito.dati.risposta);
-      // la risposta appena arrivata compare parola per parola (effetto della vista)
-      dati.daRivelare = esito.dati.risposta.id;
+      // la risposta definitiva compare parola per parola (effetto della vista), tranne quando lo
+      // streaming l'ha già mostrata uguale: non si ripete
+      dati.daRivelare = giaMostrata ? null : esito.dati.risposta.id;
       ridisegna();
       // titolo e data aggiornati nell'elenco
       await rileggiElenco(true);
@@ -147,5 +319,15 @@ export function creaApplicazione(
     aggiornaBozza: (id, testo) => { datiChat(stato, id).bozza = testo; },
     chiudiErrore: (id) => { datiChat(stato, id).errore = null; ridisegna(); },
     riprovaElenco: avvia,
+    impostaStreaming: (si) => {
+      stato.streamingScelto = stato.streamingDisponibile && si;
+      archivio.scrivi(CHIAVE_STREAMING, si ? "true" : "false");
+      ridisegna();
+    },
+    impostaLog: (si) => {
+      stato.logVisibile = si;
+      archivio.scrivi(CHIAVE_LOG, si ? "true" : "false");
+      ridisegna();
+    },
   };
 }

@@ -1,7 +1,8 @@
 """Configurazione del back-end, solo da variabili d'ambiente (come l'agente).
 
 DATABASE_URL e' obbligatoria; AGENTE_URL e AGENTE_TIMEOUT sono le stesse variabili della CLI;
-BACKEND_HOST e BACKEND_PORTA dicono dove ascolta il servizio. La password del database non
+BACKEND_HOST e BACKEND_PORTA dicono dove ascolta il servizio; STREAMING (step 10) rende disponibili
+le risposte in streaming. La password del database non
 compare mai nei messaggi: si usa maschera_url.
 """
 # librerie standard: ambiente, struttura dei valori letti
@@ -26,6 +27,7 @@ class Impostazioni:
     agente_timeout: int
     host: str
     porta: int
+    streaming: bool = True  # step 10: risposte in streaming disponibili per il front-end
 
 
 # URL del database con la password sostituita da *** (per log e messaggi d'errore)
@@ -49,6 +51,23 @@ def _intero(nome: str, predefinito: int, minimo: int, massimo: int) -> int:
     return int(grezzo)
 
 
+# valori ammessi per STREAMING (senza maiuscole)
+VERI = {"true", "1", "sì", "si"}
+FALSI = {"false", "0", "no"}
+
+
+# booleano da variabile d'ambiente: assente → predefinito; valore non ammesso → errore che lo nomina
+def _booleano(nome: str, predefinito: bool) -> bool:
+    grezzo = os.environ.get(nome, "").strip().lower()
+    if not grezzo:
+        return predefinito
+    if grezzo in VERI:
+        return True
+    if grezzo in FALSI:
+        return False
+    raise ValueError(f"{nome} deve essere true o false, trovato: {grezzo!r}")
+
+
 # legge e controlla tutte le variabili; ValueError con un messaggio chiaro se qualcosa non va
 def leggi_impostazioni() -> Impostazioni:
     url = os.environ.get("DATABASE_URL", "").strip()
@@ -70,4 +89,5 @@ def leggi_impostazioni() -> Impostazioni:
         agente_timeout=_intero("AGENTE_TIMEOUT", AGENTE_TIMEOUT_PREDEFINITO, 1, 86400),
         host=os.environ.get("BACKEND_HOST", "").strip() or HOST_PREDEFINITO,
         porta=_intero("BACKEND_PORTA", PORTA_PREDEFINITA, 1, 65535),
+        streaming=_booleano("STREAMING", True),
     )

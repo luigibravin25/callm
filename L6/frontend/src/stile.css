@@ -27,7 +27,8 @@
 
 * { box-sizing: border-box; }
 
-html, body { height: 100%; margin: 0; }
+/* pagina grande quanto la finestra: non scorre mai; scorrono solo elenco delle chat e messaggi */
+html, body { height: 100%; margin: 0; overflow: hidden; }
 
 body {
   background: var(--sfondo);
@@ -37,7 +38,9 @@ body {
 /* barra laterale a sinistra, conversazione a destra */
 #app {
   display: flex;
-  height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 button {
@@ -60,7 +63,9 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
 
 /* ----- barra laterale ----- */
 .barra {
-  width: 270px;
+  /* larghezza proporzionale alla finestra, entro un minimo e un massimo: sempre a sinistra */
+  width: clamp(190px, 24vw, 300px);
+  height: 100%;
   flex-shrink: 0;
   background: var(--barra);
   display: flex;
@@ -143,6 +148,9 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
 .area {
   flex: 1;
   min-width: 0;
+  /* min-height 0: l'area non cresce oltre la finestra, scorre solo .messaggi */
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -152,6 +160,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
 /* colonna centrata: padding laterale che lascia al massimo --colonna di larghezza */
 .messaggi {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -160,6 +169,9 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
 }
 
 .msg {
+  /* riferimento per i testi nascosti (.nascosto, position absolute): senza, allungavano la pagina
+     intera e la facevano scorrere insieme alla barra laterale */
+  position: relative;
   white-space: pre-wrap;      /* a capo del modello conservati, Markdown così com'è */
   overflow-wrap: anywhere;
 }
@@ -317,9 +329,105 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
   font-weight: 700;
 }
 
-/* schermo stretto: l'elenco va sopra la conversazione */
+/* schermo stretto: stessa disposizione (barra a sinistra), solo meno margine attorno ai fumetti */
 @media (max-width: 700px) {
-  #app { flex-direction: column; }
-  .barra { width: auto; max-height: 40%; border-bottom: 1px solid var(--bordo); }
   .msg.utente, .msg.assistente { max-width: 92%; }
 }
+
+
+/* ----- streaming (step 10) ----- */
+/* riga di stato nel fumetto in attesa: Sto pensando / Sto usando tooltime… / Il revisore… */
+.stato-attesa {
+  color: var(--secondario);
+  font-size: 13px;
+  margin-top: 4px;
+}
+.stato-attesa .puntino { font-size: 10px; }
+/* etichetta sopra la bozza che sta arrivando: non è ancora la risposta definitiva */
+.etichetta-bozza {
+  display: inline-block;
+  font-size: 11px;
+  color: #fde68a;
+  border: 1px solid #a16207;
+  border-radius: 999px;
+  padding: 0 8px;
+  margin-bottom: 4px;
+}
+/* avviso del revisore: perché la bozza precedente è stata rifiutata */
+.avviso-revisore {
+  font-size: 12px;
+  color: #fdba74;
+  margin-bottom: 6px;
+}
+/* menu delle impostazioni: pulsante ⚙ sotto il campo, a destra della colonna */
+.barra-impostazioni {
+  position: relative;
+  width: calc(100% - 32px);
+  max-width: var(--colonna);
+  margin: -12px auto 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+.barra-impostazioni[hidden] { display: none; }
+#impostazioni {
+  background: none;
+  border: none;
+  color: var(--secondario);
+  font-size: 22px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+#impostazioni:hover, #impostazioni[aria-expanded="true"] { color: var(--testo); background: var(--superficie); }
+/* il menu si apre sopra il pulsante */
+.menu-impostazioni {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  min-width: 190px;
+  background: var(--barra);
+  border: 1px solid var(--bordo);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 10;
+}
+.menu-impostazioni[hidden] { display: none; }
+.voce-menu {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.voce-menu:hover { background: var(--superficie); }
+.voce-menu[hidden] { display: none; }
+/* interruttore on/off: la casella disegnata come una levetta */
+.voce-menu input[role="switch"] {
+  appearance: none;
+  width: 34px;
+  height: 18px;
+  border-radius: 999px;
+  background: #3b4552;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  margin: 0;
+}
+.voce-menu input[role="switch"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: left 0.15s;
+}
+.voce-menu input[role="switch"]:checked { background: var(--sfumatura); }
+.voce-menu input[role="switch"]:checked::after { left: 18px; }

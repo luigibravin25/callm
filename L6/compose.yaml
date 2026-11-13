@@ -35,6 +35,8 @@ services:
       # in ascolto su tutte le interfacce del container (nessuna porta pubblicata sull'host)
       BACKEND_HOST: 0.0.0.0
       BACKEND_PORTA: "8001"
+      # risposte in streaming (step 10): false = come lo step 9, l'interruttore della pagina sparisce
+      STREAMING: ${STREAMING:-true}
     depends_on:
       # avvio solo a database pronto; l'agente basta che sia partito (se non risponde → 503)
       database:

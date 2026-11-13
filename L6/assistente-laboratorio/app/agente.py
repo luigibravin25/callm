@@ -5,6 +5,7 @@ conversazione: cronologia e riassunto arrivano a ogni turno e tornano aggiornati
 """
 # librerie standard: log, classi di dati, tipi
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -15,6 +16,7 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from app.comandi import MSG_PROMPT_SCONOSCIUTO, controlla_argomenti
 from app.config import Ambito, Settings
 from app.info_prompt import InfoPrompt
+from app.sse import Evento
 
 # logger dell'avvio MCP: nel terminale compare come [mcp]
 log = logging.getLogger("mcp")
@@ -56,6 +58,21 @@ def strumenti_del_turno(ingresso: list[BaseMessage], uscita: list[BaseMessage]) 
     return usati
 
 
+# ingresso del grafo per un turno: cronologia + messaggi nuovi, contatori da 0
+def _ingresso(nuovi: list[BaseMessage], cronologia: list[BaseMessage], riassunto: str) -> dict:
+    return {"messages": list(cronologia) + list(nuovi), "steps": 0, "revisioni": 0,
+            "riassunto": riassunto}
+
+
+# esito del turno dallo stato finale del grafo (uguale per invoke e per lo streaming)
+def _esito(ingresso: list[BaseMessage], out: dict, riassunto: str) -> EsitoTurno:
+    messaggi = out["messages"]
+    return EsitoTurno(messaggi=messaggi, riassunto=out.get("riassunto", riassunto),
+                      risposta=str(messaggi[-1].content),
+                      strumenti_usati=strumenti_del_turno(ingresso, messaggi),
+                      categoria=out.get("categoria", ""), argomento=out.get("argomento"))
+
+
 # l'agente pronto: grafo, prompt del server, esito dell'avvio MCP, controlli dello stato
 @dataclass
 class Agente:
@@ -66,19 +83,27 @@ class Agente:
     motivo_mcp: str  # perche' il server non e' partito (vuoto se e' partito)
     verifica_modello: Callable | None = field(default=None)  # -> StatoModello (app/stato.py)
     verifica_mcp: Callable | None = field(default=None)  # -> StatoMCP (app/stato.py)
+    # fuso delle preferenze (lo stesso del grafo): completa tooltime senza fuso negli eventi
+    fuso_predefinito: str = "Europe/Rome"
 
     # un turno del grafo; gli errori di LM Studio salgono al chiamante (l'API li traduce)
     def turno(self, nuovi: list[BaseMessage], cronologia: list[BaseMessage],
               riassunto: str) -> EsitoTurno:
-        ingresso = list(cronologia)
-        # contatori da 0 a ogni turno
-        out = self.grafo.invoke({"messages": ingresso + list(nuovi), "steps": 0,
-                                 "revisioni": 0, "riassunto": riassunto})
-        messaggi = out["messages"]
-        return EsitoTurno(messaggi=messaggi, riassunto=out.get("riassunto", riassunto),
-                          risposta=str(messaggi[-1].content),
-                          strumenti_usati=strumenti_del_turno(ingresso, messaggi),
-                          categoria=out.get("categoria", ""), argomento=out.get("argomento"))
+        out = self.grafo.invoke(_ingresso(nuovi, cronologia, riassunto))
+        return _esito(list(cronologia), out, riassunto)
+
+    # lo stesso turno in streaming (step 10): eventi del grafo, l'ultimo e' "fine" con l'EsitoTurno
+    # (stesso calcolo di turno); gli errori di LM Studio risalgono dal generatore
+    def turno_in_flusso(self, nuovi: list[BaseMessage], cronologia: list[BaseMessage],
+                        riassunto: str) -> Iterator[Evento]:
+        # import qui: il flusso serve solo allo streaming
+        from app.flusso import eventi_turno
+        for evento in eventi_turno(self.grafo, _ingresso(nuovi, cronologia, riassunto),
+                                   self.fuso_predefinito):
+            if evento.tipo == "stato_finale":
+                yield Evento("fine", _esito(list(cronologia), evento.dati, riassunto))
+            else:
+                yield evento
 
     # stato dal vivo (GET /stato): i due controlli piu' strumenti e prompt caricati all'avvio
     def stato(self):
@@ -135,4 +160,5 @@ def prepara(settings: Settings, ambito: Ambito) -> Agente:
     return Agente(grafo=grafo, prompts=prompts, mcp_partito=partito,
                   strumenti=tuple(t.name for t in strumenti), motivo_mcp=motivo,
                   verifica_modello=lambda: verifica_modello(settings.base_url, settings.model),
-                  verifica_mcp=lambda: verifica_mcp(partito))
+                  verifica_mcp=lambda: verifica_mcp(partito),
+                  fuso_predefinito=preferenze.fuso)

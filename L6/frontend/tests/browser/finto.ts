@@ -28,6 +28,11 @@ export interface Finto {
   attesaInvio?: Promise<void>;
   erroreInvio?: ErroreFinto;
   erroreElenco?: ErroreFinto;
+  // step 10: streaming disponibile (GET /api/impostazioni) ed eventi prima della fine
+  streaming?: boolean;
+  eventi?: [string, unknown][];
+  // al posto di fine: evento errore (errore a metà flusso)
+  erroreFlusso?: { errore: string; messaggio: string };
 }
 
 const ORA = "2026-11-13T08:00:00Z";
@@ -77,6 +82,32 @@ export async function simulaBackend(page: Page, finto: Finto): Promise<void> {
       const nuova = chatFinta(prossimoId++, "Nuova chat");
       finto.chat.unshift(nuova);
       return route.fulfill({ status: 201, json: { id: nuova.id, titolo: nuova.titolo, creata_il: ORA } });
+    }
+    if (percorso === "/impostazioni") {
+      if (finto.streaming === undefined) return route.fulfill({ status: 404, json: { errore: "percorso_non_trovato", messaggio: "x" } });
+      return route.fulfill({ json: { streaming: finto.streaming } });
+    }
+    // stream della risposta: eventi preparati, poi fine (turno salvato) o errore, in un solo corpo
+    const flusso = percorso.match(/^\/chat\/(\d+)\/messaggi\/stream$/);
+    if (flusso && metodo === "POST") {
+      const c = trovata(Number(flusso[1]));
+      if (!c) return nonTrovata();
+      if (finto.attesaInvio) await finto.attesaInvio;
+      // un evento SSE: tipo, dati JSON, riga vuota
+      const sse = (tipo: string, dati: unknown) => `event: ${tipo}\ndata: ${JSON.stringify(dati)}\n\n`;
+      let corpo = (finto.eventi ?? []).map(([tipo, dati]) => sse(tipo, dati)).join("");
+      if (finto.erroreFlusso) {
+        corpo += sse("errore", finto.erroreFlusso);
+      } else {
+        const { testo } = richiesta.postDataJSON() as { testo: string };
+        const r = finto.risposta ?? { testo: "Risposta.", strumenti: null };
+        const domanda = messaggio(prossimoId++, "utente", testo);
+        const risposta = messaggio(prossimoId++, "assistente", r.testo, r.strumenti);
+        c.messaggi.push(domanda, risposta);
+        c.ultimo_messaggio_il = ORA;
+        corpo += sse("fine", { domanda, risposta });
+      }
+      return route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body: corpo });
     }
     const invio = percorso.match(/^\/chat\/(\d+)\/messaggi$/);
     if (invio && metodo === "POST") {

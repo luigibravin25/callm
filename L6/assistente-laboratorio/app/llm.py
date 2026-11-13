@@ -21,9 +21,12 @@ FRASE_SENZA_STRUMENTI = ("Non hai strumenti: se ti chiedono l'ora o la data, di'
                          "l'orologio non è disponibile.")
 
 
-# crea il modello di LM Studio con i parametri comuni ad agente e router
-def _chat(settings: Settings, temperature: float, max_tokens: int) -> ChatOpenAI:
+# crea il modello di LM Studio con i parametri comuni ad agente e router; senza_streaming: il modello
+# risponde sempre in un colpo solo, anche quando il grafo gira in streaming (step 10)
+def _chat(settings: Settings, temperature: float, max_tokens: int,
+          senza_streaming: bool = False) -> ChatOpenAI:
     return ChatOpenAI(
+        disable_streaming=senza_streaming,
         base_url=settings.base_url,
         model=settings.model,
         api_key="lm-studio",  # LM Studio ignora la chiave: valore fittizio, non un segreto
@@ -49,20 +52,21 @@ def build_llm(settings: Settings, strumenti: list, max_tokens: int = 8192):
     return llm.bind_tools(strumenti) if strumenti else llm
 
 
-# modello del router: stesso modello, nessuno strumento, risposta vincolata allo schema
+# modello del router: stesso modello, nessuno strumento, risposta vincolata allo schema; senza
+# streaming: con response_format ChatOpenAI userebbe un'altra chiamata, mai provata con LM Studio
 def build_router_llm(settings: Settings, ambito, max_tokens: int = 2048):
     # json_schema: LM Studio riceve lo schema come response_format e vincola l'output; lo schema
     # elenca gli argomenti dell'ambito (step 5)
-    return _chat(settings, temperature=0, max_tokens=max_tokens).with_structured_output(
-        schema_router(ambito), method="json_schema")
+    llm = _chat(settings, temperature=0, max_tokens=max_tokens, senza_streaming=True)
+    return llm.with_structured_output(schema_router(ambito), method="json_schema")
 
 
 # modello del revisore: stesso modello, nessuno strumento, risposta vincolata allo schema
 def build_revisore_llm(settings: Settings, max_tokens: int = 2048):
-    return _chat(settings, temperature=0, max_tokens=max_tokens).with_structured_output(
-        DecisioneRevisore, method="json_schema")
+    llm = _chat(settings, temperature=0, max_tokens=max_tokens, senza_streaming=True)
+    return llm.with_structured_output(DecisioneRevisore, method="json_schema")
 
 
 # modello del riassunto: stesso modello, nessuno strumento, risposta in testo semplice
 def build_riassunto_llm(settings: Settings, max_tokens: int = 2048):
-    return _chat(settings, temperature=0, max_tokens=max_tokens)
+    return _chat(settings, temperature=0, max_tokens=max_tokens, senza_streaming=True)

@@ -2,9 +2,13 @@
 import type { Messaggio } from "./api/client";
 import type { Applicazione } from "./app";
 import {
-  contaParole, formattaData, formattaOra, gruppoData, MSG_INVITO, primeParole, rigaStrumenti,
+  contaParole, ETICHETTA_BOZZA, formattaData, formattaOra, gruppoData, MSG_AVVISO_REVISORE,
+  MSG_INVITO, MSG_PENSA, MSG_REVISORE_CONTROLLA, MSG_STRUMENTO_IN_USO, primeParole, rigaStrumenti,
 } from "./formato";
-import { datiChat, inAttesa } from "./stato";
+import { datiChat, inAttesa, type StatoChat } from "./stato";
+
+// la bocca si ferma se per tanto tempo non arrivano pezzi di testo (streaming)
+export const MS_SILENZIO_BOCCA = 400;
 
 // crea un elemento con classe e testo (testo sempre come testo, mai come HTML)
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -104,14 +108,45 @@ function fumetto(m: Pick<Messaggio, "ruolo" | "testo" | "strumenti"> & { creato_
   return div;
 }
 
-// «Assistente: ...» con i tre puntini, nella stessa forma di una risposta (bocca ferma)
-function attesa(): HTMLElement {
+// tre puntini che compaiono uno alla volta (CSS)
+function puntini(): HTMLElement[] {
+  return [el("span", "puntino", "●"), el("span", "puntino", "●"), el("span", "puntino", "●")];
+}
+
+// fumetto dell'assistente in attesa. Senza streaming: «Assistente: ...» con i puntini. Con lo
+// streaming (step 10): avviso del revisore, bozza in arrivo con l'etichetta, riga di stato
+// (Sto pensando / Sto usando <strumento>… / Il revisore sta controllando…); parla = bocca in moto
+function attesa(dati: StatoChat, parla: boolean, log: boolean): HTMLElement {
   const div = el("div", "msg assistente attesa");
   const corpo = el("div", "corpo");
-  // «Assistente: » per i lettori di schermo; a video i tre puntini che compaiono uno alla volta
-  corpo.append(el("span", "nascosto", "Assistente: "),
-    el("span", "puntino", "●"), el("span", "puntino", "●"), el("span", "puntino", "●"));
-  div.append(volto(false), corpo);
+  // «Assistente: » per i lettori di schermo
+  corpo.append(el("span", "nascosto", "Assistente: "));
+  // log spento: i tre puntini finché non arriva il testo, poi il testo che cresce, nient'altro
+  if (!log) {
+    if (dati.testoInArrivo) corpo.append(el("div", "testo", dati.testoInArrivo));
+    else corpo.append(...puntini());
+    div.append(volto(parla), corpo);
+    return div;
+  }
+  if (dati.avvisoRevisore) corpo.append(el("div", "avviso-revisore", MSG_AVVISO_REVISORE(dati.avvisoRevisore)));
+  if (dati.testoInArrivo) {
+    corpo.append(el("div", "etichetta-bozza", ETICHETTA_BOZZA), el("div", "testo", dati.testoInArrivo));
+  }
+  // riga di stato: sempre durante il revisore; altrimenti solo finché non arriva testo
+  if (dati.fase === "revisore") {
+    corpo.append(el("div", "stato-attesa", MSG_REVISORE_CONTROLLA));
+  } else if (dati.fase === "strumento" && dati.strumentoInUso) {
+    // anche se il modello ha scritto testo insieme alla chiamata («Controllo l'ora…»)
+    corpo.append(el("div", "stato-attesa", MSG_STRUMENTO_IN_USO(dati.strumentoInUso)));
+  } else if (!dati.testoInArrivo && dati.fase === "pensa") {
+    const riga = el("div", "stato-attesa", MSG_PENSA + " ");
+    riga.append(...puntini());
+    corpo.append(riga);
+  } else if (!dati.testoInArrivo) {
+    // senza streaming: solo i puntini (comportamento dello step 8)
+    corpo.append(...puntini());
+  }
+  div.append(volto(parla), corpo);
   return div;
 }
 
@@ -157,7 +192,54 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
   invia.setAttribute("aria-label", "Invia");
   invia.title = "Invia (Invio)";
   modulo.append(campo, invia);
-  area.append(erroreChat, invito, messaggi, modulo);
+  // interruttore «Streaming» sotto il campo, visibile solo se il back-end lo rende disponibile
+  // menu delle impostazioni: pulsante ⚙ sotto il campo, voci on/off nascoste finché non si apre
+  const barraImpostazioni = el("div", "barra-impostazioni");
+  const ingranaggio = pulsante("", "⚙", () => apriMenu(menu.hidden));
+  ingranaggio.id = "impostazioni";
+  ingranaggio.setAttribute("aria-label", "Impostazioni");
+  // scritta al passaggio del mouse
+  ingranaggio.title = "Settings";
+  ingranaggio.setAttribute("aria-haspopup", "true");
+  ingranaggio.setAttribute("aria-expanded", "false");
+  const menu = el("div", "menu-impostazioni");
+  menu.id = "menu-impostazioni";
+  menu.hidden = true;
+  // una voce del menu: interruttore on/off (checkbox con role switch) e il suo nome
+  function voce(id: string, nome: string, spiegazione: string, cambia: (si: boolean) => void) {
+    const etichetta = el("label", "voce-menu");
+    const casella = el("input");
+    casella.type = "checkbox";
+    casella.id = id;
+    casella.setAttribute("role", "switch");
+    casella.addEventListener("change", () => cambia(casella.checked));
+    etichetta.append(el("span", "", nome), casella);
+    etichetta.title = spiegazione;
+    menu.append(etichetta);
+    return { etichetta, casella };
+  }
+  const streaming = voce("interruttore-streaming", "Streaming",
+    "La risposta compare mentre il modello la scrive", (si) => app.impostaStreaming(si));
+  const log = voce("interruttore-log", "Log",
+    "Mostra cosa fa l'assistente: strumenti in uso, revisore, bozza", (si) => app.impostaLog(si));
+  barraImpostazioni.append(ingranaggio, menu);
+  // apertura e chiusura del menu (Esc lo chiude e riporta il fuoco sul pulsante)
+  function apriMenu(apri: boolean): void {
+    menu.hidden = !apri;
+    ingranaggio.setAttribute("aria-expanded", String(apri));
+  }
+  // Esc chiude il menu sia dal pulsante sia da una voce, e riporta il fuoco sul pulsante
+  barraImpostazioni.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !menu.hidden) {
+      apriMenu(false);
+      ingranaggio.focus();
+    }
+  });
+  // un clic fuori dal pulsante e dal menu lo chiude
+  document.addEventListener("click", (e) => {
+    if (!menu.hidden && !barraImpostazioni.contains(e.target as Node)) apriMenu(false);
+  });
+  area.append(erroreChat, invito, messaggi, modulo, barraImpostazioni);
   radice.replaceChildren(barra, area);
 
   // invio della bozza della chat aperta
@@ -182,7 +264,7 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
   // ultimo stato visto: il campo prende la bozza solo quando cambiano chat, errore o attesa;
   // elementi = numero di fumetti mostrati (per lo scorrimento in fondo)
   let ultimo = { aperta: null as number | null, errore: null as string | null,
-    provvisoria: null as string | null, elementi: -1 };
+    provvisoria: null as string | null, elementi: -1, arrivo: 0 };
 
   function disegnaBarra(): void {
     const s = app.stato;
@@ -224,8 +306,20 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
     elenco.replaceChildren(...parti);
   }
 
+  // un solo ridisegno in sospeso (per fermare la bocca dopo il silenzio)
+  let ridisegnoInSospeso: ReturnType<typeof setTimeout> | null = null;
+  function programmaRidisegno(ms: number): void {
+    if (ridisegnoInSospeso !== null) clearTimeout(ridisegnoInSospeso);
+    ridisegnoInSospeso = setTimeout(() => { ridisegnoInSospeso = null; disegna(); }, ms);
+  }
+
   function disegnaChat(): void {
     const s = app.stato;
+    // voce Streaming solo se il back-end lo rende disponibile; il menu solo con una chat aperta
+    barraImpostazioni.hidden = s.aperta === null;
+    streaming.etichetta.hidden = !s.streamingDisponibile;
+    streaming.casella.checked = s.streamingScelto;
+    log.casella.checked = s.logVisibile;
     const id = s.aperta;
     const dati = id === null ? null : datiChat(s, id);
     invito.hidden = s.chat.length > 0 || id !== null;
@@ -247,13 +341,24 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
     const daRivelare = dati?.daRivelare ?? null;
     const elementi = (dati?.messaggi ?? []).map((m) => fumetto(m, mostra(m, daRivelare)));
     if (dati?.provvisoria != null) {
-      elementi.push(fumetto({ ruolo: "utente", testo: dati.provvisoria, strumenti: null }), attesa());
+      // bocca in moto finché arrivano pezzi; un ridisegno la ferma dopo il silenzio
+      const silenzio = Date.now() - dati.ultimoPezzo;
+      const parla = dati.ultimoPezzo > 0 && silenzio < MS_SILENZIO_BOCCA;
+      if (parla) programmaRidisegno(MS_SILENZIO_BOCCA - silenzio + 10);
+      elementi.push(fumetto({ ruolo: "utente", testo: dati.provvisoria, strumenti: null }),
+        attesa(dati, parla, s.logVisibile));
     }
     messaggi.replaceChildren(...elementi);
+    // regione occupata durante l'attesa: i lettori di schermo annunciano la risposta finita, non
+    // ogni pezzo del testo in arrivo
+    messaggi.setAttribute("aria-busy", dati?.provvisoria != null ? "true" : "false");
     // in fondo solo se cambiano chat o messaggi, o mentre la risposta compare: chi sta leggendo più
     // in alto non viene spostato da un disegno dovuto ad altro (rilettura dell'elenco)
     const staRivelando = daRivelare !== null && inCorso.has(daRivelare);
-    if (id !== ultimo.aperta || elementi.length !== ultimo.elementi || staRivelando) {
+    // streaming: il fumetto in attesa cresce senza cambiare il numero di elementi
+    const arrivo = dati?.testoInArrivo.length ?? 0;
+    if (id !== ultimo.aperta || elementi.length !== ultimo.elementi || staRivelando ||
+        arrivo !== ultimo.arrivo) {
       messaggi.scrollTop = messaggi.scrollHeight;
     }
 
@@ -270,7 +375,7 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
     const finitaAttesa = !cambiata && ultimo.provvisoria !== null && !occupato;
     if ((cambiata || finitaAttesa) && id !== null && !occupato) campo.focus();
     ultimo = { aperta: id, errore: dati?.errore ?? null, provvisoria: dati?.provvisoria ?? null,
-      elementi: elementi.length };
+      elementi: elementi.length, arrivo };
   }
 
   // rivelazione parola per parola delle risposte appena arrivate (anche se si cambia chat:
