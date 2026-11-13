@@ -38,8 +38,8 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attributi: Record<str
 }
 
 // durata di un giro delle animazioni del volto (uguali a quelle di stile.css): bocca aperta e
-// chiusa (0,28 s andata + 0,28 s ritorno) e battito degli occhi (4 s)
-const GIRO_BOCCA_MS = 560;
+// chiusa (0,5 s andata + 0,5 s ritorno) e battito degli occhi (4 s)
+const GIRO_BOCCA_MS = 1000;
 const GIRO_OCCHI_MS = 4000;
 
 // ritardo negativo = punto del giro in cui si trova adesso l'orologio: la vista ricrea il volto a

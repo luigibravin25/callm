@@ -148,15 +148,15 @@ describe("vista", () => {
   test("animazioni del volto agganciate all'orologio: non ripartono quando la vista ridisegna", () => {
     vi.useFakeTimers();
     try {
-      vi.setSystemTime(10_000);
+      vi.setSystemTime(10_500);
       const d = conChat([msg(2, "assistente", "una due tre")]);
       d.daRivelare = 2;
       montaVista(radice, app).disegna();
-      // fase = istante attuale nel giro (bocca 560 ms andata e ritorno, battito 4 s)
+      // fase = istante attuale nel giro (bocca 1 s andata e ritorno, battito 4 s)
       const bocca = radice.querySelector<SVGElement>(".volto.parla .bocca")!;
-      expect(bocca.style.animationDelay).toBe(`-${10_000 % 560}ms`);
+      expect(bocca.style.animationDelay).toBe(`-${10_500 % 1000}ms`);
       const occhio = radice.querySelector<SVGElement>(".volto .occhio")!;
-      expect(occhio.style.animationDelay).toBe(`-${10_000 % 4000}ms`);
+      expect(occhio.style.animationDelay).toBe(`-${10_500 % 4000}ms`);
     } finally {
       vi.useRealTimers();
     }

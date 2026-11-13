@@ -211,7 +211,8 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
   transform-origin: center;
   transform: scaleY(0.25);
 }
-.volto.parla .bocca { animation: parla 0.28s ease-in-out infinite alternate; }
+/* lenta: mezzo secondo per aprire e mezzo per chiudere */
+.volto.parla .bocca { animation: parla 0.5s ease-in-out infinite alternate; }
 @keyframes battito {
   0%, 94%, 100% { transform: scaleY(1); }
   97% { transform: scaleY(0.1); }
