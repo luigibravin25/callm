@@ -27,8 +27,18 @@ function pulsante(classe: string, testo: string, azione: () => void): HTMLButton
 // etichetta in cima a ogni fumetto: chi parla
 const CHI = { utente: "Tu", assistente: "Assistente" } as const;
 
-// millisecondi tra una parola e la successiva quando una risposta appena arrivata compare
-export const MS_PER_PAROLA = 40;
+// rivelazione delle risposte appena arrivate: 150 ms a parola; le risposte corte rallentano per
+// durare almeno 2,5 secondi (il volto «parla» abbastanza da vedersi), le lunghe accelerano per non
+// superare 8 secondi in tutto
+export const MS_PER_PAROLA = 150;
+export const MS_MINIMI = 2500;
+export const MS_MASSIMI = 8000;
+
+// millisecondi tra una parola e la successiva per una risposta di «totale» parole
+export function intervalloParole(totale: number): number {
+  const n = Math.max(totale, 1);
+  return Math.min(Math.max(MS_PER_PAROLA, Math.floor(MS_MINIMI / n)), Math.floor(MS_MASSIMI / n));
+}
 
 // elemento SVG (occhi e bocca del volto)
 function svg<K extends keyof SVGElementTagNameMap>(tag: K, attributi: Record<string, string>) {
@@ -289,7 +299,7 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
           inCorso.set(m.id, n);
         }
         disegna();
-      }, MS_PER_PAROLA);
+      }, intervalloParole(totale));
     }
     return { parole: inCorso.get(m.id)! };
   }

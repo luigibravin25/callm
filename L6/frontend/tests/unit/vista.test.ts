@@ -4,7 +4,7 @@ import type { Messaggio } from "../../src/api/client";
 import type { Applicazione } from "../../src/app";
 import { MSG_INVITO } from "../../src/formato";
 import { datiChat, statoIniziale } from "../../src/stato";
-import { montaVista } from "../../src/vista";
+import { intervalloParole, montaVista } from "../../src/vista";
 
 const msg = (id: number, ruolo: "utente" | "assistente", testo: string,
   strumenti: Messaggio["strumenti"] = null): Messaggio =>
@@ -132,9 +132,9 @@ describe("vista", () => {
       expect(testo()).toBe("A");
       expect(radice.querySelector(".msg.assistente .volto.parla")).not.toBeNull();
       expect(radice.querySelector(".msg.assistente .strumenti")).toBeNull();
-      vi.advanceTimersByTime(40 * 2);
+      vi.advanceTimersByTime(500 * 2);
       expect(testo()).toBe("A Tokyo sono");
-      vi.advanceTimersByTime(40 * 10);
+      vi.advanceTimersByTime(500 * 10);
       // finita: testo intero, bocca ferma, riga degli strumenti
       expect(testo()).toBe("A Tokyo sono le 17:37.");
       expect(radice.querySelector(".msg.assistente .volto.parla")).toBeNull();
@@ -162,6 +162,14 @@ describe("vista", () => {
     }
   });
 
+  test("almeno 2,5 secondi di parlato, 150 ms a parola, al massimo 8 secondi in tutto", () => {
+    expect(intervalloParole(2)).toBe(1250);
+    expect(intervalloParole(10)).toBe(250);
+    expect(intervalloParole(20)).toBe(150);
+    expect(intervalloParole(53)).toBe(150);
+    expect(intervalloParole(200)).toBe(40);
+  });
+
   test("una risposta già rivelata non riparte a un nuovo disegno", () => {
     vi.useFakeTimers();
     try {
@@ -169,7 +177,7 @@ describe("vista", () => {
       d.daRivelare = 2;
       const vista = montaVista(radice, app);
       vista.disegna();
-      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(8000);
       vista.disegna();
       expect(radice.querySelector(".msg.assistente .testo")!.textContent).toBe("uno due");
       expect(radice.querySelector(".volto.parla")).toBeNull();
@@ -184,7 +192,7 @@ describe("vista", () => {
       const d = conChat([msg(2, "assistente", "riga uno\n\nriga  due")]);
       d.daRivelare = 2;
       montaVista(radice, app).disegna();
-      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(8000);
       expect(radice.querySelector(".msg.assistente .testo")!.textContent).toBe("riga uno\n\nriga  due");
     } finally {
       vi.useRealTimers();
