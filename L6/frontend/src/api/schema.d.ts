@@ -93,6 +93,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat/{chat_id}/messaggi/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invia Stream
+         * @description Come l'invio di un messaggio, ma la risposta arriva a pezzi mentre il modello la scrive.
+         *     Si salva solo a fine turno; con un errore o un client che chiude, la domanda si cancella.
+         */
+        post: operations["invia_stream_chat__chat_id__messaggi_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -149,6 +170,52 @@ export interface components {
              * @description spiegazione in italiano
              */
             messaggio: string;
+        };
+        /** EventiFlusso */
+        EventiFlusso: {
+            fase?: components["schemas"]["EventoFase"] | null;
+            testo?: components["schemas"]["EventoTesto"] | null;
+            strumento?: components["schemas"]["EventoStrumento"] | null;
+            revisione?: components["schemas"]["EventoRevisione"] | null;
+            fine?: components["schemas"]["Turno"] | null;
+            errore?: components["schemas"]["Errore"] | null;
+        };
+        /** EventoFase */
+        EventoFase: {
+            /**
+             * Fase
+             * @description pensa: inizio del turno; revisore: controllo della bozza
+             * @enum {string}
+             */
+            fase: "pensa" | "revisore";
+        };
+        /** EventoRevisione */
+        EventoRevisione: {
+            /**
+             * Motivo
+             * @description perche' il revisore ha rifiutato la bozza
+             */
+            motivo: string;
+        };
+        /** EventoStrumento */
+        EventoStrumento: {
+            /** Nome */
+            nome: string;
+            /**
+             * Argomenti
+             * @description argomenti della chiamata (non mostrati nella pagina)
+             */
+            argomenti: {
+                [key: string]: unknown;
+            };
+        };
+        /** EventoTesto */
+        EventoTesto: {
+            /**
+             * Testo
+             * @description pezzo di testo della bozza in arrivo
+             */
+            testo: string;
         };
         /** Impostazioni */
         Impostazioni: {
@@ -454,6 +521,106 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Errore"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Errore"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Errore"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Errore"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Errore"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Errore"];
+                };
+            };
+        };
+    };
+    invia_stream_chat__chat_id__messaggi_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description identificativo della chat */
+                chat_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NuovoMessaggio"];
+            };
+        };
+        responses: {
+            /** @description Eventi SSE del turno (un campo per tipo) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                    "application/json": components["schemas"]["EventiFlusso"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Errore"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Errore"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

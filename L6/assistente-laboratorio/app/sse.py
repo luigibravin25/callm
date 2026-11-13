@@ -9,7 +9,7 @@ accorge presto se il client ha chiuso la connessione.
 import json
 import queue
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
 # commento SSE: i client lo ignorano; serve solo a far passare qualcosa sulla connessione
@@ -37,7 +37,10 @@ _FINE = object()
 # righe della sorgente con un ping a ogni silenzio di "intervallo" secondi. La sorgente gira in un
 # thread che mette le righe in una coda; chiudere questo generatore (client disconnesso) ferma il
 # thread al prossimo elemento e chiude la sorgente (una chiamata gia' partita finisce da sola).
-def con_ping(sorgente: Iterator[str], intervallo: float | None = None) -> Iterator[str]:
+# alla_chiusura: chiamata subito (da chi legge) se il generatore si chiude prima della fine, per
+# avvisare la sorgente bloccata in un'attesa (es. impostare un threading.Event "annullato").
+def con_ping(sorgente: Iterator[str], intervallo: float | None = None,
+             alla_chiusura: Callable[[], None] | None = None) -> Iterator[str]:
     # letto qui (non come predefinito): i test possono ridurre INTERVALLO_PING del modulo
     intervallo = INTERVALLO_PING if intervallo is None else intervallo
     coda: queue.Queue = queue.Queue()
@@ -60,6 +63,7 @@ def con_ping(sorgente: Iterator[str], intervallo: float | None = None) -> Iterat
             coda.put(_FINE)
 
     threading.Thread(target=produttore, daemon=True, name="sse-produttore").start()
+    finito = False
     try:
         while True:
             try:
@@ -68,6 +72,7 @@ def con_ping(sorgente: Iterator[str], intervallo: float | None = None) -> Iterat
                 yield PING
                 continue
             if elemento is _FINE:
+                finito = True
                 return
             if isinstance(elemento, BaseException):
                 raise elemento
@@ -75,3 +80,5 @@ def con_ping(sorgente: Iterator[str], intervallo: float | None = None) -> Iterat
     finally:
         # fine normale, errore o chiusura del consumatore: il produttore si ferma
         stop.set()
+        if not finito and alla_chiusura is not None:
+            alla_chiusura()

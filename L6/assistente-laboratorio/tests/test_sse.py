@@ -49,3 +49,15 @@ def test_chiusura_ferma_la_sorgente():
     assert next(gen) == "x\n\n"
     gen.close()
     assert chiusa.wait(1.0)
+
+
+# Verifica alla_chiusura: chiamata se chi legge chiude prima della fine, non a fine normale.
+def test_alla_chiusura_solo_se_chiuso_prima():
+    chiamate = []
+    gen = con_ping(iter(["a\n\n", "b\n\n"]), intervallo=1, alla_chiusura=lambda: chiamate.append(1))
+    assert next(gen) == "a\n\n"
+    gen.close()
+    assert chiamate == [1]
+    chiamate.clear()
+    assert list(con_ping(iter(["a\n\n"]), intervallo=1, alla_chiusura=lambda: chiamate.append(1))) == ["a\n\n"]
+    assert chiamate == []

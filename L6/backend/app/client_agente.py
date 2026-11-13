@@ -5,6 +5,11 @@ ErroreAgente(status, errore, messaggio), pronto per la risposta al front-end: ag
 lento hanno codici propri; gli errori che l'agente usa per /chat sono inoltrati come sono; tutto
 il resto (risposta illeggibile, AGENTE_URL sbagliato) e' 502 risposta_agente_non_valida.
 """
+# librerie standard: JSON degli eventi, tipi
+import json
+import threading
+from collections.abc import Iterable, Iterator
+
 # client HTTP sincrono
 import httpx
 # validazione della risposta dell'agente
@@ -13,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 MSG_NON_RAGGIUNGIBILE = "L'agente non è raggiungibile su {url}: è avviato?"
 MSG_TIMEOUT = "L'agente non ha risposto entro {secondi} secondi."
 MSG_NON_VALIDA = "L'agente ha risposto in modo non valido (codice {status})."
+MSG_FLUSSO_INTERROTTO = "Il flusso dell'agente si è interrotto prima della fine della risposta."
 MSG_INATTESA = ("L'agente ha risposto in modo inatteso (codice {status}: {messaggio}). "
                 "Controllare AGENTE_URL.")
 
@@ -92,6 +98,79 @@ class ClientAgente:
                 status=risposta.status_code, messaggio=corpo["messaggio"]))
         raise non_valida
 
+    # lo stesso turno in streaming (step 10): eventi (tipo, dati) dell'agente; "fine" porta la
+    # RispostaAgente validata; un evento "errore" dell'agente passa cosi' com'e'. Errori prima dello
+    # stream come turno(); connessione persa o stream finito senza fine/errore → 502 flusso_interrotto
+    # annullato: impostato quando il browser chiude; si controlla a ogni riga dell'agente (anche i
+    # suoi ping ogni 5 s), poi Annullato
+    def turno_in_flusso(self, messaggio: str, cronologia: list[dict], riassunto: str,
+                        annullato: threading.Event | None = None) -> Iterator[tuple[str, object]]:
+        corpo = {"messaggio": messaggio, "cronologia": cronologia, "riassunto": riassunto}
+        aperto = False  # True quando l'agente ha risposto 200 e lo stream e' partito
+        try:
+            with self._http.stream("POST", "/chat/stream", json=corpo) as risposta:
+                if risposta.status_code != 200:
+                    risposta.read()
+                    self._leggi(risposta)  # solleva l'ErroreAgente giusto
+                aperto = True
+                for tipo, dati in leggi_eventi(_controllate(risposta.iter_lines(), annullato)):
+                    if tipo == "fine":
+                        try:
+                            yield tipo, RispostaAgente.model_validate(dati)
+                        except ValidationError:
+                            raise ErroreAgente(502, "risposta_agente_non_valida",
+                                               MSG_NON_VALIDA.format(status=200)) from None
+                        return
+                    yield tipo, dati
+                    if tipo == "errore":
+                        return
+        except httpx.TimeoutException:
+            raise ErroreAgente(504, "agente_in_timeout",
+                               MSG_TIMEOUT.format(secondi=int(self.timeout))) from None
+        except httpx.TransportError:
+            if aperto:
+                raise ErroreAgente(502, "flusso_interrotto", MSG_FLUSSO_INTERROTTO) from None
+            raise ErroreAgente(503, "agente_non_raggiungibile",
+                               MSG_NON_RAGGIUNGIBILE.format(url=self.url)) from None
+        except httpx.RequestError:
+            raise ErroreAgente(502, "risposta_agente_non_valida",
+                               MSG_NON_VALIDA.format(status="nessuno")) from None
+        # stream finito senza fine ne' errore
+        raise ErroreAgente(502, "flusso_interrotto", MSG_FLUSSO_INTERROTTO)
+
     # chiude le connessioni aperte
     def chiudi(self) -> None:
         self._http.close()
+
+
+# turno interrotto perche' chi leggeva lo stream (il browser) ha chiuso
+class Annullato(Exception):
+    pass
+
+
+# righe dell'agente con il controllo della chiusura del browser a ogni riga
+def _controllate(righe: Iterable[str], annullato: threading.Event | None) -> Iterator[str]:
+    for riga in righe:
+        if annullato is not None and annullato.is_set():
+            raise Annullato()
+        yield riga
+
+
+# eventi SSE da righe di testo: (tipo, dati JSON); i commenti (": ping") e le righe vuote in piu'
+# si ignorano; un blocco finisce con una riga vuota
+def leggi_eventi(righe: Iterable[str]) -> Iterator[tuple[str, dict]]:
+    tipo, dati = None, []
+    for riga in righe:
+        riga = riga.rstrip("\r")
+        if not riga:
+            if tipo is not None:
+                yield tipo, json.loads("\n".join(dati) or "{}")
+            tipo, dati = None, []
+        elif riga.startswith(":"):
+            continue
+        elif riga.startswith("event:"):
+            tipo = riga[len("event:"):].strip()
+        elif riga.startswith("data:"):
+            dati.append(riga[len("data:"):].strip())
+    if tipo is not None:
+        yield tipo, json.loads("\n".join(dati) or "{}")
