@@ -69,7 +69,8 @@ test("attesa e cambio chat", async ({ page }) => {
   await page.fill("#campo", "E a New York?");
   await page.press("#campo", "Enter");
   // domanda subito visibile, «Assistente: …», Invia disattivato
-  await expect(page.locator("#messaggi .msg.utente").last()).toHaveText("E a New York?");
+  await expect(page.locator("#messaggi .msg.utente .testo").last()).toHaveText("E a New York?");
+  await expect(page.locator("#messaggi .msg.utente .chi").last()).toHaveText("Tu");
   await expect(page.locator(".attesa")).toContainText("Assistente:");
   await expect(page.locator("#invia")).toBeDisabled();
   await expect(page.locator("#campo")).toBeDisabled();

@@ -22,10 +22,13 @@ function pulsante(classe: string, testo: string, azione: () => void): HTMLButton
   return b;
 }
 
-// un messaggio: fumetto con il testo e, per l'assistente, la riga degli strumenti usati
+// etichetta in cima a ogni fumetto: chi parla
+const CHI = { utente: "Tu", assistente: "Assistente" } as const;
+
+// un messaggio: fumetto con chi parla, il testo e, per l'assistente, la riga degli strumenti usati
 function fumetto(m: Pick<Messaggio, "ruolo" | "testo" | "strumenti">): HTMLElement {
   const div = el("div", `msg ${m.ruolo}`);
-  div.append(el("div", "testo", m.testo));
+  div.append(el("div", "chi", CHI[m.ruolo]), el("div", "testo", m.testo));
   const riga = m.ruolo === "assistente" ? rigaStrumenti(m.strumenti) : null;
   if (riga) div.append(el("div", "strumenti", riga));
   return div;
@@ -57,7 +60,7 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
   const campo = el("textarea");
   campo.id = "campo";
   campo.rows = 2;
-  campo.placeholder = "Scrivi una domanda… (Invio per inviare, Maiusc+Invio per andare a capo)";
+  campo.placeholder = "Scrivi una domanda...";
   campo.setAttribute("aria-label", "Domanda");
   const invia = el("button", "", "Invia");
   invia.id = "invia";

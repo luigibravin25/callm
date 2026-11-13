@@ -67,13 +67,28 @@ describe("vista", () => {
     const d = conChat([]);
     d.provvisoria = "Che ore sono a Tokyo?";
     montaVista(radice, app).disegna();
-    expect(radice.querySelector("#messaggi .msg.utente")!.textContent).toBe("Che ore sono a Tokyo?");
+    expect(radice.querySelector("#messaggi .msg.utente .testo")!.textContent).toBe("Che ore sono a Tokyo?");
     expect(radice.querySelector(".attesa")!.textContent).toContain("Assistente:");
     // tre puntini separati: compaiono uno alla volta (ritardo dell'animazione per ciascuno)
     expect(radice.querySelectorAll(".attesa .puntino")).toHaveLength(3);
     expect(radice.querySelector<HTMLButtonElement>("#invia")!.disabled).toBe(true);
     expect(radice.querySelector<HTMLTextAreaElement>("#campo")!.disabled).toBe(true);
     expect(radice.querySelector<HTMLButtonElement>("#elenco-chat button.elimina")!.disabled).toBe(true);
+  });
+
+  test("segnaposto breve nel campo", () => {
+    conChat([]);
+    montaVista(radice, app).disegna();
+    expect(radice.querySelector<HTMLTextAreaElement>("#campo")!.placeholder).toBe("Scrivi una domanda...");
+  });
+
+  test("ogni fumetto dice chi parla", () => {
+    conChat([msg(1, "utente", "Che ore sono?"), msg(2, "assistente", "Le 9.")]);
+    montaVista(radice, app).disegna();
+    expect(radice.querySelector(".msg.utente .chi")!.textContent).toBe("Tu");
+    expect(radice.querySelector(".msg.assistente .chi")!.textContent).toBe("Assistente");
+    // il testo del messaggio resta separato dall'etichetta
+    expect(radice.querySelector(".msg.utente .testo")!.textContent).toBe("Che ore sono?");
   });
 
   test("riga strumenti sotto la risposta", () => {

@@ -142,6 +142,14 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   align-self: flex-start;
   background: var(--assistente);
 }
+/* chi parla, in piccolo sopra il testo del fumetto */
+.msg .chi {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.msg.utente .chi { color: #dbeafe; }
+.msg.assistente .chi { color: var(--secondario); }
 .msg .strumenti {
   margin-top: 4px;
   font-size: 12px;
