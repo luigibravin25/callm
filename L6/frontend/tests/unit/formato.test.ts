@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import {
   formattaData,
+  formattaOra,
   gruppoData,
   MSG_BACKEND_GIU,
   MSG_CHAT_SPARITA,
@@ -21,6 +22,12 @@ describe("formattaData", () => {
   test("null o assente: nessun messaggio", () => {
     expect(formattaData(null)).toBe("nessun messaggio");
     expect(formattaData(undefined)).toBe(MSG_NESSUN_MESSAGGIO);
+  });
+});
+
+describe("formattaOra", () => {
+  test("ore:minuti nell'ora locale", () => {
+    expect(formattaOra(new Date(2026, 10, 13, 9, 7).toISOString())).toBe("09:07");
   });
 });
 

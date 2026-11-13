@@ -124,6 +124,8 @@ export function creaApplicazione(
     dati.provvisoria = null;
     if (esito.ok) {
       dati.messaggi.push(esito.dati.domanda, esito.dati.risposta);
+      // la risposta appena arrivata compare parola per parola (effetto della vista)
+      dati.daRivelare = esito.dati.risposta.id;
       ridisegna();
       // titolo e data aggiornati nell'elenco
       await rileggiElenco(true);

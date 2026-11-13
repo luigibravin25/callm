@@ -1,7 +1,9 @@
 // vista: costruisce la pagina una volta e la aggiorna a ogni disegna(); testi sempre con textContent
 import type { Messaggio } from "./api/client";
 import type { Applicazione } from "./app";
-import { formattaData, gruppoData, MSG_INVITO, rigaStrumenti } from "./formato";
+import {
+  contaParole, formattaData, formattaOra, gruppoData, MSG_INVITO, primeParole, rigaStrumenti,
+} from "./formato";
 import { datiChat, inAttesa } from "./stato";
 
 // crea un elemento con classe e testo (testo sempre come testo, mai come HTML)
@@ -25,37 +27,87 @@ function pulsante(classe: string, testo: string, azione: () => void): HTMLButton
 // etichetta in cima a ogni fumetto: chi parla
 const CHI = { utente: "Tu", assistente: "Assistente" } as const;
 
-// avatar rotondo dell'assistente (decorativo: il nome è già scritto accanto)
-function avatar(): HTMLElement {
-  const a = el("div", "avatar", "A");
+// millisecondi tra una parola e la successiva quando una risposta appena arrivata compare
+export const MS_PER_PAROLA = 40;
+
+// elemento SVG (occhi e bocca del volto)
+function svg<K extends keyof SVGElementTagNameMap>(tag: K, attributi: Record<string, string>) {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attributi)) e.setAttribute(k, v);
+  return e;
+}
+
+// durata di un giro delle animazioni del volto (uguali a quelle di stile.css): bocca aperta e
+// chiusa (0,28 s andata + 0,28 s ritorno) e battito degli occhi (4 s)
+const GIRO_BOCCA_MS = 560;
+const GIRO_OCCHI_MS = 4000;
+
+// ritardo negativo = punto del giro in cui si trova adesso l'orologio: la vista ricrea il volto a
+// ogni parola (ogni 40 ms) e senza questo l'animazione ripartirebbe da capo, con la bocca ferma
+function fase(giro: number): string {
+  return `-${Date.now() % giro}ms`;
+}
+
+// volto dell'assistente: cerchio a sfumatura (CSS), due occhi e la bocca; con parla = true la
+// bocca si apre e si chiude (CSS). Decorativo: il nome «Assistente» è nel testo nascosto
+function volto(parla: boolean): HTMLElement {
+  const a = el("div", parla ? "avatar volto parla" : "avatar volto");
   a.setAttribute("aria-hidden", "true");
+  const disegno = svg("svg", { viewBox: "0 0 40 40" });
+  const occhi = [
+    svg("ellipse", { class: "occhio", cx: "14", cy: "16", rx: "2.4", ry: "3" }),
+    svg("ellipse", { class: "occhio", cx: "26", cy: "16", rx: "2.4", ry: "3" }),
+  ];
+  const bocca = svg("ellipse", { class: "bocca", cx: "20", cy: "26", rx: "6", ry: "4" });
+  for (const o of occhi) o.style.animationDelay = fase(GIRO_OCCHI_MS);
+  if (parla) bocca.style.animationDelay = fase(GIRO_BOCCA_MS);
+  disegno.append(...occhi, bocca);
+  a.append(disegno);
   return a;
 }
 
-// un messaggio. Domanda: «pillola» a destra (l'etichetta «Tu» resta per i lettori di schermo).
-// Risposta: avatar + nome + testo libero + etichetta degli strumenti usati
-function fumetto(m: Pick<Messaggio, "ruolo" | "testo" | "strumenti">): HTMLElement {
+// come mostrare una risposta: tutte le parole oppure solo le prime (rivelazione in corso)
+interface Mostra { parole: number | null }
+
+// un messaggio. Domanda: fumetto a sfumatura a destra, senza icona («Tu» solo per i lettori di
+// schermo). Risposta: volto + fumetto con testo, strumenti usati e ora
+function fumetto(m: Pick<Messaggio, "ruolo" | "testo" | "strumenti"> & { creato_il?: string },
+  mostra: Mostra = { parole: null }): HTMLElement {
   const div = el("div", `msg ${m.ruolo}`);
   if (m.ruolo === "utente") {
     div.append(el("div", "chi nascosto", CHI.utente), el("div", "testo", m.testo));
     return div;
   }
+  const inCorso = mostra.parole !== null;
   const corpo = el("div", "corpo");
-  corpo.append(el("div", "chi", CHI.assistente), el("div", "testo", m.testo));
-  const riga = rigaStrumenti(m.strumenti);
-  if (riga) corpo.append(el("div", "strumenti", riga));
-  div.append(avatar(), corpo);
+  const testo = inCorso ? primeParole(m.testo, mostra.parole!) : m.testo;
+  corpo.append(el("div", "chi nascosto", CHI.assistente), el("div", "testo", testo));
+  // strumenti e ora solo a risposta completa
+  if (!inCorso) {
+    const meta = el("div", "meta");
+    const riga = rigaStrumenti(m.strumenti);
+    if (riga) meta.append(el("span", "strumenti", riga));
+    if (m.creato_il) meta.append(el("span", "ora", formattaOra(m.creato_il)));
+    if (meta.childElementCount) corpo.append(meta);
+  }
+  div.append(volto(inCorso), corpo);
   return div;
 }
 
-// «Assistente: ...» con i tre puntini, nella stessa forma di una risposta
+// «Assistente: ...» con i tre puntini, nella stessa forma di una risposta (bocca ferma)
 function attesa(): HTMLElement {
   const div = el("div", "msg assistente attesa");
-  const corpo = el("div", "corpo", "Assistente: ");
-  // tre puntini separati: lo stile li fa comparire uno alla volta
-  corpo.append(el("span", "puntino", "."), el("span", "puntino", "."), el("span", "puntino", "."));
-  div.append(avatar(), corpo);
+  const corpo = el("div", "corpo");
+  // «Assistente: » per i lettori di schermo; a video i tre puntini che compaiono uno alla volta
+  corpo.append(el("span", "nascosto", "Assistente: "),
+    el("span", "puntino", "."), el("span", "puntino", "."), el("span", "puntino", "."));
+  div.append(volto(false), corpo);
   return div;
+}
+
+// movimento ridotto chiesto dal sistema: risposte subito intere, niente animazione
+function movimentoRidotto(): boolean {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
 export function montaVista(radice: HTMLElement, app: Applicazione): { disegna(): void } {
@@ -88,8 +140,8 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
   campo.rows = 2;
   campo.placeholder = "Scrivi una domanda...";
   campo.setAttribute("aria-label", "Domanda");
-  // pulsante rotondo con la freccia dentro il campo; il nome «Invia» per i lettori di schermo
-  const invia = el("button", "", "↑");
+  // pulsante rotondo con la freccia ➤ dentro il campo; il nome «Invia» per i lettori di schermo
+  const invia = el("button", "", "➤");
   invia.id = "invia";
   invia.type = "submit";
   invia.setAttribute("aria-label", "Invia");
@@ -182,14 +234,16 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
     erroreChat.querySelector(".chiudi")?.setAttribute("aria-label", "Chiudi errore");
 
     // messaggi confermati, poi domanda in attesa e «Assistente: …»
-    const elementi = (dati?.messaggi ?? []).map(fumetto);
+    const daRivelare = dati?.daRivelare ?? null;
+    const elementi = (dati?.messaggi ?? []).map((m) => fumetto(m, mostra(m, daRivelare)));
     if (dati?.provvisoria != null) {
       elementi.push(fumetto({ ruolo: "utente", testo: dati.provvisoria, strumenti: null }), attesa());
     }
     messaggi.replaceChildren(...elementi);
-    // in fondo solo se cambiano chat o messaggi: chi sta leggendo più in alto non viene spostato
-    // da un disegno dovuto ad altro (rilettura dell'elenco, risposta di un'altra chat)
-    if (id !== ultimo.aperta || elementi.length !== ultimo.elementi) {
+    // in fondo solo se cambiano chat o messaggi, o mentre la risposta compare: chi sta leggendo più
+    // in alto non viene spostato da un disegno dovuto ad altro (rilettura dell'elenco)
+    const staRivelando = daRivelare !== null && inCorso.has(daRivelare);
+    if (id !== ultimo.aperta || elementi.length !== ultimo.elementi || staRivelando) {
       messaggi.scrollTop = messaggi.scrollHeight;
     }
 
@@ -209,5 +263,41 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
       elementi: elementi.length };
   }
 
-  return { disegna: () => { disegnaBarra(); disegnaChat(); } };
+  // rivelazione parola per parola delle risposte appena arrivate (anche se si cambia chat:
+  // il timer continua e tornando si vede il punto a cui è arrivata)
+  const inCorso = new Map<number, number>(); // id della risposta → parole già mostrate
+  const rivelate = new Set<number>();        // risposte già mostrate per intero
+
+  // parole da mostrare per un messaggio: null = tutte
+  function mostra(m: Messaggio, daRivelare: number | null): Mostra {
+    if (m.ruolo !== "assistente" || m.id !== daRivelare || rivelate.has(m.id)) return { parole: null };
+    if (!inCorso.has(m.id)) {
+      const totale = contaParole(m.testo);
+      // una parola sola o movimento ridotto: subito intera
+      if (totale <= 1 || movimentoRidotto()) {
+        rivelate.add(m.id);
+        return { parole: null };
+      }
+      inCorso.set(m.id, 1);
+      const timer = setInterval(() => {
+        const n = inCorso.get(m.id)! + 1;
+        if (n >= totale) {
+          clearInterval(timer);
+          inCorso.delete(m.id);
+          rivelate.add(m.id);
+        } else {
+          inCorso.set(m.id, n);
+        }
+        disegna();
+      }, MS_PER_PAROLA);
+    }
+    return { parole: inCorso.get(m.id)! };
+  }
+
+  function disegna(): void {
+    disegnaBarra();
+    disegnaChat();
+  }
+
+  return { disegna };
 }

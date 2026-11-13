@@ -8,6 +8,7 @@ export interface StatoChat {
   errore: string | null;        // riquadro d'errore della chat
   bozza: string;                // testo nel campo di questa chat
   caricata: boolean;            // messaggi letti dal back-end almeno una volta
+  daRivelare: number | null;    // id della risposta appena arrivata, da mostrare parola per parola
 }
 
 // errore della barra laterale; riprova = pulsante «Riprova» (solo per il caricamento dell'elenco)
@@ -33,7 +34,7 @@ export function statoIniziale(): Stato {
 export function datiChat(s: Stato, id: number): StatoChat {
   let dati = s.perChat.get(id);
   if (!dati) {
-    dati = { messaggi: [], provvisoria: null, errore: null, bozza: "", caricata: false };
+    dati = { messaggi: [], provvisoria: null, errore: null, bozza: "", caricata: false, daRivelare: null };
     s.perChat.set(id, dati);
   }
   return dati;

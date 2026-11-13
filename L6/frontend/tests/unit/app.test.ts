@@ -96,6 +96,16 @@ describe("invio", () => {
     expect(api.elenca).toHaveBeenCalledTimes(2);
   });
 
+  test("la risposta appena arrivata è da rivelare parola per parola", async () => {
+    app.aggiornaBozza(1, "Che ore sono a Tokyo?");
+    await app.invia(1);
+    expect(app.stato.perChat.get(1)!.daRivelare).toBe(11);
+  });
+
+  test("i messaggi letti all'apertura non sono da rivelare", async () => {
+    expect(app.stato.perChat.get(1)!.daRivelare).toBeNull();
+  });
+
   test("invio fallito rimette la domanda nella bozza", async () => {
     api.invia.mockResolvedValueOnce(ko(503, "agente_non_raggiungibile", "Agente non raggiungibile"));
     app.aggiornaBozza(1, "Che ore sono a Tokyo?");

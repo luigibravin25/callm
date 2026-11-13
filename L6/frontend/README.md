@@ -37,6 +37,10 @@ npm run preview        # http://127.0.0.1:5173
 - **+ Nuova chat** crea una chat; l'elenco mostra titolo e data dell'ultimo messaggio, le più recenti
   in cima. All'apertura si apre la chat più recente.
 - 🗑 elimina la chat dopo una conferma (non si può annullare).
+- Le tue domande sono fumetti a destra; le risposte hanno a sinistra il volto dell'assistente,
+  che muove la bocca mentre la risposta appena arrivata compare parola per parola (effetto grafico:
+  la risposta è già completa; lo streaming vero è lo step 10). Con «riduci movimento» del sistema
+  la risposta compare subito intera.
 - **Invio** invia, **Maiusc+Invio** va a capo. Durante la risposta compare «Assistente: …»: solo
   quella chat è bloccata, le altre restano usabili. Sotto la risposta la riga 🔧 mostra gli
   strumenti usati (per esempio `🔧 tooltime (fuso: Asia/Tokyo)`).

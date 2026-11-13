@@ -1,5 +1,5 @@
 /* stile dell'interfaccia: solo tema scuro (anche con il sistema in modalità chiara), design a
-   colonna centrata come le chat di oggi */
+   fumetti con sfumatura blu-viola e volto animato dell'assistente, conversazione centrata */
 
 /* colori del tema (contrasto del testo almeno 4.5:1) */
 :root {
@@ -7,10 +7,12 @@
   --barra: #161a20;
   --bordo: #2a313b;
   --superficie: #1f242c;      /* campo di testo, voce aperta, etichette */
-  --pillola: #262c36;         /* domande dell'utente */
   --testo: #e6e8eb;
   --secondario: #9aa3ad;
   --accento: #2563eb;
+  --viola: #7c3aed;
+  --sfumatura: linear-gradient(135deg, var(--accento), var(--viola));
+  --fumetto: #1a1f27;         /* risposte dell'assistente */
   --testo-accento: #ffffff;
   --errore-sfondo: #3a1414;
   --errore-bordo: #f87171;
@@ -69,14 +71,15 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
 }
 
 #nuova-chat {
-  background: none;
-  border: 1px solid var(--bordo);
+  background: var(--sfumatura);
+  color: var(--testo-accento);
+  border: none;
   border-radius: 10px;
   padding: 9px 12px;
-  text-align: left;
+  font-weight: 600;
   margin-bottom: 8px;
 }
-#nuova-chat:hover { background: var(--superficie); }
+#nuova-chat:hover { filter: brightness(1.1); }
 
 /* intestazioni dei gruppi: Oggi, Ieri, ... */
 #elenco-chat .gruppo {
@@ -161,58 +164,74 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
   overflow-wrap: anywhere;
 }
 
-/* domanda: «pillola» a destra */
+/* domanda: fumetto a sfumatura a destra, senza icona */
 .msg.utente {
   align-self: flex-end;
-  max-width: 80%;
-  background: var(--pillola);
+  max-width: 78%;
+  background: var(--sfumatura);
+  color: var(--testo-accento);
   padding: 9px 15px;
-  border-radius: 18px;
+  border-radius: 18px 4px 18px 18px;
 }
 
-/* risposta: avatar + testo libero, senza fumetto */
+/* risposta: volto + fumetto scuro con l'angolo verso il volto */
 .msg.assistente {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-start;
+  max-width: 85%;
 }
-.avatar {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--accento);
-  color: var(--testo-accento);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-  margin-top: 1px;
-}
-.msg .corpo { min-width: 0; padding-top: 3px; }
-.msg .chi {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--secondario);
-  margin-bottom: 2px;
+.msg .corpo {
+  min-width: 0;
+  background: var(--fumetto);
+  border: 1px solid var(--bordo);
+  padding: 9px 15px;
+  border-radius: 4px 18px 18px 18px;
 }
 
-/* strumenti usati: etichetta arrotondata sotto la risposta */
-.msg .strumenti {
-  display: inline-block;
-  margin-top: 8px;
+/* volto dell'assistente: cerchio a sfumatura, occhi bianchi che ogni tanto sbattono,
+   bocca scura: quasi chiusa quando tace, si apre e chiude mentre la risposta compare */
+.volto {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--sfumatura);
+}
+.volto svg { width: 100%; height: 100%; display: block; }
+.volto .occhio {
+  fill: #ffffff;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: battito 4s infinite;
+}
+.volto .bocca {
+  fill: #0b0d10;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scaleY(0.25);
+}
+.volto.parla .bocca { animation: parla 0.28s ease-in-out infinite alternate; }
+@keyframes battito {
+  0%, 94%, 100% { transform: scaleY(1); }
+  97% { transform: scaleY(0.1); }
+}
+@keyframes parla {
+  from { transform: scaleY(0.25); }
+  to { transform: scaleY(1); }
+}
+
+/* strumenti usati e ora, in piccolo sotto il testo della risposta */
+.msg .meta {
+  margin-top: 4px;
   font-size: 12px;
   color: var(--secondario);
-  background: var(--barra);
-  border: 1px solid var(--bordo);
-  border-radius: 999px;
-  padding: 2px 10px;
 }
+.msg .meta .strumenti + .ora::before { content: " · "; }
 
 /* «Assistente: ...» durante l'attesa: i tre puntini compaiono uno alla volta, restano visibili
    insieme per un momento, poi spariscono e il giro ricomincia (1,5 s) */
-.attesa .corpo { color: var(--secondario); padding-top: 4px; }
+.attesa .corpo { color: var(--secondario); }
 .attesa .puntino { opacity: 0; animation: compari 1.5s infinite; }
 .attesa .puntino:nth-child(2) { animation-name: compari2; }
 .attesa .puntino:nth-child(3) { animation-name: compari3; }
@@ -268,8 +287,8 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
   gap: 8px;
   background: var(--superficie);
   border: 1px solid var(--bordo);
-  border-radius: 20px;
-  padding: 8px 8px 8px 16px;
+  border-radius: 999px;
+  padding: 6px 6px 6px 18px;
 }
 .modulo:focus-within { border-color: #3b4552; }
 .modulo[hidden] { display: none; }
@@ -290,8 +309,8 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
   flex-shrink: 0;
   border-radius: 50%;
   border: none;
-  background: var(--testo);
-  color: var(--sfondo);
+  background: var(--sfumatura);
+  color: var(--testo-accento);
   font-size: 17px;
   font-weight: 700;
 }
@@ -300,5 +319,5 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento)
 @media (max-width: 700px) {
   #app { flex-direction: column; }
   .barra { width: auto; max-height: 40%; border-bottom: 1px solid var(--bordo); }
-  .msg.utente { max-width: 90%; }
+  .msg.utente, .msg.assistente { max-width: 92%; }
 }

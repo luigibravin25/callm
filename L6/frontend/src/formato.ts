@@ -30,6 +30,26 @@ export function formattaData(iso: string | null | undefined): string {
     `${dueCifre(d.getHours())}:${dueCifre(d.getMinutes())}`;
 }
 
+// ora di un messaggio "hh:mm" nell'ora locale del browser
+export function formattaOra(iso: string): string {
+  const d = new Date(iso);
+  return `${dueCifre(d.getHours())}:${dueCifre(d.getMinutes())}`;
+}
+
+// prime n parole di un testo, con spazi e a capo originali (per la rivelazione parola per parola)
+export function primeParole(testo: string, n: number): string {
+  const parole = [...testo.matchAll(/\S+/g)];
+  if (n >= parole.length) return testo;
+  if (n <= 0) return "";
+  const ultima = parole[n - 1];
+  return testo.slice(0, ultima.index! + ultima[0].length);
+}
+
+// numero di parole di un testo
+export function contaParole(testo: string): number {
+  return (testo.match(/\S+/g) ?? []).length;
+}
+
 // gruppo dell'elenco per la data dell'ultimo messaggio (giorni di calendario nell'ora locale);
 // chat senza messaggi = appena creata → «Oggi»
 export function gruppoData(iso: string | null | undefined, adesso = new Date()): string {

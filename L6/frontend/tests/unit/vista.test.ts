@@ -104,13 +104,89 @@ describe("vista", () => {
     expect(radice.querySelectorAll("#elenco-chat li")).toHaveLength(2);
   });
 
-  test("risposta con avatar, domanda senza", () => {
+  test("risposta con il volto, domanda senza icona", () => {
     conChat([msg(1, "utente", "Che ore sono?"), msg(2, "assistente", "Le 9.")]);
     montaVista(radice, app).disegna();
-    expect(radice.querySelector(".msg.assistente .avatar")).not.toBeNull();
+    // volto disegnato con la bocca, ferma sulle risposte già lette
+    expect(radice.querySelector(".msg.assistente .avatar.volto svg .bocca")).not.toBeNull();
+    expect(radice.querySelector(".msg.assistente .volto.parla")).toBeNull();
     expect(radice.querySelector(".msg.utente .avatar")).toBeNull();
+    // ora del messaggio accanto agli strumenti
+    expect(radice.querySelector(".msg.assistente .ora")!.textContent)
+      .toMatch(/^\d{2}:\d{2}$/);
     // Invia è un pulsante con icona e nome accessibile
     expect(radice.querySelector("#invia")!.getAttribute("aria-label")).toBe("Invia");
+  });
+
+  test("risposta appena arrivata: parola per parola con la bocca che si muove", () => {
+    vi.useFakeTimers();
+    try {
+      const d = conChat([msg(1, "utente", "Che ore sono?"),
+        msg(2, "assistente", "A Tokyo sono le 17:37.", [{ nome: "tooltime", argomenti: { fuso: "Asia/Tokyo" } }])]);
+      d.daRivelare = 2;
+      montaVista(radice, app).disegna();
+      const testo = () => radice.querySelector(".msg.assistente .testo")!.textContent;
+      // all'inizio la prima parola, bocca in movimento, strumenti non ancora mostrati
+      expect(testo()).toBe("A");
+      expect(radice.querySelector(".msg.assistente .volto.parla")).not.toBeNull();
+      expect(radice.querySelector(".msg.assistente .strumenti")).toBeNull();
+      vi.advanceTimersByTime(40 * 2);
+      expect(testo()).toBe("A Tokyo sono");
+      vi.advanceTimersByTime(40 * 10);
+      // finita: testo intero, bocca ferma, riga degli strumenti
+      expect(testo()).toBe("A Tokyo sono le 17:37.");
+      expect(radice.querySelector(".msg.assistente .volto.parla")).toBeNull();
+      expect(radice.querySelector(".msg.assistente .strumenti")!.textContent)
+        .toBe("🔧 tooltime (fuso: Asia/Tokyo)");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("animazioni del volto agganciate all'orologio: non ripartono quando la vista ridisegna", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(10_000);
+      const d = conChat([msg(2, "assistente", "una due tre")]);
+      d.daRivelare = 2;
+      montaVista(radice, app).disegna();
+      // fase = istante attuale nel giro (bocca 560 ms andata e ritorno, battito 4 s)
+      const bocca = radice.querySelector<SVGElement>(".volto.parla .bocca")!;
+      expect(bocca.style.animationDelay).toBe(`-${10_000 % 560}ms`);
+      const occhio = radice.querySelector<SVGElement>(".volto .occhio")!;
+      expect(occhio.style.animationDelay).toBe(`-${10_000 % 4000}ms`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("una risposta già rivelata non riparte a un nuovo disegno", () => {
+    vi.useFakeTimers();
+    try {
+      const d = conChat([msg(2, "assistente", "uno due")]);
+      d.daRivelare = 2;
+      const vista = montaVista(radice, app);
+      vista.disegna();
+      vi.advanceTimersByTime(1000);
+      vista.disegna();
+      expect(radice.querySelector(".msg.assistente .testo")!.textContent).toBe("uno due");
+      expect(radice.querySelector(".volto.parla")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a capo e spazi della risposta conservati durante la rivelazione", () => {
+    vi.useFakeTimers();
+    try {
+      const d = conChat([msg(2, "assistente", "riga uno\n\nriga  due")]);
+      d.daRivelare = 2;
+      montaVista(radice, app).disegna();
+      vi.advanceTimersByTime(1000);
+      expect(radice.querySelector(".msg.assistente .testo")!.textContent).toBe("riga uno\n\nriga  due");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("riga strumenti sotto la risposta", () => {
