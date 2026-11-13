@@ -119,6 +119,52 @@ describe("vista", () => {
     expect(app.chiudiErrore).toHaveBeenCalledWith(1);
   });
 
+  test("il fuoco torna nel campo quando arriva la risposta", () => {
+    const d = conChat([]);
+    const vista = montaVista(radice, app);
+    vista.disegna();
+    const campo = radice.querySelector<HTMLTextAreaElement>("#campo")!;
+    // il browser toglie il fuoco a un campo disattivato (jsdom no: blur() prima di disattivarlo)
+    campo.blur();
+    d.provvisoria = "Che ore sono?";
+    vista.disegna();
+    d.provvisoria = null;
+    d.messaggi = [msg(1, "utente", "Che ore sono?"), msg(2, "assistente", "Le 9.")];
+    vista.disegna();
+    expect(document.activeElement).toBe(campo);
+  });
+
+  test("lo scorrimento in fondo solo quando cambiano i messaggi", () => {
+    conChat([msg(1, "utente", "a")]);
+    const vista = montaVista(radice, app);
+    const messaggi = radice.querySelector<HTMLElement>("#messaggi")!;
+    let scorrimenti = 0;
+    Object.defineProperty(messaggi, "scrollTop", { set: () => { scorrimenti++; }, get: () => 0 });
+    vista.disegna();
+    // nuovo disegno senza messaggi nuovi (per esempio rilettura dell'elenco): niente salto in fondo
+    vista.disegna();
+    expect(scorrimenti).toBe(1);
+    datiChat(app.stato, 1).messaggi.push(msg(2, "assistente", "b"));
+    vista.disegna();
+    expect(scorrimenti).toBe(2);
+  });
+
+  test("errore su un'altra chat non tocca il campo della chat aperta", () => {
+    app.stato.chat = [{ id: 1, titolo: "A", ultimo_messaggio_il: null },
+      { id: 2, titolo: "B", ultimo_messaggio_il: null }];
+    app.stato.aperta = 2;
+    const vista = montaVista(radice, app);
+    vista.disegna();
+    const campo = radice.querySelector<HTMLTextAreaElement>("#campo")!;
+    campo.value = "sto scrivendo in B";
+    const a = datiChat(app.stato, 1);
+    a.errore = "Agente non raggiungibile";
+    a.bozza = "domanda di A";
+    vista.disegna();
+    expect(campo.value).toBe("sto scrivendo in B");
+    expect(radice.querySelector<HTMLElement>("#errore-chat")!.hidden).toBe(true);
+  });
+
   test("errore della barra con Riprova solo per l'elenco", () => {
     app.stato.erroreBarra = { messaggio: "Il back-end non risponde (HTTP 502)", riprova: true };
     montaVista(radice, app).disegna();

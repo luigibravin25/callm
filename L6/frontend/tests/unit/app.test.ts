@@ -120,6 +120,33 @@ describe("invio", () => {
     expect(app.stato.perChat.get(2)!.messaggi).toEqual([]);
   });
 
+  test("invio concluso dopo eliminazione di un'altra chat", async () => {
+    const d = differita<Esito<Turno>>();
+    api.invia.mockReturnValueOnce(d.promessa);
+    app.aggiornaBozza(1, "Che ore sono a Tokyo?");
+    const invio = app.invia(1);
+    api.elenca.mockResolvedValue(ok([chat(1)]));
+    await app.elimina(2);
+    d.risolvi(ok(turno("Che ore sono a Tokyo?")));
+    await invio;
+    expect(app.stato.perChat.get(1)!.messaggi).toHaveLength(2);
+    expect(app.stato.perChat.has(2)).toBe(false);
+  });
+
+  test("invio concluso dopo creazione di una nuova chat", async () => {
+    const d = differita<Esito<Turno>>();
+    api.invia.mockReturnValueOnce(d.promessa);
+    app.aggiornaBozza(1, "Che ore sono a Tokyo?");
+    const invio = app.invia(1);
+    api.elenca.mockResolvedValue(ok([chat(3, "Nuova chat"), chat(1), chat(2)]));
+    await app.nuovaChat();
+    d.risolvi(ok(turno("Che ore sono a Tokyo?")));
+    await invio;
+    expect(app.stato.aperta).toBe(3);
+    expect(app.stato.perChat.get(1)!.messaggi).toHaveLength(2);
+    expect(app.stato.perChat.get(3)!.messaggi).toEqual([]);
+  });
+
   test("riaprire la chat in attesa non la rilegge e mostra ancora l'attesa", async () => {
     const d = differita<Esito<Turno>>();
     api.invia.mockReturnValueOnce(d.promessa);
@@ -231,6 +258,21 @@ describe("apertura e creazione", () => {
     expect(app.stato.erroreBarra).toEqual({ messaggio: MSG_CHAT_SPARITA, riprova: false });
     expect(app.stato.chat.map((c) => c.id)).toEqual([1]);
     expect(app.stato.aperta).toBe(1);
+  });
+
+  test("404 in ritardo di una chat lasciata non cambia la chat scelta", async () => {
+    const lenta = differita<Esito<ChatCompleta>>();
+    api.leggi.mockReturnValueOnce(lenta.promessa);
+    // dopo la rilettura la prima chat dell'elenco (3) è diversa da quella scelta (1)
+    api.elenca.mockResolvedValue(ok([chat(3), chat(1)]));
+    const primaApertura = app.apri(2);
+    await app.apri(1);
+    lenta.risolvi(ko(404, "chat_non_trovata", "Chat non trovata"));
+    await primaApertura;
+    expect(app.stato.aperta).toBe(1);
+    expect(app.stato.perChat.has(2)).toBe(false);
+    expect(app.stato.chat.map((c) => c.id)).toEqual([3, 1]);
+    expect(app.stato.erroreBarra).toBeNull();
   });
 
   test("apertura con 503 imposta erroreApertura", async () => {

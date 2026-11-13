@@ -58,6 +58,11 @@ export function creaApplicazione(
       // solo i messaggi: bozza ed errore della chat restano
       dati.messaggi = esito.dati.messaggi;
       dati.caricata = true;
+    } else if (esito.errore.status === 404 && stato.aperta !== id) {
+      // 404 arrivato dopo che l'utente ha aperto un'altra chat: solo pulizia, la scelta resta
+      stato.perChat.delete(id);
+      await rileggiElenco(false);
+      return;
     } else if (esito.errore.status === 404) {
       // chat eliminata altrove (un'altra scheda): rilettura dell'elenco e prima chat rimasta
       stato.perChat.delete(id);

@@ -85,8 +85,10 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
     invia.disabled = campo.disabled || !campo.value.trim();
   });
 
-  // ultimo stato visto: il campo prende la bozza solo quando cambiano chat, errore o attesa
-  let ultimo = { aperta: null as number | null, errore: null as string | null, provvisoria: null as string | null };
+  // ultimo stato visto: il campo prende la bozza solo quando cambiano chat, errore o attesa;
+  // elementi = numero di fumetti mostrati (per lo scorrimento in fondo)
+  let ultimo = { aperta: null as number | null, errore: null as string | null,
+    provvisoria: null as string | null, elementi: -1 };
 
   function disegnaBarra(): void {
     const s = app.stato;
@@ -143,7 +145,11 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
       elementi.push(attesa);
     }
     messaggi.replaceChildren(...elementi);
-    messaggi.scrollTop = messaggi.scrollHeight;
+    // in fondo solo se cambiano chat o messaggi: chi sta leggendo più in alto non viene spostato
+    // da un disegno dovuto ad altro (rilettura dell'elenco, risposta di un'altra chat)
+    if (id !== ultimo.aperta || elementi.length !== ultimo.elementi) {
+      messaggi.scrollTop = messaggi.scrollHeight;
+    }
 
     // campo e Invia: disattivati durante l'attesa; valore dalla bozza solo se qualcosa è cambiato
     const occupato = dati?.provvisoria != null;
@@ -153,8 +159,12 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
     }
     campo.disabled = occupato;
     invia.disabled = occupato || !campo.value.trim();
-    if (cambiata && id !== null && !occupato) campo.focus();
-    ultimo = { aperta: id, errore: dati?.errore ?? null, provvisoria: dati?.provvisoria ?? null };
+    // fuoco nel campo quando si cambia chat e quando finisce l'attesa della chat aperta
+    // (il browser lo toglie al campo disattivato): la domanda successiva si scrive subito
+    const finitaAttesa = !cambiata && ultimo.provvisoria !== null && !occupato;
+    if ((cambiata || finitaAttesa) && id !== null && !occupato) campo.focus();
+    ultimo = { aperta: id, errore: dati?.errore ?? null, provvisoria: dati?.provvisoria ?? null,
+      elementi: elementi.length };
   }
 
   return { disegna: () => { disegnaBarra(); disegnaChat(); } };
