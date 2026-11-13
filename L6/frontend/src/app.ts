@@ -288,12 +288,16 @@ export function creaApplicazione(
     }
     // l'esito va sempre alla chat di partenza, anche se ora è aperta un'altra
     dati.provvisoria = null;
+    // testo già mostrato come risposta normale: solo con lo streaming e il Log spento (con il Log
+    // acceso la bozza era nel riquadro dei dettagli, non era la risposta)
+    const giaMostrata = inFlusso && !stato.logVisibile && esito.ok
+      && dati.testoInArrivo.trim() === esito.dati.risposta.testo.trim();
     azzeraFlusso(dati);
     if (esito.ok) {
       dati.messaggi.push(esito.dati.domanda, esito.dati.risposta);
-      // senza streaming la risposta compare parola per parola (effetto della vista); con lo
-      // streaming il testo è già arrivato: niente rivelazione finta
-      dati.daRivelare = inFlusso ? null : esito.dati.risposta.id;
+      // la risposta definitiva compare parola per parola (effetto della vista), tranne quando lo
+      // streaming l'ha già mostrata uguale: non si ripete
+      dati.daRivelare = giaMostrata ? null : esito.dati.risposta.id;
       ridisegna();
       // titolo e data aggiornati nell'elenco
       await rileggiElenco(true);

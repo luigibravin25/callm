@@ -387,7 +387,8 @@ describe("streaming", () => {
     await invio;
     const s = a.stato.perChat.get(1)!;
     expect(s.messaggi.map((m) => m.testo)).toEqual(["Che ore sono?", "Sono le 17:50."]);
-    expect(s.daRivelare).toBeNull();
+    // la bozza mostrata era diversa: la risposta definitiva esce parola per parola
+    expect(s.daRivelare).toBe(11);
     expect([s.testoInArrivo, s.avvisoRevisore, s.fase, s.provvisoria]).toEqual(["", null, null, null]);
     expect(api.invia).not.toHaveBeenCalled();
   });
@@ -506,6 +507,36 @@ describe("streaming", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("log acceso: anche la risposta definitiva esce parola per parola", async () => {
+    const { a, f } = await conStreaming(archivioFinto({ log: "true" }));
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.manda({ tipo: "testo", dati: { testo: "Sono le 17:50." } });
+    f.chiudi(ok(turno("Che ore sono?")));
+    await invio;
+    expect(a.stato.perChat.get(1)!.daRivelare).toBe(11);
+  });
+
+  test("log spento: la risposta già arrivata uguale non si ripete", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.manda({ tipo: "testo", dati: { testo: "Sono le 17:50." } });
+    f.chiudi(ok(turno("Che ore sono?")));
+    await invio;
+    expect(a.stato.perChat.get(1)!.daRivelare).toBeNull();
+  });
+
+  test("log spento: risposta definitiva diversa dalla bozza esce parola per parola", async () => {
+    const { a, f } = await conStreaming();
+    a.aggiornaBozza(1, "Che ore sono?");
+    const invio = a.invia(1);
+    f.manda({ tipo: "testo", dati: { testo: "Bozza incompleta." } });
+    f.chiudi(ok(turno("Che ore sono?")));
+    await invio;
+    expect(a.stato.perChat.get(1)!.daRivelare).toBe(11);
   });
 
   test("log spento di base, acceso e ricordato", async () => {
