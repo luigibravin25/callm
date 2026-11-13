@@ -30,6 +30,18 @@ export function formattaData(iso: string | null | undefined): string {
     `${dueCifre(d.getHours())}:${dueCifre(d.getMinutes())}`;
 }
 
+// gruppo dell'elenco per la data dell'ultimo messaggio (giorni di calendario nell'ora locale);
+// chat senza messaggi = appena creata → «Oggi»
+export function gruppoData(iso: string | null | undefined, adesso = new Date()): string {
+  if (!iso) return "Oggi";
+  const giorno = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const giorni = Math.round((giorno(adesso) - giorno(new Date(iso))) / 86_400_000);
+  if (giorni <= 0) return "Oggi";
+  if (giorni === 1) return "Ieri";
+  if (giorni <= 7) return "Ultimi 7 giorni";
+  return "Più vecchie";
+}
+
 // valore di un argomento: le stringhe così come sono, il resto in JSON (2, true, [..])
 function valore(v: unknown): string {
   return typeof v === "string" ? v : JSON.stringify(v);

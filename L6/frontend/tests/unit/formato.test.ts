@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import {
   formattaData,
+  gruppoData,
   MSG_BACKEND_GIU,
   MSG_CHAT_SPARITA,
   MSG_INVITO,
@@ -20,6 +21,23 @@ describe("formattaData", () => {
   test("null o assente: nessun messaggio", () => {
     expect(formattaData(null)).toBe("nessun messaggio");
     expect(formattaData(undefined)).toBe(MSG_NESSUN_MESSAGGIO);
+  });
+});
+
+describe("gruppoData", () => {
+  // «adesso» fisso: 13/11/2026 alle 10:00 in ora locale
+  const adesso = new Date(2026, 10, 13, 10, 0);
+  const iso = (g: number, h = 9) => new Date(2026, 10, g, h, 0).toISOString();
+
+  test("oggi, ieri, ultimi 7 giorni, più vecchie", () => {
+    expect(gruppoData(iso(13, 0), adesso)).toBe("Oggi");
+    expect(gruppoData(iso(12, 23), adesso)).toBe("Ieri");
+    expect(gruppoData(iso(7), adesso)).toBe("Ultimi 7 giorni");
+    expect(gruppoData(iso(5), adesso)).toBe("Più vecchie");
+  });
+
+  test("chat senza messaggi (appena creata) tra quelle di oggi", () => {
+    expect(gruppoData(null, adesso)).toBe("Oggi");
   });
 });
 

@@ -91,6 +91,28 @@ describe("vista", () => {
     expect(radice.querySelector(".msg.utente .testo")!.textContent).toBe("Che ore sono?");
   });
 
+  test("elenco raggruppato per data con intestazioni", () => {
+    const oggi = new Date().toISOString();
+    app.stato.chat = [
+      { id: 1, titolo: "Nuova", ultimo_messaggio_il: oggi },
+      { id: 2, titolo: "Vecchia", ultimo_messaggio_il: "2020-01-01T08:00:00Z" },
+    ];
+    montaVista(radice, app).disegna();
+    expect([...radice.querySelectorAll("#elenco-chat .gruppo")].map((g) => g.textContent))
+      .toEqual(["Oggi", "Più vecchie"]);
+    // le intestazioni non sono voci dell'elenco: le chat restano 2
+    expect(radice.querySelectorAll("#elenco-chat li")).toHaveLength(2);
+  });
+
+  test("risposta con avatar, domanda senza", () => {
+    conChat([msg(1, "utente", "Che ore sono?"), msg(2, "assistente", "Le 9.")]);
+    montaVista(radice, app).disegna();
+    expect(radice.querySelector(".msg.assistente .avatar")).not.toBeNull();
+    expect(radice.querySelector(".msg.utente .avatar")).toBeNull();
+    // Invia è un pulsante con icona e nome accessibile
+    expect(radice.querySelector("#invia")!.getAttribute("aria-label")).toBe("Invia");
+  });
+
   test("riga strumenti sotto la risposta", () => {
     conChat([msg(1, "assistente", "Sono le 17:50.",
       [{ nome: "tooltime", argomenti: { fuso: "Asia/Tokyo" } }])]);

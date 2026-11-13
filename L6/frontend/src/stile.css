@@ -1,23 +1,26 @@
-/* stile dell'interfaccia: solo tema scuro, anche con il sistema operativo in modalità chiara */
+/* stile dell'interfaccia: solo tema scuro (anche con il sistema in modalità chiara), design a
+   colonna centrata come le chat di oggi */
 
 /* colori del tema (contrasto del testo almeno 4.5:1) */
 :root {
   --sfondo: #0f1115;
   --barra: #161a20;
   --bordo: #2a313b;
-  --utente: #2563eb;
-  --testo-utente: #ffffff;
-  --assistente: #1f242c;
+  --superficie: #1f242c;      /* campo di testo, voce aperta, etichette */
+  --pillola: #262c36;         /* domande dell'utente */
   --testo: #e6e8eb;
   --secondario: #9aa3ad;
   --accento: #2563eb;
+  --testo-accento: #ffffff;
   --errore-sfondo: #3a1414;
   --errore-bordo: #f87171;
   --errore-testo: #fecaca;
+  --colonna: 760px;           /* larghezza massima della conversazione */
   /* barre di scorrimento, textarea e finestre del browser scure */
   color-scheme: dark;
   font-family: system-ui, "Segoe UI", sans-serif;
   font-size: 15px;
+  line-height: 1.5;
 }
 
 * { box-sizing: border-box; }
@@ -29,7 +32,7 @@ body {
   color: var(--testo);
 }
 
-/* barra laterale a sinistra, chat a destra */
+/* barra laterale a sinistra, conversazione a destra */
 #app {
   display: flex;
   height: 100%;
@@ -40,45 +43,67 @@ button {
   color: inherit;
   cursor: pointer;
 }
-button:disabled { cursor: not-allowed; opacity: 0.5; }
+button:disabled { cursor: not-allowed; opacity: 0.45; }
+button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accento); outline-offset: 2px; }
+
+/* testo solo per i lettori di schermo (es. «Tu» sulle domande) */
+.nascosto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 /* ----- barra laterale ----- */
 .barra {
-  width: 280px;
+  width: 270px;
   flex-shrink: 0;
   background: var(--barra);
-  border-right: 1px solid var(--bordo);
   display: flex;
   flex-direction: column;
-  padding: 12px;
-  gap: 8px;
+  padding: 12px 10px;
+  gap: 4px;
   overflow-y: auto;
 }
 
 #nuova-chat {
-  background: var(--accento);
-  color: var(--testo-utente);
-  border: none;
-  border-radius: 6px;
-  padding: 8px;
+  background: none;
+  border: 1px solid var(--bordo);
+  border-radius: 10px;
+  padding: 9px 12px;
+  text-align: left;
+  margin-bottom: 8px;
+}
+#nuova-chat:hover { background: var(--superficie); }
+
+/* intestazioni dei gruppi: Oggi, Ieri, ... */
+#elenco-chat .gruppo {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--secondario);
+  padding: 12px 10px 4px;
 }
 
-#elenco-chat {
+#elenco-chat ul {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 #elenco-chat li {
   display: flex;
   align-items: center;
-  border-radius: 6px;
+  border-radius: 8px;
 }
-#elenco-chat li.aperta { background: #1e3a8a; }
-#elenco-chat li:not(.aperta):hover { background: #1c2129; }
+#elenco-chat li.aperta { background: var(--superficie); }
+#elenco-chat li:not(.aperta):hover { background: #1a1f26; }
 
 #elenco-chat .apri {
   flex: 1;
@@ -86,7 +111,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   background: none;
   border: none;
   text-align: left;
-  padding: 6px 8px;
+  padding: 7px 10px;
   display: flex;
   flex-direction: column;
 }
@@ -95,70 +120,99 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#elenco-chat .data { color: var(--secondario); font-size: 12px; }
+#elenco-chat .data { color: var(--secondario); font-size: 11px; }
 /* chat in attesa di risposta: segno «…» dopo il titolo */
 #elenco-chat li.in-attesa .titolo::after { content: " …"; color: var(--secondario); }
 
+/* 🗑 visibile al passaggio del mouse, sulla chat aperta o con il fuoco da tastiera */
 #elenco-chat .elimina {
   background: none;
   border: none;
-  padding: 6px 8px;
+  padding: 6px 10px;
+  opacity: 0;
 }
+#elenco-chat li:hover .elimina,
+#elenco-chat li.aperta .elimina,
+#elenco-chat li:focus-within .elimina { opacity: 0.8; }
+#elenco-chat .elimina:disabled { opacity: 0.3; }
 
-/* ----- area della chat ----- */
+/* ----- conversazione ----- */
 .area {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 12px;
-  gap: 8px;
 }
 
 .invito { color: var(--secondario); margin: auto; }
 
+/* colonna centrata: padding laterale che lascia al massimo --colonna di larghezza */
 .messaggi {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 22px;
+  padding: 28px max(16px, calc((100% - var(--colonna)) / 2)) 12px;
 }
 
 .msg {
-  max-width: 75%;
-  padding: 8px 12px;
-  border-radius: 12px;
-  /* a capo del modello conservati, Markdown mostrato così com'è */
-  white-space: pre-wrap;
+  white-space: pre-wrap;      /* a capo del modello conservati, Markdown così com'è */
   overflow-wrap: anywhere;
 }
+
+/* domanda: «pillola» a destra */
 .msg.utente {
   align-self: flex-end;
-  background: var(--utente);
-  color: var(--testo-utente);
+  max-width: 80%;
+  background: var(--pillola);
+  padding: 9px 15px;
+  border-radius: 18px;
 }
+
+/* risposta: avatar + testo libero, senza fumetto */
 .msg.assistente {
-  align-self: flex-start;
-  background: var(--assistente);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
 }
-/* chi parla, in piccolo sopra il testo del fumetto */
+.avatar {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accento);
+  color: var(--testo-accento);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+.msg .corpo { min-width: 0; padding-top: 3px; }
 .msg .chi {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
+  color: var(--secondario);
   margin-bottom: 2px;
 }
-.msg.utente .chi { color: #dbeafe; }
-.msg.assistente .chi { color: var(--secondario); }
+
+/* strumenti usati: etichetta arrotondata sotto la risposta */
 .msg .strumenti {
-  margin-top: 4px;
+  display: inline-block;
+  margin-top: 8px;
   font-size: 12px;
   color: var(--secondario);
+  background: var(--barra);
+  border: 1px solid var(--bordo);
+  border-radius: 999px;
+  padding: 2px 10px;
 }
 
 /* «Assistente: ...» durante l'attesa: i tre puntini compaiono uno alla volta, restano visibili
    insieme per un momento, poi spariscono e il giro ricomincia (1,5 s) */
-.attesa { color: var(--secondario); }
+.attesa .corpo { color: var(--secondario); padding-top: 4px; }
 .attesa .puntino { opacity: 0; animation: compari 1.5s infinite; }
 .attesa .puntino:nth-child(2) { animation-name: compari2; }
 .attesa .puntino:nth-child(3) { animation-name: compari3; }
@@ -183,8 +237,8 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   background: var(--errore-sfondo);
   border: 1px solid var(--errore-bordo);
   color: var(--errore-testo);
-  border-radius: 6px;
-  padding: 8px;
+  border-radius: 10px;
+  padding: 8px 10px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -194,33 +248,57 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .errore button {
   background: none;
   border: 1px solid var(--errore-bordo);
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 2px 8px;
 }
+/* errore della chat allineato alla colonna */
+#errore-chat {
+  width: calc(100% - 32px);
+  max-width: var(--colonna);
+  margin: 16px auto 0;
+}
 
-/* campo di testo e Invia */
-.modulo { display: flex; gap: 8px; }
+/* campo di testo arrotondato con il pulsante ↑ dentro, allineato alla colonna */
+.modulo {
+  width: calc(100% - 32px);
+  max-width: var(--colonna);
+  margin: 8px auto 18px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--superficie);
+  border: 1px solid var(--bordo);
+  border-radius: 20px;
+  padding: 8px 8px 8px 16px;
+}
+.modulo:focus-within { border-color: #3b4552; }
 .modulo[hidden] { display: none; }
 #campo {
   flex: 1;
-  resize: vertical;
-  background: var(--assistente);
+  resize: none;
+  background: none;
   color: var(--testo);
-  border: 1px solid var(--bordo);
-  border-radius: 6px;
-  padding: 8px;
+  border: none;
+  outline: none;
+  padding: 6px 0;
   font: inherit;
+  max-height: 200px;
 }
 #invia {
-  background: var(--accento);
-  color: var(--testo-utente);
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
   border: none;
-  border-radius: 6px;
-  padding: 0 16px;
+  background: var(--testo);
+  color: var(--sfondo);
+  font-size: 17px;
+  font-weight: 700;
 }
 
-/* schermo stretto: l'elenco va sopra la chat */
+/* schermo stretto: l'elenco va sopra la conversazione */
 @media (max-width: 700px) {
   #app { flex-direction: column; }
-  .barra { width: auto; max-height: 40%; border-right: none; border-bottom: 1px solid var(--bordo); }
+  .barra { width: auto; max-height: 40%; border-bottom: 1px solid var(--bordo); }
+  .msg.utente { max-width: 90%; }
 }

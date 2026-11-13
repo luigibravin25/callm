@@ -1,7 +1,7 @@
 // vista: costruisce la pagina una volta e la aggiorna a ogni disegna(); testi sempre con textContent
 import type { Messaggio } from "./api/client";
 import type { Applicazione } from "./app";
-import { formattaData, MSG_INVITO, rigaStrumenti } from "./formato";
+import { formattaData, gruppoData, MSG_INVITO, rigaStrumenti } from "./formato";
 import { datiChat, inAttesa } from "./stato";
 
 // crea un elemento con classe e testo (testo sempre come testo, mai come HTML)
@@ -25,12 +25,36 @@ function pulsante(classe: string, testo: string, azione: () => void): HTMLButton
 // etichetta in cima a ogni fumetto: chi parla
 const CHI = { utente: "Tu", assistente: "Assistente" } as const;
 
-// un messaggio: fumetto con chi parla, il testo e, per l'assistente, la riga degli strumenti usati
+// avatar rotondo dell'assistente (decorativo: il nome è già scritto accanto)
+function avatar(): HTMLElement {
+  const a = el("div", "avatar", "A");
+  a.setAttribute("aria-hidden", "true");
+  return a;
+}
+
+// un messaggio. Domanda: «pillola» a destra (l'etichetta «Tu» resta per i lettori di schermo).
+// Risposta: avatar + nome + testo libero + etichetta degli strumenti usati
 function fumetto(m: Pick<Messaggio, "ruolo" | "testo" | "strumenti">): HTMLElement {
   const div = el("div", `msg ${m.ruolo}`);
-  div.append(el("div", "chi", CHI[m.ruolo]), el("div", "testo", m.testo));
-  const riga = m.ruolo === "assistente" ? rigaStrumenti(m.strumenti) : null;
-  if (riga) div.append(el("div", "strumenti", riga));
+  if (m.ruolo === "utente") {
+    div.append(el("div", "chi nascosto", CHI.utente), el("div", "testo", m.testo));
+    return div;
+  }
+  const corpo = el("div", "corpo");
+  corpo.append(el("div", "chi", CHI.assistente), el("div", "testo", m.testo));
+  const riga = rigaStrumenti(m.strumenti);
+  if (riga) corpo.append(el("div", "strumenti", riga));
+  div.append(avatar(), corpo);
+  return div;
+}
+
+// «Assistente: ...» con i tre puntini, nella stessa forma di una risposta
+function attesa(): HTMLElement {
+  const div = el("div", "msg assistente attesa");
+  const corpo = el("div", "corpo", "Assistente: ");
+  // tre puntini separati: lo stile li fa comparire uno alla volta
+  corpo.append(el("span", "puntino", "."), el("span", "puntino", "."), el("span", "puntino", "."));
+  div.append(avatar(), corpo);
   return div;
 }
 
@@ -42,8 +66,10 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
   const erroreBarra = el("div", "errore");
   erroreBarra.id = "errore-barra";
   erroreBarra.setAttribute("role", "alert");
-  const elenco = el("ul");
+  // elenco: un'intestazione (Oggi, Ieri, ...) e una lista per ogni gruppo
+  const elenco = el("nav");
   elenco.id = "elenco-chat";
+  elenco.setAttribute("aria-label", "Chat");
   barra.append(nuova, erroreBarra, elenco);
 
   const area = el("main", "area");
@@ -62,9 +88,12 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
   campo.rows = 2;
   campo.placeholder = "Scrivi una domanda...";
   campo.setAttribute("aria-label", "Domanda");
-  const invia = el("button", "", "Invia");
+  // pulsante rotondo con la freccia dentro il campo; il nome «Invia» per i lettori di schermo
+  const invia = el("button", "", "↑");
   invia.id = "invia";
   invia.type = "submit";
+  invia.setAttribute("aria-label", "Invia");
+  invia.title = "Invia (Invio)";
   modulo.append(campo, invia);
   area.append(erroreChat, invito, messaggi, modulo);
   radice.replaceChildren(barra, area);
@@ -102,8 +131,8 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
       erroreBarra.append(el("span", "", s.erroreBarra.messaggio));
       if (s.erroreBarra.riprova) erroreBarra.append(pulsante("riprova", "Riprova", () => void app.riprovaElenco()));
     }
-    // elenco delle chat: titolo, data, 🗑
-    elenco.replaceChildren(...s.chat.map((c) => {
+    // elenco delle chat: titolo, data, 🗑; nell'ordine del back-end, diviso per gruppi di data
+    const voci = s.chat.map((c) => {
       const voce = el("li", c.id === s.aperta ? "aperta" : "");
       voce.dataset.id = String(c.id);
       const attesa = inAttesa(s, c.id);
@@ -116,8 +145,21 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
       cestino.title = attesa ? "In attesa della risposta" : "Elimina chat";
       cestino.disabled = attesa;
       voce.append(apri, cestino);
-      return voce;
-    }));
+      return { voce, gruppo: gruppoData(c.ultimo_messaggio_il) };
+    });
+    // un'intestazione e una lista ogni volta che il gruppo cambia (l'elenco è già ordinato per data)
+    const parti: HTMLElement[] = [];
+    let lista: HTMLUListElement | null = null;
+    let gruppo = "";
+    for (const v of voci) {
+      if (!lista || v.gruppo !== gruppo) {
+        gruppo = v.gruppo;
+        lista = el("ul");
+        parti.push(el("div", "gruppo", gruppo), lista);
+      }
+      lista.append(v.voce);
+    }
+    elenco.replaceChildren(...parti);
   }
 
   function disegnaChat(): void {
@@ -142,11 +184,7 @@ export function montaVista(radice: HTMLElement, app: Applicazione): { disegna():
     // messaggi confermati, poi domanda in attesa e «Assistente: …»
     const elementi = (dati?.messaggi ?? []).map(fumetto);
     if (dati?.provvisoria != null) {
-      elementi.push(fumetto({ ruolo: "utente", testo: dati.provvisoria, strumenti: null }));
-      const attesa = el("div", "msg assistente attesa", "Assistente: ");
-      // tre puntini separati: lo stile li fa comparire uno alla volta
-      attesa.append(el("span", "puntino", "."), el("span", "puntino", "."), el("span", "puntino", "."));
-      elementi.push(attesa);
+      elementi.push(fumetto({ ruolo: "utente", testo: dati.provvisoria, strumenti: null }), attesa());
     }
     messaggi.replaceChildren(...elementi);
     // in fondo solo se cambiano chat o messaggi: chi sta leggendo più in alto non viene spostato
