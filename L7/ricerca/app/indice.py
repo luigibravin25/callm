@@ -13,7 +13,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import (Distance, FieldCondition, Filter, IsEmptyCondition, MatchValue, PayloadField,
                                   PayloadSchemaType, PointIdsList, PointStruct, VectorParams)
 
-from app.chunking import Chunk
+from app.chunking import Chunk, ha_dosi
 from app.config import TOP_K_MASSIMO
 from app.corpus import CAPITOLI
 from app.embedding import Embedder
@@ -44,6 +44,13 @@ class EsitoIngestion:
     punti: int  # punti nella collezione alla fine
 
 
+# conteggi di aggiorna_dosi, per il log finale
+@dataclass(frozen=True)
+class EsitoDosi:
+    punti: int  # punti aggiornati (tutti quelli della collezione)
+    con_dosi: int  # punti con contiene_dosi vero
+
+
 # un risultato della ricerca con la sua fonte: ricetta, capitolo, posizione del chunk
 @dataclass(frozen=True)
 class Risultato:
@@ -67,7 +74,8 @@ def _capitolo_valido(capitolo: str) -> str:
 
 
 class Indice:
-    def __init__(self, client: QdrantClient, collezione: str, modello: str, embedder: Embedder):
+    # embedder None: solo operazioni senza embedding (aggiorna_dosi)
+    def __init__(self, client: QdrantClient, collezione: str, modello: str, embedder: Embedder | None):
         self.client = client
         self.collezione = collezione
         self.modello = modello
@@ -153,6 +161,34 @@ class Indice:
             ids.extend(str(p.id) for p in punti)
             if prossimo is None:
                 return ids
+
+    # --- campo contiene_dosi sui punti esistenti (senza embedding) ---
+
+    def aggiorna_dosi(self, ingredienti: dict[int, tuple[str, ...]], lotto: int = 256) -> EsitoDosi:
+        """Scrive contiene_dosi su tutti i punti dal testo del loro payload; nessun embedding, nessun chunking."""
+        if not self.esiste():
+            raise ErroreRicerca(f"la collezione {self.collezione} non esiste: eseguire prima l'ingestion")
+        # prima si calcola tutto: con un numero sconosciuto non si scrive niente
+        valori: dict[bool, list] = {True: [], False: []}
+        prossimo = None
+        while True:
+            punti, prossimo = self.client.scroll(self.collezione, limit=1000, offset=prossimo,
+                                                 with_payload=["numero", "testo"], with_vectors=False)
+            for p in punti:
+                numero = p.payload.get("numero")
+                if numero not in ingredienti:
+                    raise ErroreRicerca(f"il punto {p.id} ha la ricetta n. {numero}, che non è nel corpus: "
+                                        "rifare l'ingestion")
+                valori[ha_dosi(p.payload.get("testo", ""), ingredienti[numero])].append(p.id)
+            if prossimo is None:
+                break
+        # un set_payload per valore, a lotti di ID
+        for valore, ids in valori.items():
+            for inizio in range(0, len(ids), lotto):
+                self.client.set_payload(self.collezione, payload={"contiene_dosi": valore},
+                                        points=ids[inizio:inizio + lotto])
+        self._crea_indici()
+        return EsitoDosi(punti=len(valori[True]) + len(valori[False]), con_dosi=len(valori[True]))
 
     # --- ricerca ---
 
