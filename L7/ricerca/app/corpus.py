@@ -39,6 +39,8 @@ class Ricetta:
     titolo: str
     capitolo: str
     testo: str
+    # righe di ingrediente pulite (rientrate di 2 spazi nel file), nell'ordine; vuota se non c'è elenco
+    ingredienti: tuple[str, ...] = ()
 
 
 # quanti spazi apre una riga
@@ -69,8 +71,9 @@ def _pulisci_riga(riga: str) -> str:
 
 
 # un paragrafo (righe senza righe vuote in mezzo) → righe del testo pulito
-def _paragrafo(righe: list[str]) -> list[str]:
+def _paragrafo(righe: list[str]) -> list[tuple[str, bool]]:
     uscita: list[str] = []
+    ingrediente: list[bool] = []  # per ogni riga di uscita: nata da una riga a 2 spazi?
     tipo_precedente = None  # "prosa", "ingrediente" (anche continuazione), "altro"
     for riga in righe:
         rientro = _rientro(riga)
@@ -78,6 +81,7 @@ def _paragrafo(righe: list[str]) -> list[str]:
         if rientro == 2:
             # riga di ingrediente: su una riga propria
             uscita.append(contenuto)
+            ingrediente.append(True)
             tipo_precedente = "ingrediente"
         elif rientro >= 4 and tipo_precedente == "ingrediente":
             # continuazione dell'ingrediente: si unisce alla sua riga
@@ -85,20 +89,24 @@ def _paragrafo(righe: list[str]) -> list[str]:
         elif rientro >= 3:
             # versi, etichette (_Prima:_): ognuna su una riga propria
             uscita.append(contenuto)
+            ingrediente.append(False)
             tipo_precedente = "altro"
         elif tipo_precedente == "prosa":
             # prosa spezzata a ~70 caratteri: si unisce con uno spazio
             uscita[-1] += " " + contenuto
         else:
             uscita.append(contenuto)
+            ingrediente.append(False)
             tipo_precedente = "prosa"
     # pulizia riga per riga; righe rimaste vuote scartate
-    return [r for r in (_pulisci_riga(r) for r in uscita) if r]
+    pulite = ((_pulisci_riga(r), e) for r, e in zip(uscita, ingrediente))
+    return [(r, e) for r, e in pulite if r]
 
 
-# righe grezze di una ricetta → testo pulito (paragrafi separati da una riga vuota)
-def _testo_pulito(righe: list[str]) -> str:
+# righe grezze di una ricetta → testo pulito (paragrafi separati da una riga vuota) e righe di ingrediente
+def _testo_pulito(righe: list[str]) -> tuple[str, tuple[str, ...]]:
     paragrafi: list[str] = []
+    ingredienti: list[str] = []
     corrente: list[str] = []
     for riga in _senza_illustrazioni(righe) + [""]:
         if riga.strip():
@@ -107,9 +115,10 @@ def _testo_pulito(righe: list[str]) -> str:
             # riga vuota: chiude il paragrafo in corso
             pulite = _paragrafo(corrente)
             if pulite:
-                paragrafi.append("\n".join(pulite))
+                paragrafi.append("\n".join(r for r, _ in pulite))
+                ingredienti.extend(r for r, e in pulite if e)
             corrente = []
-    return "\n\n".join(paragrafi)
+    return "\n\n".join(paragrafi), tuple(ingredienti)
 
 
 # solo il libro: tra "*** START OF" e "*** END OF" (intestazione e licenza Gutenberg scartate)
@@ -133,10 +142,10 @@ def analizza(testo: str) -> list[Ricetta]:
         nonlocal aperta, righe_aperte
         if aperta is not None:
             numero, titolo, cap = aperta
-            testo_pulito = _testo_pulito(righe_aperte)
+            testo_pulito, ingredienti = _testo_pulito(righe_aperte)
             if not testo_pulito:
                 raise ErroreRicerca(f"la ricetta n. {numero} «{titolo}» ha il testo vuoto")
-            ricette.append(Ricetta(numero, titolo, cap, testo_pulito))
+            ricette.append(Ricetta(numero, titolo, cap, testo_pulito, ingredienti))
         aperta, righe_aperte = None, []
 
     for riga in _righe_del_libro(testo):

@@ -108,3 +108,54 @@ def test_288_e_776(strategia):
     assert len(chunk) > 1
     assert all(len(c) <= 1000 for c in chunk)
     assert ricomponi(chunk) == normalizza(ricette[776].testo)
+
+
+# --- esercizio 2, A: contiene_dosi ---
+from app.chunking import ha_dosi
+
+INGREDIENTI = ("Farina, grammi 200.", "Burro, grammi 50.")
+
+
+def test_ha_dosi():
+    assert ha_dosi("Impastate.\n\nFarina, grammi 200.\nBurro, grammi 50.", INGREDIENTI)
+    # riga spezzata o unita a prosa con uno spazio: non conta
+    assert not ha_dosi("Impastate. Farina, grammi 200.\nBurro, grammi", INGREDIENTI)
+    assert not ha_dosi("Farina, grammi 200.", ())
+
+
+def test_versi_non_sono_dosi():
+    # chunk della ricetta con elenco che contiene solo versi ed etichette su righe proprie: niente dosi
+    versi = "Si chiamano così.\n\nPrimo verso,\nSecondo verso.\n\nPrima:"
+    assert not ha_dosi(versi, INGREDIENTI)
+    # stesso chunk con una riga di ingrediente intera: dosi
+    assert ha_dosi(versi + "\nFarina, grammi 200.", INGREDIENTI)
+
+
+def test_chunk_delle_ricette_con_dosi():
+    testo = "Farina, grammi 200.\nBurro, grammi 50.\n\n" + frasi(1, 30)
+    chunk = chunk_delle_ricette([Ricetta(1, "Pasta", "PASTICCERIA", testo, INGREDIENTI)], "paragrafi", 1000, 150)
+    assert len(chunk) > 1
+    assert chunk[0].contiene_dosi is True
+    assert chunk[-1].contiene_dosi is False
+
+
+@serve_il_file
+def test_417_chunk_con_dosi():
+    ricette = carica_corpus(FILE_VERO)
+    chunk = chunk_delle_ricette(ricette, "paragrafi", 1000, 150)
+    assert sum(c.contiene_dosi for c in chunk) == 417
+    # ogni ricetta con elenco ha almeno un chunk con il campo vero
+    con_dosi = {c.numero for c in chunk if c.contiene_dosi}
+    assert {r.numero for r in ricette if r.ingredienti} <= con_dosi
+
+
+# --- esercizio 2, B: titolo e capitolo davanti al chunk nel testo indicizzato ---
+# alias: un nome che inizia con "test" verrebbe raccolto da pytest come test
+from app.chunking import Chunk, testo_indicizzato as forma_indicizzata
+
+
+def test_testo_indicizzato():
+    c = Chunk(208, "Pollo alla cacciatora", "UMIDI", 0, 2, "Prendete un pollo giovine.")
+    assert forma_indicizzata(c) == "Ricetta: Pollo alla cacciatora\nCapitolo: Umidi\n\nPrendete un pollo giovine."
+    c = Chunk(1, "Brodo", "BRODI, GELATINA E SUGHI", 0, 1, "Il brodo.")
+    assert forma_indicizzata(c).splitlines()[1] == "Capitolo: Brodi, gelatina e sughi"

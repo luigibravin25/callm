@@ -5,7 +5,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.errori import ErroreRicerca
 from app.indice import Risultato
+
+# nome del file nei messaggi di errore
+DOMANDE_FILE = "domande.toml"
 
 
 # una domanda di valutazione: fonte attesa decisa prima (None = non è nel libro) e frase che il chunk
@@ -28,11 +32,47 @@ class RigaValutazione:
     score_risultati: list[float]  # score di tutti i risultati (per la domanda senza fonte)
 
 
+# una tabella [[domanda]] controllata: errore con il numero della domanda (1..n) invece di una traceback
+def _domanda(numero: int, dati: dict) -> Domanda:
+    testo = dati.get("testo")
+    if not isinstance(testo, str) or not testo.strip():
+        raise ErroreRicerca(f"{DOMANDE_FILE}: domanda {numero} senza testo")
+    fonte, indizio = dati.get("fonte"), dati.get("indizio")
+    # fonte e indizio vanno insieme (domanda con fonte attesa) oppure mancano entrambi (es. tiramisù)
+    if (fonte is None) != (indizio is None):
+        raise ErroreRicerca(f"{DOMANDE_FILE}: domanda {numero}: fonte e indizio vanno indicati insieme")
+    if fonte is not None and (not isinstance(fonte, int) or isinstance(fonte, bool)):
+        raise ErroreRicerca(f"{DOMANDE_FILE}: domanda {numero}: fonte deve essere il numero della ricetta")
+    if indizio is not None and (not isinstance(indizio, str) or not indizio):
+        raise ErroreRicerca(f"{DOMANDE_FILE}: domanda {numero}: indizio deve essere un testo non vuoto")
+    return Domanda(testo, fonte, indizio)
+
+
 def leggi_domande(percorso: Path) -> list[Domanda]:
     """Domande dal file TOML: tabelle [[domanda]] con testo, fonte e indizio (ultimi due facoltativi)."""
-    with percorso.open("rb") as file:
-        dati = tomllib.load(file)
-    return [Domanda(d["testo"], d.get("fonte"), d.get("indizio")) for d in dati["domanda"]]
+    try:
+        with percorso.open("rb") as file:
+            dati = tomllib.load(file)
+    except (OSError, tomllib.TOMLDecodeError) as errore:
+        raise ErroreRicerca(f"{DOMANDE_FILE}: file non leggibile ({errore})") from errore
+    domande = dati.get("domanda")
+    if not isinstance(domande, list) or not domande:
+        raise ErroreRicerca(f"{DOMANDE_FILE}: nessuna tabella [[domanda]]")
+    return [_domanda(i, d) for i, d in enumerate(domande, start=1)]
+
+
+def intestazione_valutazione(registrazione: dict, collezione: str, punti: int, k: int,
+                             solo_dosi: bool) -> dict[str, str]:
+    """Parametri della prova: chunking e testo indicizzato dalla collezione, non dalla configurazione."""
+    return {
+        "modello": str(registrazione.get("modello_embedding", "non registrato")),
+        "collezione": collezione,
+        "punti": str(punti),
+        "chunking": str(registrazione.get("chunking") or "non registrato"),
+        "testo indicizzato": str(registrazione.get("testo_indicizzato") or "non registrato"),
+        "k": str(k),
+        "filtro": "solo chunk con dosi" if solo_dosi else "nessuno",
+    }
 
 
 def valuta(domande: list[Domanda], cerca: Callable[[str], list[Risultato]]) -> list[RigaValutazione]:

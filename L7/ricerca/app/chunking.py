@@ -23,6 +23,7 @@ class Chunk:
     indice_chunk: int  # posizione nella ricetta, da 0
     totale_chunk: int  # chunk della stessa ricetta
     testo: str
+    contiene_dosi: bool = False  # il chunk contiene per intero almeno una riga di ingrediente
 
 
 # errore se strategia, dimensione o overlap non sono ammessi
@@ -122,11 +123,24 @@ def dividi(testo: str, strategia: str, dimensione: int, overlap: int) -> list[st
     return _per_caratteri(testo, dimensione, overlap)
 
 
+def ha_dosi(testo: str, ingredienti: tuple[str, ...]) -> bool:
+    """Vero se almeno una riga di ingrediente della ricetta è una riga intera del testo."""
+    # una riga spezzata a metà o unita a prosa con uno spazio non conta
+    righe = set(testo.split("\n"))
+    return any(riga in righe for riga in ingredienti)
+
+
+def testo_indicizzato(chunk: Chunk) -> str:
+    """Testo passato all'embedder: titolo e capitolo della ricetta davanti al chunk (il payload resta originale)."""
+    # capitolo con la sola iniziale maiuscola: una parola tutta maiuscola è lontana da come si scrive una domanda
+    return f"Ricetta: {chunk.titolo}\nCapitolo: {chunk.capitolo.capitalize()}\n\n{chunk.testo}"
+
+
 def chunk_delle_ricette(ricette: list[Ricetta], strategia: str, dimensione: int, overlap: int) -> list[Chunk]:
     """Chunk di tutte le ricette, nell'ordine: ricetta, poi posizione nella ricetta."""
     chunk: list[Chunk] = []
     for ricetta in ricette:
         testi = dividi(ricetta.testo, strategia, dimensione, overlap)
-        chunk.extend(Chunk(ricetta.numero, ricetta.titolo, ricetta.capitolo, i, len(testi), t)
-                     for i, t in enumerate(testi))
+        chunk.extend(Chunk(ricetta.numero, ricetta.titolo, ricetta.capitolo, i, len(testi), t,
+                           ha_dosi(t, ricetta.ingredienti)) for i, t in enumerate(testi))
     return chunk

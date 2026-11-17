@@ -9,6 +9,7 @@ import ingestion
 import valuta
 from app.config import carica_configurazione
 from app.corpus import analizza
+from app.errori import ErroreRicerca
 from app.indice import Risultato
 from tests.finti import EmbedderFinto
 from tests.test_corpus import TESTO_PROVA
@@ -51,9 +52,21 @@ def test_formatta_vuoto():
 
 
 def test_argomenti():
-    argomenti = cerca.leggi_argomenti(["gnocchi", "--capitolo", "minestre asciutte e di magro", "-k", "3"], 5)
+    argomenti = cerca.leggi_argomenti(["gnocchi", "--capitolo", "minestre asciutte e di magro", "-k", "3"])
     assert (argomenti.domanda, argomenti.capitolo, argomenti.k) == ("gnocchi", "minestre asciutte e di magro", 3)
-    assert cerca.leggi_argomenti(["gnocchi"], 5).k == 5
+    # senza -k il valore si decide dopo, con TOP_K della configurazione
+    assert cerca.leggi_argomenti(["gnocchi"]).k is None
+    assert valuta.leggi_argomenti([]).k is None
+
+
+@pytest.mark.parametrize("principale", [lambda: cerca.main(["--help"]), lambda: valuta.main(["--help"])])
+def test_help_senza_configurazione(monkeypatch, capsys, principale):
+    # l'aiuto non richiede variabili d'ambiente
+    monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
+    with pytest.raises(SystemExit) as uscita:
+        principale()
+    assert uscita.value.code == 0
+    assert "usage" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("principale", [ingestion.main, lambda: cerca.main(["brodo"]), lambda: valuta.main([])])
@@ -89,3 +102,32 @@ def test_log_senza_richieste_http():
     for nome in ("httpx", "httpx2"):
         # livello proprio del logger (quello ereditato dal root di pytest non conta)
         assert logging.getLogger(nome).level == logging.WARNING, nome
+
+
+def test_modello_controllato_prima_del_corpus(conf, monkeypatch, caplog):
+    # collezione costruita con "bge"; la configurazione indica un altro modello
+    client = QdrantClient(":memory:")
+    monkeypatch.setattr(ingestion, "carica_corpus", lambda percorso: analizza(TESTO_PROVA))
+    ingestion.esegui(conf, client, EmbedderFinto())
+
+    def corpus_vietato(percorso):
+        raise AssertionError("il corpus non va letto se il modello è diverso")
+
+    monkeypatch.setattr(ingestion, "carica_corpus", corpus_vietato)
+    monkeypatch.setenv("EMBEDDING_MODEL", "altro")
+    caplog.clear()
+    with pytest.raises(ErroreRicerca):
+        ingestion.esegui(carica_configurazione(), client, EmbedderFinto())
+    assert "corpus letto" not in caplog.text
+
+
+def test_formatta_con_dosi():
+    from dataclasses import replace
+    riga = cerca.formatta([replace(RISULTATO, contiene_dosi=True)]).splitlines()[0]
+    assert riga.endswith("· chunk 1 di 3 · con dosi")
+
+
+def test_argomenti_solo_dosi():
+    assert cerca.leggi_argomenti(["gnocchi", "--solo-dosi"]).solo_dosi is True
+    assert cerca.leggi_argomenti(["gnocchi"]).solo_dosi is False
+    assert valuta.leggi_argomenti(["--solo-dosi"]).solo_dosi is True

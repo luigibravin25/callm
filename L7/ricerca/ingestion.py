@@ -23,10 +23,13 @@ log = logging.getLogger("ricerca")
 def esegui(conf: Configurazione, client: QdrantClient, embedder: Embedder) -> EsitoIngestion:
     """Ingestion completa; il log finale riassume i conteggi."""
     inizio = time.perf_counter()
+    indice = Indice(client, conf.collezione, conf.modello_embedding, embedder)
+    # modello diverso da quello della collezione: errore prima ancora di leggere il corpus
+    indice.controlla_modello()
     ricette = carica_corpus(conf.corpus_file)
     chunk = chunk_delle_ricette(ricette, conf.strategia, conf.dimensione, conf.overlap)
     log.info("corpus letto: %d ricette, %d chunk; embedding con %s", len(ricette), len(chunk), conf.modello_embedding)
-    esito = Indice(client, conf.collezione, conf.modello_embedding, embedder).indicizza(chunk)
+    esito = indice.indicizza(chunk, chunking=f"{conf.strategia} {conf.dimensione}/{conf.overlap}")
     durata = time.perf_counter() - inizio
     log.info("ricette %d · chunk %d · punti scritti %d · orfani cancellati %d · punti nella collezione %d · "
              "modello %s · chunking %s %d/%d · durata %.1fs", len(ricette), esito.chunk, esito.scritti,

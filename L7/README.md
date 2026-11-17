@@ -2,8 +2,30 @@
 
 **Lezione 7:** indice vettoriale in Qdrant costruito dal ricettario di Artusi e ricerca dei passaggi
 pertinenti a una domanda, con la loro fonte. Tutto in `ricerca/`: istruzioni in
-[`ricerca/README.md`](ricerca/README.md) (dove scaricare il corpus, avvio di Qdrant, comandi). Il resto di
-questo file descrive la base ereditata dalla lezione 6, invariata.
+[`ricerca/README.md`](ricerca/README.md) (dove scaricare il corpus, avvio di Qdrant, comandi). La ricerca è
+**isolata**: non è collegata all'agente (arriva con la lezione 8) e si prova a parte.
+
+- **Esercizio 1:** pipeline di ingestion (790 ricette, chunking per paragrafi 1000/150, embedding
+  `text-embedding-bge-m3` da LM Studio, 1326 punti in Qdrant con ID stabili) e ricerca top-k con filtro per
+  capitolo.
+- **Esercizio 2:** A, campo `contiene_dosi` con filtro `--solo-dosi` e script `aggiorna_dosi.py` (campo aggiunto
+  senza ricalcolare gli embedding); B, titolo e capitolo davanti al chunk nel testo indicizzato.
+
+**Risultati:** [`docs/retrieval.md`](docs/retrieval.md) raccoglie le prove reali: i conteggi delle ingestion
+ripetute e la valutazione sulle sei domande con fonte attesa, alla partenza (esercizio 1), dopo A e dopo B
+(esercizio 2), con due query commentate.
+
+**Test** (senza LM Studio né Qdrant: embedder finto e Qdrant in memoria), da `L7\ricerca`:
+
+```powershell
+& ..\venv\Scripts\python.exe -m pytest -q
+```
+
+Per gli script, Python non legge `.env`: impostare il modello nella finestra di PowerShell,
+`$env:EMBEDDING_MODEL = "text-embedding-bge-m3"`.
+
+Il resto di questo file descrive la base ereditata dalla lezione 6, invariata: dove i comandi dicono «da
+`L6\`», in questa cartella si lanciano da `L7\`.
 
 ## Lezione 6 · Chat con agente LangGraph
 
