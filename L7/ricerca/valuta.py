@@ -14,7 +14,7 @@ from app.avvio import configura_log, esegui as esegui_script
 from app.config import TOP_K_MASSIMO, carica_configurazione
 from app.embedding import EmbedderLMStudio
 from app.indice import Indice
-from app.valutazione import leggi_domande, tabella_markdown, valuta
+from app.valutazione import intestazione_valutazione, leggi_domande, tabella_markdown, valuta
 
 # file delle domande, accanto a questo script
 DOMANDE = Path(__file__).resolve().parent / "valutazione" / "domande.toml"
@@ -33,10 +33,9 @@ def main(argv: list[str] | None = None) -> None:
         indice = Indice(QdrantClient(url=conf.qdrant_url), conf.collezione, conf.modello_embedding,
                         EmbedderLMStudio(conf.lm_base_url, conf.modello_embedding))
         righe = valuta(leggi_domande(DOMANDE), lambda domanda: indice.cerca(domanda, k=k))
-        intestazione = {"modello": conf.modello_embedding, "collezione": conf.collezione,
-                        "punti": str(indice.conta_punti()),
-                        "chunking": f"{conf.strategia} {conf.dimensione}/{conf.overlap}",
-                        "k": str(min(k, TOP_K_MASSIMO))}
+        # parametri dalla collezione: dicono come è stato costruito l'indice, non com'è la configurazione ora
+        intestazione = intestazione_valutazione(indice.registrazione(), conf.collezione, indice.conta_punti(),
+                                                min(k, TOP_K_MASSIMO), solo_dosi=False)
         print(tabella_markdown(righe, intestazione))
 
     esegui_script(principale)

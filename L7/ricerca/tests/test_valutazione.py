@@ -73,3 +73,47 @@ def test_tabella_riproducibile():
     domande = [Domanda("gnocchi?", 89, "grammi 400"), Domanda("tiramisù?", None, None)]
     prima = tabella_markdown(valuta(domande, cerca_con(risultati)), INTESTAZIONE)
     assert tabella_markdown(valuta(domande, cerca_con(risultati)), INTESTAZIONE) == prima
+
+
+# --- esercizio 2, minori 1 e 2: intestazione dalla collezione, domande controllate ---
+import pytest
+
+from app.errori import ErroreRicerca
+from app.valutazione import intestazione_valutazione
+
+
+def test_intestazione_dalla_collezione():
+    completo = {"modello_embedding": "bge", "dimensione": 1024, "chunking": "paragrafi 1000/150",
+                "testo_indicizzato": "testo"}
+    assert intestazione_valutazione(completo, "ricettario", 1326, 5, solo_dosi=False) == {
+        "modello": "bge", "collezione": "ricettario", "punti": "1326", "chunking": "paragrafi 1000/150",
+        "testo indicizzato": "testo", "k": "5", "filtro": "nessuno"}
+    # collezione dell'esercizio 1: solo modello e dimensione
+    vecchia = intestazione_valutazione({"modello_embedding": "bge", "dimensione": 1024}, "ricettario", 1326, 5,
+                                       solo_dosi=True)
+    assert (vecchia["chunking"], vecchia["testo indicizzato"]) == ("non registrato", "non registrato")
+    assert vecchia["filtro"] == "solo chunk con dosi"
+
+
+VALIDA = '[[domanda]]\ntesto = "uno?"\nfonte = 1\nindizio = "a"\n\n'
+
+
+@pytest.mark.parametrize("seconda", [
+    '[[domanda]]\nfonte = 2\nindizio = "b"\n',            # testo mancante
+    '[[domanda]]\ntesto = "  "\n',                         # testo vuoto
+    '[[domanda]]\ntesto = "due?"\nfonte = 2\n',            # fonte senza indizio
+    '[[domanda]]\ntesto = "due?"\nindizio = "b"\n',        # indizio senza fonte
+    '[[domanda]]\ntesto = "due?"\nfonte = "89"\nindizio = "b"\n',  # fonte non intera
+])
+def test_domande_non_valide(tmp_path, seconda):
+    percorso = tmp_path / "domande.toml"
+    percorso.write_text(VALIDA + seconda, encoding="utf-8")
+    with pytest.raises(ErroreRicerca, match="domanda 2"):
+        leggi_domande(percorso)
+
+
+def test_file_senza_domande(tmp_path):
+    percorso = tmp_path / "domande.toml"
+    percorso.write_text("# vuoto\n", encoding="utf-8")
+    with pytest.raises(ErroreRicerca):
+        leggi_domande(percorso)
