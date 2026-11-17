@@ -124,8 +124,11 @@ def test_ha_dosi():
 
 
 def test_versi_non_sono_dosi():
-    # versi su righe proprie in una ricetta senza elenco
-    assert not ha_dosi("Si chiamano così.\n\nPrimo verso,\nSecondo verso.\n\nPrima:", ())
+    # chunk della ricetta con elenco che contiene solo versi ed etichette su righe proprie: niente dosi
+    versi = "Si chiamano così.\n\nPrimo verso,\nSecondo verso.\n\nPrima:"
+    assert not ha_dosi(versi, INGREDIENTI)
+    # stesso chunk con una riga di ingrediente intera: dosi
+    assert ha_dosi(versi + "\nFarina, grammi 200.", INGREDIENTI)
 
 
 def test_chunk_delle_ricette_con_dosi():
