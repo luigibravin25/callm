@@ -6,6 +6,8 @@
 -r assistente-laboratorio/requirements.txt
 # back-end: API, database PostgreSQL, client verso l'agente
 -r backend/requirements.txt
+# ricerca semantica (lezione 7): Qdrant ed embedding
+-r ricerca/requirements.txt
 
 # test automatici (solo nel venv, non nelle immagini)
 pytest==9.1.1

@@ -1,0 +1,6 @@
+# ricerca semantica (lezione 7): indice vettoriale in Qdrant ed embedding da LM Studio
+# qdrant-client: unica dipendenza nuova (approvata con l'approccio 1 della specifica)
+qdrant-client==1.20.0
+# openai: importato direttamente per /v1/embeddings di LM Studio; stessa versione che arriva gia'
+# con langchain-openai (agente): se quella si aggiorna, si riallineano insieme
+openai==3.51.0
