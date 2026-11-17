@@ -200,3 +200,30 @@ def test_288_breve_776_lunga(ricette):
     assert len(ricette[288].testo) < 1000
     assert max(ricette.values(), key=lambda r: len(r.testo)).numero == 776
     assert len(ricette[776].testo) > 5000
+
+
+# --- esercizio 2, A: righe di ingrediente (rientrate di 2 spazi) di ogni ricetta ---
+
+def test_ingredienti_della_ricetta_con_elenco(prova):
+    # la continuazione a 4 spazi è unita alla sua riga, come nel testo
+    assert prova[1].ingredienti == ("Farina, grammi 200 e un po' di più.", "Burro, grammi 50.")
+
+
+def test_nessun_ingrediente_senza_elenco(prova):
+    # la ricetta 3 ha versi a 6 spazi: non sono ingredienti
+    assert prova[2].ingredienti == ()
+    assert prova[3].ingredienti == ()
+
+
+@serve_il_file
+def test_347_ricette_con_elenco(ricette):
+    assert sum(1 for r in ricette.values() if r.ingredienti) == 347
+    assert ricette[89].ingredienti and ricette[7].ingredienti
+    assert not ricette[208].ingredienti and not ricette[455].ingredienti
+
+
+@serve_il_file
+def test_ingredienti_sono_righe_del_testo(ricette):
+    for r in ricette.values():
+        righe = r.testo.split("\n")
+        assert all(i in righe for i in r.ingredienti), r.numero
