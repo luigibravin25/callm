@@ -144,3 +144,15 @@ def test_417_chunk_con_dosi():
     # ogni ricetta con elenco ha almeno un chunk con il campo vero
     con_dosi = {c.numero for c in chunk if c.contiene_dosi}
     assert {r.numero for r in ricette if r.ingredienti} <= con_dosi
+
+
+# --- esercizio 2, B: titolo e capitolo davanti al chunk nel testo indicizzato ---
+# alias: un nome che inizia con "test" verrebbe raccolto da pytest come test
+from app.chunking import Chunk, testo_indicizzato as forma_indicizzata
+
+
+def test_testo_indicizzato():
+    c = Chunk(208, "Pollo alla cacciatora", "UMIDI", 0, 2, "Prendete un pollo giovine.")
+    assert forma_indicizzata(c) == "Ricetta: Pollo alla cacciatora\nCapitolo: Umidi\n\nPrendete un pollo giovine."
+    c = Chunk(1, "Brodo", "BRODI, GELATINA E SUGHI", 0, 1, "Il brodo.")
+    assert forma_indicizzata(c).splitlines()[1] == "Capitolo: Brodi, gelatina e sughi"

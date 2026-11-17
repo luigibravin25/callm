@@ -128,7 +128,8 @@ def test_conta_punti(client):
 def test_metadata_con_chunking_e_testo_indicizzato(client):
     indice(client).indicizza(chunk(), chunking="paragrafi 1000/150")
     assert client.get_collection("ricettario").config.metadata == {
-        "modello_embedding": "bge", "dimensione": 8, "chunking": "paragrafi 1000/150", "testo_indicizzato": "testo"}
+        "modello_embedding": "bge", "dimensione": 8, "chunking": "paragrafi 1000/150",
+        "testo_indicizzato": "titolo e capitolo + testo"}
 
 
 def test_metadata_invariato_se_interrotta(client):
@@ -160,3 +161,43 @@ def test_indice_ricreato_su_collezione_esistente(client):
     Indice(spia, "ricettario", "bge", EmbedderFinto()).indicizza(chunk())
     # anche su una collezione che esiste già l'indice sul campo filtrato viene (ri)creato
     assert "capitolo" in spia.indici
+
+
+# --- esercizio 2, B: testo indicizzato con titolo e capitolo, payload originale, collezione non ricreata ---
+# alias: un nome che inizia con "test" verrebbe raccolto da pytest come test
+from app.chunking import testo_indicizzato as forma_indicizzata
+
+
+def test_testo_passato_all_embedder(client):
+    finto = EmbedderFinto()
+    lista = chunk()
+    indice(client, embedder=finto).indicizza(lista, lotto=5)
+    assert finto.chiamate[0] == [forma_indicizzata(c) for c in lista[:5]]
+    assert finto.chiamate[0][0].startswith("Ricetta: Brodo\nCapitolo: Brodi, gelatina e sughi\n\n")
+
+
+def test_payload_testo_originale(client):
+    lista = chunk()
+    indice(client).indicizza(lista)
+    punto = client.retrieve("ricettario", [id_punto(lista[0].numero, 0)], with_payload=True)[0]
+    assert punto.payload["testo"] == lista[0].testo
+
+
+# client che conta le chiamate a create_collection
+class ClientCheContaLeCreazioni(ClientCheContaGliIndici):
+    def __init__(self, client):
+        super().__init__(client)
+        self.creazioni = 0
+
+    def create_collection(self, *args, **kwargs):
+        self.creazioni += 1
+        return self._client.create_collection(*args, **kwargs)
+
+
+def test_reingestion_senza_ricreare(client):
+    prima = indice(client).indicizza(chunk(), chunking="paragrafi 1000/150")
+    spia = ClientCheContaLeCreazioni(client)
+    dopo = Indice(spia, "ricettario", "bge", EmbedderFinto()).indicizza(chunk(), chunking="paragrafi 1000/150")
+    assert spia.creazioni == 0
+    assert dopo.punti == prima.punti and dopo.orfani == 0
+    assert client.get_collection("ricettario").config.metadata["testo_indicizzato"] == "titolo e capitolo + testo"

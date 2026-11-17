@@ -13,7 +13,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import (Distance, FieldCondition, Filter, IsEmptyCondition, MatchValue, PayloadField,
                                   PayloadSchemaType, PointIdsList, PointStruct, VectorParams)
 
-from app.chunking import Chunk, ha_dosi
+from app.chunking import Chunk, ha_dosi, testo_indicizzato
 from app.config import TOP_K_MASSIMO
 from app.corpus import CAPITOLI
 from app.embedding import Embedder
@@ -22,7 +22,7 @@ from app.errori import ErroreRicerca
 log = logging.getLogger("ricerca")
 
 # forma del testo passato all'embedder, registrata nel metadata della collezione
-TESTO_INDICIZZATO = "testo"
+TESTO_INDICIZZATO = "titolo e capitolo + testo"
 # campi del payload filtrati dalla ricerca, con il tipo del loro indice
 CAMPI_INDICIZZATI = {"capitolo": PayloadSchemaType.KEYWORD, "contiene_dosi": PayloadSchemaType.BOOL}
 
@@ -129,7 +129,8 @@ class Indice:
         prodotti: set[str] = set()
         for inizio in range(0, len(chunk), lotto):
             parte = chunk[inizio:inizio + lotto]
-            vettori = self.embedder.incorpora([c.testo for c in parte])
+            # all'embedder titolo e capitolo davanti al chunk; nel payload resta il testo originale
+            vettori = self.embedder.incorpora([testo_indicizzato(c) for c in parte])
             if not self.esiste():
                 self._crea_collezione(len(vettori[0]))
             punti = [PointStruct(id=id_punto(c.numero, c.indice_chunk), vector=v, payload={

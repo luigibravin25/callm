@@ -130,6 +130,12 @@ def ha_dosi(testo: str, ingredienti: tuple[str, ...]) -> bool:
     return any(riga in righe for riga in ingredienti)
 
 
+def testo_indicizzato(chunk: Chunk) -> str:
+    """Testo passato all'embedder: titolo e capitolo della ricetta davanti al chunk (il payload resta originale)."""
+    # capitolo con la sola iniziale maiuscola: una parola tutta maiuscola è lontana da come si scrive una domanda
+    return f"Ricetta: {chunk.titolo}\nCapitolo: {chunk.capitolo.capitalize()}\n\n{chunk.testo}"
+
+
 def chunk_delle_ricette(ricette: list[Ricetta], strategia: str, dimensione: int, overlap: int) -> list[Chunk]:
     """Chunk di tutte le ricette, nell'ordine: ricetta, poi posizione nella ricetta."""
     chunk: list[Chunk] = []
