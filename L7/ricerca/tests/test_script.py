@@ -87,4 +87,5 @@ def test_log_senza_richieste_http():
 
     configura_log()
     for nome in ("httpx", "httpx2"):
-        assert logging.getLogger(nome).getEffectiveLevel() >= logging.WARNING, nome
+        # livello proprio del logger (quello ereditato dal root di pytest non conta)
+        assert logging.getLogger(nome).level == logging.WARNING, nome
