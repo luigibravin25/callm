@@ -108,3 +108,39 @@ def test_288_e_776(strategia):
     assert len(chunk) > 1
     assert all(len(c) <= 1000 for c in chunk)
     assert ricomponi(chunk) == normalizza(ricette[776].testo)
+
+
+# --- esercizio 2, A: contiene_dosi ---
+from app.chunking import ha_dosi
+
+INGREDIENTI = ("Farina, grammi 200.", "Burro, grammi 50.")
+
+
+def test_ha_dosi():
+    assert ha_dosi("Impastate.\n\nFarina, grammi 200.\nBurro, grammi 50.", INGREDIENTI)
+    # riga spezzata o unita a prosa con uno spazio: non conta
+    assert not ha_dosi("Impastate. Farina, grammi 200.\nBurro, grammi", INGREDIENTI)
+    assert not ha_dosi("Farina, grammi 200.", ())
+
+
+def test_versi_non_sono_dosi():
+    # versi su righe proprie in una ricetta senza elenco
+    assert not ha_dosi("Si chiamano così.\n\nPrimo verso,\nSecondo verso.\n\nPrima:", ())
+
+
+def test_chunk_delle_ricette_con_dosi():
+    testo = "Farina, grammi 200.\nBurro, grammi 50.\n\n" + frasi(1, 30)
+    chunk = chunk_delle_ricette([Ricetta(1, "Pasta", "PASTICCERIA", testo, INGREDIENTI)], "paragrafi", 1000, 150)
+    assert len(chunk) > 1
+    assert chunk[0].contiene_dosi is True
+    assert chunk[-1].contiene_dosi is False
+
+
+@serve_il_file
+def test_417_chunk_con_dosi():
+    ricette = carica_corpus(FILE_VERO)
+    chunk = chunk_delle_ricette(ricette, "paragrafi", 1000, 150)
+    assert sum(c.contiene_dosi for c in chunk) == 417
+    # ogni ricetta con elenco ha almeno un chunk con il campo vero
+    con_dosi = {c.numero for c in chunk if c.contiene_dosi}
+    assert {r.numero for r in ricette if r.ingredienti} <= con_dosi
