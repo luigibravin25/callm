@@ -79,3 +79,12 @@ def test_qdrant_spento_messaggio_chiaro(monkeypatch, caplog):
         esegui(principale)
     assert uscita.value.code == 1
     assert "QDRANT_URL=http://127.0.0.1:6333" in caplog.text and "docker compose up -d qdrant" in caplog.text
+
+
+def test_log_senza_richieste_http():
+    # le richieste HTTP verso LM Studio e Qdrant non riempiono il log degli script
+    from app.avvio import configura_log
+
+    configura_log()
+    for nome in ("httpx", "httpx2"):
+        assert logging.getLogger(nome).getEffectiveLevel() >= logging.WARNING, nome

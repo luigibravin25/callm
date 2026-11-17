@@ -22,8 +22,9 @@ def configura_log() -> None:
             riconfigura(errors="backslashreplace")
     # log su stderr come [ricerca] messaggio
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s", stream=sys.stderr)
-    # le richieste HTTP di httpx (LM Studio, Qdrant) restano fuori dal log
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    # le richieste HTTP (httpx di Qdrant, httpx2 del client openai verso LM Studio) restano fuori dal log
+    for nome in ("httpx", "httpx2"):
+        logging.getLogger(nome).setLevel(logging.WARNING)
 
 
 def esegui(principale: Callable[[], None]) -> None:
