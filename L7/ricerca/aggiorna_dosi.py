@@ -22,9 +22,12 @@ log = logging.getLogger("ricerca")
 def esegui(conf: Configurazione, client: QdrantClient) -> EsitoDosi:
     """Aggiornamento del campo su tutti i punti; il log finale riassume i conteggi."""
     inizio = time.perf_counter()
-    ingredienti = {r.numero: r.ingredienti for r in carica_corpus(conf.corpus_file)}
     # nessun embedder: questo script non calcola embedding
-    esito = Indice(client, conf.collezione, conf.modello_embedding, None).aggiorna_dosi(ingredienti)
+    indice = Indice(client, conf.collezione, conf.modello_embedding, None)
+    # prima la collezione, poi il corpus: senza collezione il messaggio giusto è «eseguire prima l'ingestion»
+    indice.controlla_esistenza()
+    ingredienti = {r.numero: r.ingredienti for r in carica_corpus(conf.corpus_file)}
+    esito = indice.aggiorna_dosi(ingredienti)
     durata = time.perf_counter() - inizio
     log.info("punti aggiornati %d · con dosi %d · senza dosi %d · embedding ricalcolati 0 · durata %.1fs",
              esito.punti, esito.con_dosi, esito.punti - esito.con_dosi, durata)

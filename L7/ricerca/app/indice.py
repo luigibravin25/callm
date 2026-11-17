@@ -91,10 +91,12 @@ class Indice:
         self.client.create_collection(
             self.collezione, vectors_config=VectorParams(size=dimensione, distance=Distance.COSINE),
             metadata={"modello_embedding": self.modello, "dimensione": dimensione})
+        # indici subito: anche una prima ingestion interrotta lascia la collezione con i suoi indici
+        self._crea_indici()
         log.info("creata la collezione %s (modello %s, dimensione %d)", self.collezione, self.modello, dimensione)
 
-    # indici sui campi filtrati: si creano a ogni ingestion (senza effetto se ci sono già), così non si
-    # perdono se un'ingestion si interrompe subito dopo aver creato la collezione
+    # indici sui campi filtrati: si creano con la collezione e di nuovo a ogni ingestion completa e in
+    # aggiorna_dosi (senza effetto se ci sono già), così anche una collezione di prima ha tutti gli indici
     def _crea_indici(self) -> None:
         for campo, tipo in CAMPI_INDICIZZATI.items():
             self.client.create_payload_index(self.collezione, field_name=campo, field_schema=tipo)
@@ -107,6 +109,11 @@ class Indice:
 
     def esiste(self) -> bool:
         return self.client.collection_exists(self.collezione)
+
+    def controlla_esistenza(self) -> None:
+        """Errore comprensibile se la collezione non c'è ancora."""
+        if not self.esiste():
+            raise ErroreRicerca(f"la collezione {self.collezione} non esiste: eseguire prima l'ingestion")
 
     def controlla_modello(self) -> None:
         """Errore se la collezione esiste ed è stata costruita con un altro modello (o senza registrazione)."""
@@ -122,7 +129,8 @@ class Indice:
 
     # --- ingestion ---
 
-    def indicizza(self, chunk: list[Chunk], chunking: str = "", lotto: int = 64) -> EsitoIngestion:
+    # chunking obbligatorio (solo per nome): senza, il metadata riceverebbe un valore vuoto
+    def indicizza(self, chunk: list[Chunk], *, chunking: str, lotto: int = 64) -> EsitoIngestion:
         """Scrive un punto per chunk (upsert); a scrittura completa cancella i punti non prodotti (orfani)."""
         # il cambio di modello si blocca prima di calcolare embedding
         self.controlla_modello()
@@ -167,8 +175,7 @@ class Indice:
 
     def aggiorna_dosi(self, ingredienti: dict[int, tuple[str, ...]], lotto: int = 256) -> EsitoDosi:
         """Scrive contiene_dosi su tutti i punti dal testo del loro payload; nessun embedding, nessun chunking."""
-        if not self.esiste():
-            raise ErroreRicerca(f"la collezione {self.collezione} non esiste: eseguire prima l'ingestion")
+        self.controlla_esistenza()
         # prima si calcola tutto: con un numero sconosciuto non si scrive niente
         valori: dict[bool, list] = {True: [], False: []}
         prossimo = None
@@ -201,8 +208,7 @@ class Indice:
         if k < 1:
             raise ErroreRicerca(f"k={k} non valido (ammesso: intero >= 1)")
         nome_capitolo = _capitolo_valido(capitolo) if capitolo is not None else None
-        if not self.esiste():
-            raise ErroreRicerca(f"la collezione {self.collezione} non esiste: eseguire prima l'ingestion")
+        self.controlla_esistenza()
         # stesso modello dell'indice, controllato prima di calcolare l'embedding della domanda
         self.controlla_modello()
         if solo_dosi:

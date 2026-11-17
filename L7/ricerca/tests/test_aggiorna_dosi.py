@@ -36,7 +36,7 @@ def scritta():
     embedder = EmbedderFinto()
     client = QdrantClient(":memory:")
     chunk = chunk_delle_ricette(ricette(), "paragrafi", 1000, 150)
-    Indice(client, "ricettario", "bge", embedder).indicizza(chunk)
+    Indice(client, "ricettario", "bge", embedder).indicizza(chunk, chunking="paragrafi 1000/150")
     client.delete_payload("ricettario", keys=["contiene_dosi"],
                           points=[id_punto(c.numero, c.indice_chunk) for c in chunk])
     return client, embedder, chunk
@@ -102,3 +102,15 @@ def test_log_dello_script(scritta, monkeypatch, caplog):
     con = sum(c.contiene_dosi for c in chunk)
     assert (f"punti aggiornati {len(chunk)} · con dosi {con} · senza dosi {len(chunk) - con} · "
             "embedding ricalcolati 0") in caplog.text
+
+
+def test_collezione_assente_prima_del_corpus(monkeypatch):
+    # senza collezione l'errore dice di fare l'ingestion, senza leggere il corpus (spec §5.3, passo 1)
+    monkeypatch.setenv("EMBEDDING_MODEL", "bge")
+
+    def corpus_vietato(percorso):
+        raise AssertionError("il corpus non va letto se la collezione non esiste")
+
+    monkeypatch.setattr(aggiorna_dosi, "carica_corpus", corpus_vietato)
+    with pytest.raises(ErroreRicerca, match="ingestion"):
+        aggiorna_dosi.esegui(carica_configurazione(), QdrantClient(":memory:"))

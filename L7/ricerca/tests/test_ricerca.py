@@ -32,7 +32,7 @@ def embedder():
 @pytest.fixture
 def indice(embedder):
     ix = Indice(QdrantClient(":memory:"), "ricettario", "bge", embedder)
-    ix.indicizza(chunk_delle_ricette(RICETTE, "paragrafi", 1000, 150))
+    ix.indicizza(chunk_delle_ricette(RICETTE, "paragrafi", 1000, 150), chunking="paragrafi 1000/150")
     return ix
 
 
@@ -120,7 +120,7 @@ def ricette_con_dosi():
 @pytest.fixture
 def indice_dosi():
     ix = Indice(QdrantClient(":memory:"), "ricettario", "bge", EmbedderFinto())
-    ix.indicizza(chunk_delle_ricette(ricette_con_dosi(), "paragrafi", 1000, 150))
+    ix.indicizza(chunk_delle_ricette(ricette_con_dosi(), "paragrafi", 1000, 150), chunking="paragrafi 1000/150")
     return ix
 
 
