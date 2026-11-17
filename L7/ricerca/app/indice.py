@@ -10,9 +10,12 @@ from dataclasses import dataclass
 
 # client di Qdrant (server in Docker oppure in memoria nei test)
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PayloadSchemaType, PointIdsList, PointStruct, VectorParams
+from qdrant_client.models import (Distance, FieldCondition, Filter, MatchValue, PayloadSchemaType, PointIdsList,
+                                  PointStruct, VectorParams)
 
 from app.chunking import Chunk
+from app.config import TOP_K_MASSIMO
+from app.corpus import CAPITOLI
 from app.embedding import Embedder
 from app.errori import ErroreRicerca
 
@@ -34,6 +37,27 @@ class EsitoIngestion:
     scritti: int  # punti scritti con upsert
     orfani: int  # punti cancellati perché non prodotti in questo giro
     punti: int  # punti nella collezione alla fine
+
+
+# un risultato della ricerca con la sua fonte: ricetta, capitolo, posizione del chunk
+@dataclass(frozen=True)
+class Risultato:
+    posizione: int  # 1..k
+    score: float  # similarità coseno
+    numero: int
+    titolo: str
+    capitolo: str
+    indice_chunk: int
+    totale_chunk: int
+    testo: str  # testo originale del chunk
+
+
+# capitolo scritto dall'utente → nome esatto dell'elenco (senza maiuscole/minuscole e spazi ai bordi)
+def _capitolo_valido(capitolo: str) -> str:
+    cercato = capitolo.strip().upper()
+    if cercato not in CAPITOLI:
+        raise ErroreRicerca(f"capitolo {capitolo!r} sconosciuto; capitoli validi: {', '.join(CAPITOLI)}")
+    return cercato
 
 
 class Indice:
@@ -110,6 +134,34 @@ class Indice:
             ids.extend(str(p.id) for p in punti)
             if prossimo is None:
                 return ids
+
+    # --- ricerca ---
+
+    def cerca(self, domanda: str, capitolo: str | None = None, k: int = 5) -> list[Risultato]:
+        """Primi k chunk più vicini alla domanda (al massimo TOP_K_MASSIMO), filtrabili per capitolo."""
+        if not domanda.strip():
+            raise ErroreRicerca("la domanda è vuota")
+        if k < 1:
+            raise ErroreRicerca(f"k={k} non valido (ammesso: intero >= 1)")
+        nome_capitolo = _capitolo_valido(capitolo) if capitolo is not None else None
+        if not self.esiste():
+            raise ErroreRicerca(f"la collezione {self.collezione} non esiste: eseguire prima l'ingestion")
+        # stesso modello dell'indice, controllato prima di calcolare l'embedding della domanda
+        self.controlla_modello()
+        if k > TOP_K_MASSIMO:
+            log.warning("k=%d oltre il massimo: ridotto a %d", k, TOP_K_MASSIMO)
+            k = TOP_K_MASSIMO
+        # stessa funzione di embedding dei chunk, sul testo esatto della domanda
+        vettore = self.embedder.incorpora([domanda])[0]
+        # filtro applicato da Qdrant durante la ricerca, non dopo
+        filtro = None if nome_capitolo is None else Filter(
+            must=[FieldCondition(key="capitolo", match=MatchValue(value=nome_capitolo))])
+        punti = self.client.query_points(self.collezione, query=vettore, query_filter=filtro, limit=k,
+                                         with_payload=True).points
+        return [Risultato(posizione=i, score=p.score, numero=p.payload["numero"], titolo=p.payload["titolo"],
+                          capitolo=p.payload["capitolo"], indice_chunk=p.payload["indice_chunk"],
+                          totale_chunk=p.payload["totale_chunk"], testo=p.payload["testo"])
+                for i, p in enumerate(punti, start=1)]
 
     def conta_punti(self) -> int:
         return self.client.count(self.collezione, exact=True).count
