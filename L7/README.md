@@ -1,4 +1,11 @@
-# Lezione 6 · Chat con agente LangGraph
+# Lezione 7 · Ricerca semantica sul ricettario (su base della lezione 6)
+
+**Lezione 7:** indice vettoriale in Qdrant costruito dal ricettario di Artusi e ricerca dei passaggi
+pertinenti a una domanda, con la loro fonte. Tutto in `ricerca/`: istruzioni in
+[`ricerca/README.md`](ricerca/README.md) (dove scaricare il corpus, avvio di Qdrant, comandi). Il resto di
+questo file descrive la base ereditata dalla lezione 6, invariata.
+
+## Lezione 6 · Chat con agente LangGraph
 
 Applicazione di chat con agente basata su LangGraph, costruita per step. Stato attuale: **step 7**
 (back-end con chat salvate in PostgreSQL, agente come servizio HTTP con FastAPI e CLI client, prompt MCP, preferenze via resource MCP,
