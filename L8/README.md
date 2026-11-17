@@ -1,71 +1,80 @@
-# Lezione 7 · Ricerca semantica sul ricettario (su base della lezione 6)
+# Lezione 8 · Il retrieval come strumento dell'agente (su base delle lezioni 6 e 7)
 
-**Lezione 7:** indice vettoriale in Qdrant costruito dal ricettario di Artusi e ricerca dei passaggi
-pertinenti a una domanda, con la loro fonte. Tutto in `ricerca/`: istruzioni complete in
-[`ricerca/README.md`](ricerca/README.md) (dove scaricare il corpus, configurazione, comandi). La ricerca è
-**isolata**: non è collegata all'agente (arriva con la lezione 8) e si prova a parte.
+Questa cartella contiene il lavoro delle lezioni 6 e 7, ripreso così com'era, e quello della lezione 8, che
+collega la ricerca semantica all'agente. Ogni lezione ha la sua cartella (`L6/`, `L7/`, `L8/`): i comandi di
+questo file si lanciano da `L8\`.
 
-- **Esercizio 1:** pipeline di ingestion (790 ricette, chunking per paragrafi 1000/150, embedding
-  `text-embedding-bge-m3` da LM Studio, 1326 punti in Qdrant con ID stabili) e ricerca top-k con filtro per
-  capitolo.
-- **Esercizio 2:** A, campo `contiene_dosi` con filtro `--solo-dosi` e script `aggiorna_dosi.py` (campo aggiunto
-  senza ricalcolare gli embedding); B, titolo e capitolo davanti al chunk nel testo indicizzato.
+## Lezione 6 · Chat con agente LangGraph
 
-**Risultati:** [`docs/retrieval.md`](docs/retrieval.md) raccoglie le prove reali: i conteggi delle ingestion
-ripetute e la valutazione sulle sei domande con fonte attesa, alla partenza (esercizio 1), dopo A e dopo B
-(esercizio 2), con due query commentate.
+Applicazione di chat: agente LangGraph (router, revisore, riassunto, strumenti via server MCP
+`mcp_assistente`, per esempio l'orologio `get_current_time`) esposto come servizio HTTP; back-end FastAPI con le
+chat in PostgreSQL; front-end React; tutto in Docker Compose (`docker compose up -d --build` →
+http://127.0.0.1:8080). Cartelle: `assistente-laboratorio/`, `backend/`, `frontend/`, `tests_compose/`.
+Descrizione completa, configurazione e comandi: [`../L6/README.md`](../L6/README.md).
 
-## Test automatici
+## Lezione 7 · Ricerca semantica sul ricettario
 
-Senza LM Studio né Qdrant (embedder finto e Qdrant in memoria), da `L7\ricerca`:
+Indice vettoriale in Qdrant costruito dal ricettario di Artusi (790 ricette, 1326 chunk) e ricerca top-k con la
+fonte di ogni risultato (ricetta, capitolo, posizione del chunk). Esercizio 1: ingestion ripetibile con ID stabili
+e filtro per capitolo. Esercizio 2: campo `contiene_dosi` con filtro `--solo-dosi`, titolo e capitolo nel testo
+indicizzato. Cartella: `ricerca/`, istruzioni in [`ricerca/README.md`](ricerca/README.md); risultati della
+valutazione in [`../L7/docs/retrieval.md`](../L7/docs/retrieval.md).
 
-```powershell
-& ..\venv\Scripts\python.exe -m pytest -q
-```
+## Lezione 8 · RAG base e avanzato via MCP (in corso)
 
-## Prova con le domande (servizi accesi)
+La ricerca della lezione 7 diventa uno **strumento MCP** che l'agente usa quando serve, con risposte che citano
+passaggi verificabili. Quattro esercizi, ognuno sul suo ramo:
 
-La valutazione cerca le sei domande di [`ricerca/valutazione/domande.toml`](ricerca/valutazione/domande.toml)
-(gnocchi con 400 g di patate, cappelletti per un mangiatore moderato, vino del pollo alla cacciatora, gnocchi che
-si sciolgono, cacciucco dell'Adriatico, tiramisù) e per ognuna dice in che posizione esce la ricetta attesa, con
-quale score e se il chunk trovato contiene davvero l'informazione.
+| Esercizio | Cosa aggiunge | Stato |
+|---|---|---|
+| 1 · server MCP di ricerca | server FastMCP con il tool `search_documents` (query, `top_k` limitato, filtro), risultato con id citabile, errori del tool, un log per chiamata | da implementare |
+| 2 · aggancio all'agente | il server si aggiunge ai server MCP dell'agente; istruzioni per citare gli id e astenersi; controllo delle citazioni a fine turno | da implementare |
+| 3 · riscrittura e reranking | riscrittura/scomposizione della domanda con fusione RRF, reranking listwise, attivabili dalla configurazione; confronto di quattro configurazioni | da implementare |
+| 4 · soglie sullo score | due soglie dalla configurazione: passaggi affidabili, di affidabilità media, esclusi; calibrazione sugli score di bge-m3 | da implementare |
 
-1. Avviare Qdrant, da `L7\` (serve il `.env` con le `POSTGRES_*`, perché Compose legge tutto il file):
+Risultati, tracce e confronti della lezione 8: `docs/rag-agente.md` (si compila a ogni esercizio concluso).
+
+Modelli (LM Studio sull'host, dalla configurazione): chat `google/gemma-4-e2b`; embedding
+`text-embedding-bge-m3` (il modello `gpustack/bge-m3-GGUF`, vettori da 1024 valori).
+
+## Avvio dei servizi per le prove reali
+
+1. Qdrant di questa lezione (serve il `.env`, copiato da `.env.example`, con le `POSTGRES_*`):
 
    ```powershell
    docker compose up -d qdrant
    ```
 
-2. Avviare LM Studio e caricare il modello di embedding `text-embedding-bge-m3`.
-3. Nella stessa finestra di PowerShell in cui si lanciano gli script, impostare il modello (Python non legge
-   `.env`):
+2. LM Studio con `google/gemma-4-e2b` e `text-embedding-bge-m3` caricati.
+3. Nella finestra di PowerShell in cui si lanciano gli script (Python non legge `.env`):
 
    ```powershell
    $env:EMBEDDING_MODEL = "text-embedding-bge-m3"
    ```
 
-4. Da `L7\ricerca`: se la collezione non c'è ancora, costruirla (circa 5 minuti), poi valutare:
+4. Collezione: se manca, da `L8\ricerca` `& ..\venv\Scripts\python.exe ingestion.py` (circa 5 minuti).
 
-   ```powershell
-   & ..\venv\Scripts\python.exe ingestion.py
-   & ..\venv\Scripts\python.exe valuta.py
-   & ..\venv\Scripts\python.exe valuta.py --solo-dosi
-   ```
+## Test
 
-   `valuta.py` stampa una tabella Markdown: per ogni domanda la fonte attesa, la posizione della fonte tra i
-   primi k (o «assente»), il suo score e se il chunk contiene l'informazione; per il tiramisù, che non è nel
-   libro, gli score dei risultati. Le tabelle registrate sono in `docs/retrieval.md`.
+I test automatici non hanno bisogno di LM Studio né di Qdrant (embedder, modello e Qdrant finti o in memoria).
+Ambiente: `& .\venv\Scripts\python.exe -m pip install -r requirements.txt` (venv di `L8`).
 
-5. Una domanda qualsiasi, con la fonte di ogni risultato:
+| Suite | Comando (PowerShell) | Esito all'inizio della lezione 8 (2026-11-17) |
+|---|---|---|
+| Ricerca (lezione 7) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 126 passati |
+| Agente (lezioni 5-6) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 345 passati, 12 saltati |
+| Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 30 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
 
-   ```powershell
-   & ..\venv\Scripts\python.exe cerca.py "Che vino si usa nel pollo alla cacciatora?"
-   & ..\venv\Scripts\python.exe cerca.py "dosi per gli gnocchi" --capitolo "minestre asciutte e di magro" --solo-dosi
-   ```
+Prove reali della lezione 7 (servizi accesi), da `L8\ricerca`:
 
-## Base ereditata dalla lezione 6
+```powershell
+& ..\venv\Scripts\python.exe valuta.py                     # sei domande con fonte attesa, tabella Markdown
+& ..\venv\Scripts\python.exe valuta.py --solo-dosi
+& ..\venv\Scripts\python.exe cerca.py "Che vino si usa nel pollo alla cacciatora?"
+```
 
-Questa cartella contiene anche l'applicazione di chat con agente LangGraph della lezione 6
-(`assistente-laboratorio/`, `backend/`, `frontend/`, `compose.yaml` con i suoi quattro servizi, `tests_compose/`),
-invariata. Descrizione completa, configurazione e comandi in [`../L6/README.md`](../L6/README.md): i comandi che
-lì partono da `L6\`, qui si lanciano da `L7\`. Il servizio `qdrant` di `compose.yaml` è della lezione 7.
+I test e le prove della lezione 8 si aggiungono a questa sezione a ogni esercizio concluso.
+
+## Fuori da Git
+`.env`, `venv/`, il corpus `Ricettario/`, `CLAUDE.md`, i file di handoff e `docs/` (specifiche, piani, consegne,
+evidenze) restano sul disco; di `docs/` va in Git solo `docs/rag-agente.md`.
