@@ -6,6 +6,7 @@ from qdrant_client import QdrantClient
 
 import cerca
 import ingestion
+import valuta
 from app.config import carica_configurazione
 from app.corpus import analizza
 from app.indice import Risultato
@@ -55,7 +56,7 @@ def test_argomenti():
     assert cerca.leggi_argomenti(["gnocchi"], 5).k == 5
 
 
-@pytest.mark.parametrize("principale", [ingestion.main, lambda: cerca.main(["brodo"])])
+@pytest.mark.parametrize("principale", [ingestion.main, lambda: cerca.main(["brodo"]), lambda: valuta.main([])])
 def test_main_errore_esce_con_1(monkeypatch, caplog, principale):
     monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
     with pytest.raises(SystemExit) as uscita:
