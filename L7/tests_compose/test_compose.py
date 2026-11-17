@@ -45,19 +45,26 @@ def servizi() -> dict:
     return config()["services"]
 
 
-def test_quattro_servizi():
+def test_cinque_servizi():
     s = servizi()
-    assert set(s) == {"frontend", "backend", "agente", "database"}
+    assert set(s) == {"frontend", "backend", "agente", "database", "qdrant"}
     assert s["database"]["image"] == "postgres:18"
+    # Qdrant della lezione 7: immagine fissata, indipendente dagli altri servizi
+    assert s["qdrant"]["image"] == "qdrant/qdrant:v1.20.2"
+    assert "depends_on" not in s["qdrant"]
     for nome in ("frontend", "backend", "agente"):
         assert "build" in s[nome], nome
 
 
-def test_una_sola_porta_locale():
+def test_porte_solo_frontend_e_qdrant():
     s = servizi()
     porte = s["frontend"]["ports"]
     assert len(porte) == 1
     assert (porte[0]["host_ip"], str(porte[0]["published"]), porte[0]["target"]) == ("127.0.0.1", "8080", 80)
+    # Qdrant: porta locale per gli script della ricerca che girano sull'host
+    porte = s["qdrant"]["ports"]
+    assert len(porte) == 1
+    assert (porte[0]["host_ip"], str(porte[0]["published"]), porte[0]["target"]) == ("127.0.0.1", "6333", 6333)
     # agente, back-end e database non pubblicano porte sull'host
     for nome in ("agente", "backend", "database"):
         assert "ports" not in s[nome], nome
@@ -97,7 +104,7 @@ def test_frontend_dopo_il_backend():
 def test_healthcheck_e_riavvio():
     s = servizi()
     for nome, atteso in (("database", "pg_isready"), ("agente", "/openapi.json"),
-                         ("backend", "/chat"), ("frontend", "http://127.0.0.1/")):
+                         ("backend", "/chat"), ("frontend", "http://127.0.0.1/"), ("qdrant", "/healthz")):
         test = " ".join(s[nome]["healthcheck"]["test"])
         assert atteso in test, nome
         assert s[nome]["restart"] == "unless-stopped", nome
@@ -109,6 +116,14 @@ def test_volume_dati():
     assert any(v["type"] == "volume" and v["source"] == "dati-db" and v["target"] == "/var/lib/postgresql"
                for v in volumi)
     assert "dati-db" in c["volumes"]
+
+
+def test_volume_dati_qdrant():
+    c = config()
+    volumi = c["services"]["qdrant"]["volumes"]
+    assert any(v["type"] == "volume" and v["source"] == "dati-qdrant" and v["target"] == "/qdrant/storage"
+               for v in volumi)
+    assert "dati-qdrant" in c["volumes"]
 
 
 def test_password_obbligatoria(tmp_path):

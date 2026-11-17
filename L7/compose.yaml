@@ -3,6 +3,9 @@
 # Le variabili arrivano da L6/.env (escluso da Git, vedi .env.example). Gli indirizzi interni li fissa
 # questo file: quelli locali del .env (127.0.0.1) dentro i container non valgono.
 # LM Studio resta sull'host; l'agente lo raggiunge con host.docker.internal.
+# Lezione 7: quinto servizio qdrant (indice vettoriale della ricerca), indipendente dagli altri.
+#   docker compose up -d qdrant   →   solo Qdrant, su http://127.0.0.1:6333 (serve comunque il .env
+#   con le POSTGRES_*: Compose legge tutto il file)
 
 services:
   # interfaccia di chat: nginx con i file statici e il proxy /api verso il back-end
@@ -106,6 +109,26 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # Qdrant (lezione 7): indice vettoriale del ricettario; gli script di L7/ricerca girano sull'host
+  qdrant:
+    image: qdrant/qdrant:v1.20.2
+    # porta solo su questo computer (127.0.0.1), per ingestion.py, cerca.py e valuta.py
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      # punti e collezioni restano dopo "docker compose down"
+      - dati-qdrant:/qdrant/storage
+    healthcheck:
+      # l'immagine non ha curl né wget: richiesta HTTP a /healthz con /dev/tcp di bash
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf \"GET /healthz HTTP/1.0\r\n\r\n\" >&3 && grep -q \"200 OK\" <&3'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
 volumes:
   # chat e messaggi: restano dopo "docker compose down"; si cancellano solo con "down -v"
   dati-db:
+  # indice vettoriale di Qdrant (lezione 7): si ricostruisce con ingestion.py
+  dati-qdrant:
