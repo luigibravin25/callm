@@ -52,9 +52,21 @@ def test_formatta_vuoto():
 
 
 def test_argomenti():
-    argomenti = cerca.leggi_argomenti(["gnocchi", "--capitolo", "minestre asciutte e di magro", "-k", "3"], 5)
+    argomenti = cerca.leggi_argomenti(["gnocchi", "--capitolo", "minestre asciutte e di magro", "-k", "3"])
     assert (argomenti.domanda, argomenti.capitolo, argomenti.k) == ("gnocchi", "minestre asciutte e di magro", 3)
-    assert cerca.leggi_argomenti(["gnocchi"], 5).k == 5
+    # senza -k il valore si decide dopo, con TOP_K della configurazione
+    assert cerca.leggi_argomenti(["gnocchi"]).k is None
+    assert valuta.leggi_argomenti([]).k is None
+
+
+@pytest.mark.parametrize("principale", [lambda: cerca.main(["--help"]), lambda: valuta.main(["--help"])])
+def test_help_senza_configurazione(monkeypatch, capsys, principale):
+    # l'aiuto non richiede variabili d'ambiente
+    monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
+    with pytest.raises(SystemExit) as uscita:
+        principale()
+    assert uscita.value.code == 0
+    assert "usage" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("principale", [ingestion.main, lambda: cerca.main(["brodo"]), lambda: valuta.main([])])

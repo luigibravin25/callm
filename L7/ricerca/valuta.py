@@ -20,16 +20,23 @@ from app.valutazione import intestazione_valutazione, leggi_domande, tabella_mar
 DOMANDE = Path(__file__).resolve().parent / "valutazione" / "domande.toml"
 
 
+def leggi_argomenti(argv: list[str] | None) -> argparse.Namespace:
+    """k (None = TOP_K della configurazione, deciso dopo)."""
+    parser = argparse.ArgumentParser(description="Valutazione della ricerca sulle domande con fonte attesa")
+    parser.add_argument("-k", type=int, default=None,
+                        help=f"risultati per domanda (predefinito TOP_K, massimo {TOP_K_MASSIMO})")
+    return parser.parse_args(argv)
+
+
 def main(argv: list[str] | None = None) -> None:
     configura_log()
 
-    # corpo dello script: configurazione, ricerca per ogni domanda, tabella su stdout
+    # corpo dello script: argomenti, configurazione, ricerca per ogni domanda, tabella su stdout
     def principale() -> None:
+        # argomenti prima della configurazione: --help funziona anche senza variabili d'ambiente
+        argomenti = leggi_argomenti(argv)
         conf = carica_configurazione()
-        parser = argparse.ArgumentParser(description="Valutazione della ricerca sulle domande con fonte attesa")
-        parser.add_argument("-k", type=int, default=conf.top_k,
-                            help=f"risultati per domanda (predefinito {conf.top_k}, massimo {TOP_K_MASSIMO})")
-        k = parser.parse_args(argv).k
+        k = argomenti.k if argomenti.k is not None else conf.top_k
         indice = Indice(QdrantClient(url=conf.qdrant_url), conf.collezione, conf.modello_embedding,
                         EmbedderLMStudio(conf.lm_base_url, conf.modello_embedding))
         righe = valuta(leggi_domande(DOMANDE), lambda domanda: indice.cerca(domanda, k=k))

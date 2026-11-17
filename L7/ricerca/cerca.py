@@ -23,13 +23,13 @@ def formatta(risultati: list[Risultato]) -> str:
     return "\n\n".join(blocchi)
 
 
-def leggi_argomenti(argv: list[str] | None, top_k: int) -> argparse.Namespace:
-    """Domanda, capitolo facoltativo e k (predefinito TOP_K della configurazione)."""
+def leggi_argomenti(argv: list[str] | None) -> argparse.Namespace:
+    """Domanda, capitolo facoltativo e k (None = TOP_K della configurazione, deciso dopo)."""
     parser = argparse.ArgumentParser(description="Ricerca semantica nel ricettario di Artusi")
     parser.add_argument("domanda", help="la domanda, tra virgolette")
     parser.add_argument("--capitolo", help="cerca solo in questo capitolo (es. \"minestre in brodo\")")
-    parser.add_argument("-k", type=int, default=top_k,
-                        help=f"numero di risultati (predefinito {top_k}, massimo {TOP_K_MASSIMO})")
+    parser.add_argument("-k", type=int, default=None,
+                        help=f"numero di risultati (predefinito TOP_K, massimo {TOP_K_MASSIMO})")
     return parser.parse_args(argv)
 
 
@@ -38,11 +38,13 @@ def main(argv: list[str] | None = None) -> None:
 
     # corpo dello script: configurazione, argomenti, ricerca, stampa
     def principale() -> None:
+        # argomenti prima della configurazione: --help funziona anche senza variabili d'ambiente
+        argomenti = leggi_argomenti(argv)
         conf = carica_configurazione()
-        argomenti = leggi_argomenti(argv, conf.top_k)
+        k = argomenti.k if argomenti.k is not None else conf.top_k
         indice = Indice(QdrantClient(url=conf.qdrant_url), conf.collezione, conf.modello_embedding,
                         EmbedderLMStudio(conf.lm_base_url, conf.modello_embedding))
-        print(formatta(indice.cerca(argomenti.domanda, capitolo=argomenti.capitolo, k=argomenti.k)))
+        print(formatta(indice.cerca(argomenti.domanda, capitolo=argomenti.capitolo, k=k)))
 
     esegui_script(principale)
 
