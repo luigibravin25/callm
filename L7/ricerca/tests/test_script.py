@@ -119,3 +119,15 @@ def test_modello_controllato_prima_del_corpus(conf, monkeypatch, caplog):
     with pytest.raises(ErroreRicerca):
         ingestion.esegui(carica_configurazione(), client, EmbedderFinto())
     assert "corpus letto" not in caplog.text
+
+
+def test_formatta_con_dosi():
+    from dataclasses import replace
+    riga = cerca.formatta([replace(RISULTATO, contiene_dosi=True)]).splitlines()[0]
+    assert riga.endswith("· chunk 1 di 3 · con dosi")
+
+
+def test_argomenti_solo_dosi():
+    assert cerca.leggi_argomenti(["gnocchi", "--solo-dosi"]).solo_dosi is True
+    assert cerca.leggi_argomenti(["gnocchi"]).solo_dosi is False
+    assert valuta.leggi_argomenti(["--solo-dosi"]).solo_dosi is True

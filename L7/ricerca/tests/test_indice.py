@@ -51,7 +51,7 @@ def test_un_punto_per_chunk_e_payload(client):
     punto = client.retrieve("ricettario", [id_punto(primo.numero, primo.indice_chunk)], with_payload=True)[0]
     assert punto.payload == {"testo": primo.testo, "numero": primo.numero, "titolo": primo.titolo,
                              "capitolo": primo.capitolo, "indice_chunk": primo.indice_chunk,
-                             "totale_chunk": primo.totale_chunk}
+                             "totale_chunk": primo.totale_chunk, "contiene_dosi": primo.contiene_dosi}
 
 
 def test_metadata_con_il_modello(client):

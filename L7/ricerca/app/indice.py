@@ -10,8 +10,8 @@ from dataclasses import dataclass
 
 # client di Qdrant (server in Docker oppure in memoria nei test)
 from qdrant_client import QdrantClient
-from qdrant_client.models import (Distance, FieldCondition, Filter, MatchValue, PayloadSchemaType, PointIdsList,
-                                  PointStruct, VectorParams)
+from qdrant_client.models import (Distance, FieldCondition, Filter, IsEmptyCondition, MatchValue, PayloadField,
+                                  PayloadSchemaType, PointIdsList, PointStruct, VectorParams)
 
 from app.chunking import Chunk
 from app.config import TOP_K_MASSIMO
@@ -24,7 +24,7 @@ log = logging.getLogger("ricerca")
 # forma del testo passato all'embedder, registrata nel metadata della collezione
 TESTO_INDICIZZATO = "testo"
 # campi del payload filtrati dalla ricerca, con il tipo del loro indice
-CAMPI_INDICIZZATI = {"capitolo": PayloadSchemaType.KEYWORD}
+CAMPI_INDICIZZATI = {"capitolo": PayloadSchemaType.KEYWORD, "contiene_dosi": PayloadSchemaType.BOOL}
 
 # namespace fisso degli ID: stesso numero di ricetta e stessa posizione → stesso ID a ogni ingestion
 NAMESPACE_ID = uuid.UUID("6f1d2c4e-8a3b-5e7f-9c1d-2b4a6e8f0a13")
@@ -55,6 +55,7 @@ class Risultato:
     indice_chunk: int
     totale_chunk: int
     testo: str  # testo originale del chunk
+    contiene_dosi: bool = False  # il chunk ha un elenco di ingredienti
 
 
 # capitolo scritto dall'utente → nome esatto dell'elenco (senza maiuscole/minuscole e spazi ai bordi)
@@ -125,7 +126,8 @@ class Indice:
                 self._crea_collezione(len(vettori[0]))
             punti = [PointStruct(id=id_punto(c.numero, c.indice_chunk), vector=v, payload={
                 "testo": c.testo, "numero": c.numero, "titolo": c.titolo, "capitolo": c.capitolo,
-                "indice_chunk": c.indice_chunk, "totale_chunk": c.totale_chunk}) for c, v in zip(parte, vettori)]
+                "indice_chunk": c.indice_chunk, "totale_chunk": c.totale_chunk,
+                "contiene_dosi": c.contiene_dosi}) for c, v in zip(parte, vettori)]
             self.client.upsert(self.collezione, points=punti)
             prodotti.update(p.id for p in punti)
             log.info("scritti %d/%d chunk", min(inizio + lotto, len(chunk)), len(chunk))
@@ -154,8 +156,9 @@ class Indice:
 
     # --- ricerca ---
 
-    def cerca(self, domanda: str, capitolo: str | None = None, k: int = 5) -> list[Risultato]:
-        """Primi k chunk più vicini alla domanda (al massimo TOP_K_MASSIMO), filtrabili per capitolo."""
+    def cerca(self, domanda: str, capitolo: str | None = None, k: int = 5,
+              solo_dosi: bool = False) -> list[Risultato]:
+        """Primi k chunk più vicini alla domanda (al massimo TOP_K_MASSIMO), filtrabili per capitolo e dosi."""
         if not domanda.strip():
             raise ErroreRicerca("la domanda è vuota")
         if k < 1:
@@ -165,20 +168,35 @@ class Indice:
             raise ErroreRicerca(f"la collezione {self.collezione} non esiste: eseguire prima l'ingestion")
         # stesso modello dell'indice, controllato prima di calcolare l'embedding della domanda
         self.controlla_modello()
+        if solo_dosi:
+            self._controlla_campo_dosi()
         if k > TOP_K_MASSIMO:
             log.warning("k=%d oltre il massimo: ridotto a %d", k, TOP_K_MASSIMO)
             k = TOP_K_MASSIMO
         # stessa funzione di embedding dei chunk, sul testo esatto della domanda
         vettore = self.embedder.incorpora([domanda])[0]
         # filtro applicato da Qdrant durante la ricerca, non dopo
-        filtro = None if nome_capitolo is None else Filter(
-            must=[FieldCondition(key="capitolo", match=MatchValue(value=nome_capitolo))])
+        condizioni = []
+        if nome_capitolo is not None:
+            condizioni.append(FieldCondition(key="capitolo", match=MatchValue(value=nome_capitolo)))
+        if solo_dosi:
+            condizioni.append(FieldCondition(key="contiene_dosi", match=MatchValue(value=True)))
+        filtro = Filter(must=condizioni) if condizioni else None
         punti = self.client.query_points(self.collezione, query=vettore, query_filter=filtro, limit=k,
                                          with_payload=True).points
         return [Risultato(posizione=i, score=p.score, numero=p.payload["numero"], titolo=p.payload["titolo"],
                           capitolo=p.payload["capitolo"], indice_chunk=p.payload["indice_chunk"],
-                          totale_chunk=p.payload["totale_chunk"], testo=p.payload["testo"])
+                          totale_chunk=p.payload["totale_chunk"], testo=p.payload["testo"],
+                          contiene_dosi=p.payload.get("contiene_dosi", False))
                 for i, p in enumerate(punti, start=1)]
+
+    # errore se qualche punto non ha ancora il campo: il filtro lo escluderebbe senza dirlo
+    def _controlla_campo_dosi(self) -> None:
+        senza = self.client.count(self.collezione, exact=True, count_filter=Filter(
+            must=[IsEmptyCondition(is_empty=PayloadField(key="contiene_dosi"))])).count
+        if senza:
+            raise ErroreRicerca(f"la collezione {self.collezione} non ha ancora il campo contiene_dosi "
+                                f"({senza} punti senza): eseguire aggiorna_dosi.py")
 
     def conta_punti(self) -> int:
         return self.client.count(self.collezione, exact=True).count

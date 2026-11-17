@@ -97,3 +97,61 @@ def test_modello_diverso_bloccato_in_ricerca(indice):
     with pytest.raises(ErroreRicerca, match="altro"):
         ix.cerca("brodo")
     assert altro.chiamate == []
+
+
+# --- esercizio 2, A: filtro solo_dosi ---
+from qdrant_client.models import PointStruct
+
+from app.indice import id_punto
+
+ELENCO = ("Farina, grammi 200.", "Burro, grammi 50.")
+
+
+# ricette dispari con elenco di ingredienti in testa (solo il primo chunk ha le dosi), pari senza
+def ricette_con_dosi():
+    ricette = []
+    for n in range(1, 11):
+        ingredienti = ELENCO if n % 2 else ()
+        testo = ("\n".join(ELENCO) + "\n\n" if ingredienti else "") + parole_di(n, 2500)
+        ricette.append(Ricetta(n, f"Ricetta {n}", CAPITOLI_PROVA[n % 3], testo, ingredienti))
+    return ricette
+
+
+@pytest.fixture
+def indice_dosi():
+    ix = Indice(QdrantClient(":memory:"), "ricettario", "bge", EmbedderFinto())
+    ix.indicizza(chunk_delle_ricette(ricette_con_dosi(), "paragrafi", 1000, 150))
+    return ix
+
+
+def test_payload_con_contiene_dosi(indice_dosi):
+    punto = indice_dosi.client.retrieve("ricettario", [id_punto(1, 0)], with_payload=True)[0]
+    assert punto.payload["contiene_dosi"] is True
+
+
+def test_solo_dosi(indice_dosi):
+    risultati = indice_dosi.cerca("farina e burro", k=5, solo_dosi=True)
+    assert 0 < len(risultati) <= 5
+    assert all(r.contiene_dosi for r in risultati)
+
+
+def test_solo_dosi_e_capitolo(indice_dosi):
+    risultati = indice_dosi.cerca("farina e burro", capitolo="MINESTRE IN BRODO", k=5, solo_dosi=True)
+    assert risultati
+    assert all(r.contiene_dosi and r.capitolo == "MINESTRE IN BRODO" for r in risultati)
+
+
+def test_solo_dosi_capitolo_senza_dosi(indice_dosi):
+    # nessun chunk con dosi in questo capitolo: lista vuota, nessun errore
+    assert indice_dosi.cerca("farina", capitolo="SALSE", solo_dosi=True) == []
+
+
+def test_solo_dosi_senza_campo(indice_dosi):
+    # un punto scritto senza il campo (collezione non ancora aggiornata): errore che indica lo script
+    vettore = indice_dosi.embedder.incorpora(["x"])[0]
+    indice_dosi.client.upsert("ricettario", points=[PointStruct(id=id_punto(99, 0), vector=vettore, payload={
+        "testo": "x", "numero": 99, "titolo": "X", "capitolo": "SALSE", "indice_chunk": 0, "totale_chunk": 1})])
+    chiamate = len(indice_dosi.embedder.chiamate)
+    with pytest.raises(ErroreRicerca, match="aggiorna_dosi.py"):
+        indice_dosi.cerca("farina", solo_dosi=True)
+    assert len(indice_dosi.embedder.chiamate) == chiamate
