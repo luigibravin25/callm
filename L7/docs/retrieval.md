@@ -78,7 +78,7 @@ Con `--solo-dosi` (stesso k = 5):
 | Come si prepara il tiramisù? | nessuna | — | 0.5907, 0.5816, 0.5788, 0.5729, 0.5706 | — | n. 351 «Sformato di riso colle rigaglie» 0.5907 |
 
 Confronto con la partenza:
-- Gnocchi 400 g: invariato (1° posto, «sì"): il chunk con l'indizio è quello con l'elenco.
+- Gnocchi 400 g: invariato (1° posto, «sì»): il chunk con l'indizio è quello con l'elenco.
 - Gnocchi che si sciolgono: resta 1°, ma con il chunk 1 (con elenco) invece del 2; score da 0.6285 a 0.5992.
   L'indizio è anche lì.
 - Cappelletti: dal 1° al 4° posto, e il chunk trovato (con l'elenco) non contiene «mangiatore discreto»,
@@ -104,3 +104,86 @@ prosa o la ricetta non ha elenco.
 Tutti i risultati sono del capitolo richiesto e hanno l'elenco degli ingredienti: i due filtri si applicano
 insieme durante la ricerca in Qdrant. Al primo posto il chunk della ricetta 89 con «Patate grosse e gialle,
 grammi 400» e «Farina di grano, grammi 150»; seguono altre minestre asciutte con dosi, nessuna senza elenco.
+
+## Esercizio 2 · B: titolo e capitolo nel testo indicizzato (2026-11-17)
+
+All'embedder ogni chunk arriva come `Ricetta: <titolo>\nCapitolo: <Capitolo>\n\n<testo>`; nel payload e nei
+risultati resta il testo originale. Ingestion sulla collezione esistente (non ricreata):
+
+| ingestion | ricette | chunk | punti scritti | orfani cancellati | punti nella collezione | durata |
+|---|---|---|---|---|---|---|
+| B | 790 | 1326 | 1326 | 0 | 1326 | 280.2 s |
+
+Punti prima 1326, dopo 1326; nessuna riga «creata la collezione» nel log. Il `metadata` registra ora
+`chunking: paragrafi 1000/150` e `testo_indicizzato: titolo e capitolo + testo`; i campi `contiene_dosi` e gli
+indici sono rimasti.
+
+### Valutazione dopo B
+
+Senza filtro:
+
+| domanda | fonte attesa | posizione della fonte | score della fonte | il chunk contiene l'informazione | primo risultato |
+|---|---|---|---|---|---|
+| Quanta farina serve per fare gli gnocchi con 400 g di patate? | 89 | 1 | 0.7173 | sì | n. 89 «Gnocchi di patate» 0.7173 |
+| Quanti cappelletti bastano a chi mangia con moderazione? | 7 | 1 | 0.5569 | sì | n. 7 «Cappelletti all'uso di Romagna» 0.5569 |
+| Che vino si usa nel pollo alla cacciatora? | 208 | 1 | 0.6136 | sì | n. 208 «Pollo alla cacciatora» 0.6136 |
+| Perché gli gnocchi si disfano quando li butto nell'acqua? | 89 | 1 | 0.6162 | sì | n. 89 «Gnocchi di patate» 0.6162 |
+| Com'è il cacciucco sulle coste dell'Adriatico? | 455 | 2 | 0.5344 | sì | n. 481 «Acciughe alla marinara» 0.5549 |
+| Come si prepara il tiramisù? | nessuna | — | 0.5447, 0.5371, 0.5365, 0.5340, 0.5337 | — | n. 649 «Dolce Torino» 0.5447 |
+
+Con `--solo-dosi`:
+
+| domanda | fonte attesa | posizione della fonte | score della fonte | il chunk contiene l'informazione | primo risultato |
+|---|---|---|---|---|---|
+| Quanta farina serve per fare gli gnocchi con 400 g di patate? | 89 | 1 | 0.7173 | sì | n. 89 «Gnocchi di patate» 0.7173 |
+| Quanti cappelletti bastano a chi mangia con moderazione? | 7 | 1 | 0.5409 | no | n. 7 «Cappelletti all'uso di Romagna» 0.5409 |
+| Che vino si usa nel pollo alla cacciatora? | 208 | assente | — | — | n. 365 «Pollo in salsa tonnata» 0.4498 |
+| Perché gli gnocchi si disfano quando li butto nell'acqua? | 89 | 1 | 0.5495 | sì | n. 89 «Gnocchi di patate» 0.5495 |
+| Com'è il cacciucco sulle coste dell'Adriatico? | 455 | assente | — | — | n. 708 «Albicocche in composta» 0.3735 |
+| Come si prepara il tiramisù? | nessuna | — | 0.5371, 0.5340, 0.5335, 0.5289, 0.5274 | — | n. 713 «Pasticcio a sorpresa» 0.5371 |
+
+Confronto con A (senza filtro; dopo A = partenza):
+
+| domanda | dopo A | dopo B |
+|---|---|---|
+| gnocchi 400 g (89) | 1° · 0.6659 · sì | 1° · 0.7173 · sì |
+| cappelletti (7) | 1° · 0.6097 · sì | 1° · 0.5569 · sì |
+| pollo alla cacciatora (208) | assente | **1° · 0.6136 · sì** |
+| gnocchi che si sciolgono (89) | 1° · 0.6285 · sì | 1° · 0.6162 · sì |
+| cacciucco (455) | 2° · 0.5648 · no | 2° · 0.5344 · **sì** |
+| tiramisù (nessuna) | 0.58-0.60 | 0.53-0.54 |
+
+- Con il titolo nel testo indicizzato tutte e cinque le fonti sono tra i primi due risultati e in tutte il chunk
+  contiene l'informazione (prima: 3 su 5). Il caso più netto è il pollo alla cacciatora: il testo della ricetta
+  non nomina il piatto, il titolo sì.
+- Il tiramisù, che non è nel libro, scende a 0.53-0.54, sotto tutte le risposte giuste tranne il cacciucco:
+  lo score separa meglio, ma non abbastanza per una soglia sicura.
+- Con `--solo-dosi` restano escluse le fonti senza elenco (208, 455); per i cappelletti il chunk con l'elenco è
+  ora al 1° posto, ma l'indizio è nella prosa di un altro chunk.
+
+### Query commentata 2: effetto del titolo
+
+`cerca.py "Che vino si usa nel pollo alla cacciatora?"` prima di B:
+
+```
+#1 · score 0.5125 · n. 268 «Pollo alla Marengo» · UMIDI · chunk 2 di 2
+#2 · score 0.4767 · n. 541 «Pollo al diavolo» · ARROSTI · chunk 1 di 1
+#3 · score 0.4645 · n. 338 «Braciuole di castrato e filetto di vitella alla finanziera» · UMIDI · chunk 1 di 2
+#4 · score 0.4634 · n. 160 «Ripieno pei polli» · RIPIENI · chunk 2 di 3
+#5 · score 0.4619 · n. 316 «Polpettone di carne cruda alla fiorentina» · UMIDI · chunk 1 di 2
+```
+
+dopo B:
+
+```
+#1 · score 0.6136 · n. 208 «Pollo alla cacciatora» · FRITTI · chunk 1 di 1
+#2 · score 0.5257 · n. 43 «Riso alla cacciatora» · MINESTRE IN BRODO · chunk 2 di 2
+#3 · score 0.5247 · n. 211 «Fegato alla cacciatora» · FRITTI · chunk 1 di 1
+#4 · score 0.5135 · n. 541 «Pollo al diavolo» · ARROSTI · chunk 1 di 1
+#5 · score 0.5121 · n. 43 «Riso alla cacciatora» · MINESTRE IN BRODO · chunk 1 di 2
+```
+
+Prima di B la ricetta 208 non compariva nemmeno tra i primi 20: il suo testo parla di pollo, olio, vino e
+pomodoro, ma non dice «cacciatora», e il primo risultato era un altro pollo. Dopo B è al primo posto con il
+chunk che contiene «vino rosso», seguita da altre ricette «alla cacciatora»: il titolo indicizzato porta nel
+vettore il nome del piatto, che è proprio ciò che la domanda nomina.
