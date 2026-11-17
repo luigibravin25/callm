@@ -46,8 +46,9 @@ def test_backend_senza_langchain_ne_pytest():
     assert set(pacchetti(BACKEND)) == {"fastapi", "uvicorn", "httpx", "sqlalchemy", "psycopg[binary]"}
 
 
-def test_ricerca_solo_qdrant_e_openai():
-    assert set(pacchetti(RICERCA)) == {"qdrant-client", "openai"}
+def test_ricerca_qdrant_openai_fastmcp():
+    # lezione 8: fastmcp per il server MCP della ricerca
+    assert set(pacchetti(RICERCA)) == {"qdrant-client", "openai", "fastmcp"}
 
 
 def test_stesse_versioni():
