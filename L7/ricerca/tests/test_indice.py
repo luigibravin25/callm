@@ -56,7 +56,9 @@ def test_un_punto_per_chunk_e_payload(client):
 
 def test_metadata_con_il_modello(client):
     indice(client).indicizza(chunk())
-    assert client.get_collection("ricettario").config.metadata == {"modello_embedding": "bge", "dimensione": 8}
+    metadata = client.get_collection("ricettario").config.metadata
+    # modello e dimensione registrati (chunking e testo indicizzato: test dedicato più sotto)
+    assert (metadata["modello_embedding"], metadata["dimensione"]) == ("bge", 8)
 
 
 def test_id_dalla_posizione():
@@ -119,3 +121,42 @@ def test_conta_punti(client):
     ix = indice(client)
     ix.indicizza(chunk())
     assert ix.conta_punti() == len(chunk())
+
+
+# --- esercizio 2, minori 1 e 6: metadata a ingestion completa, indici sempre presenti ---
+
+def test_metadata_con_chunking_e_testo_indicizzato(client):
+    indice(client).indicizza(chunk(), chunking="paragrafi 1000/150")
+    assert client.get_collection("ricettario").config.metadata == {
+        "modello_embedding": "bge", "dimensione": 8, "chunking": "paragrafi 1000/150", "testo_indicizzato": "testo"}
+
+
+def test_metadata_invariato_se_interrotta(client):
+    indice(client).indicizza(chunk(), chunking="a", lotto=5)
+    with pytest.raises(ErroreRicerca):
+        indice(client, embedder=EmbedderFinto(fallisci_alla_chiamata=2)).indicizza(chunk(), chunking="b", lotto=5)
+    # l'ingestion interrotta non dichiara un chunking che non è stato scritto per intero
+    assert client.get_collection("ricettario").config.metadata["chunking"] == "a"
+
+
+# client che registra i campi passati a create_payload_index
+class ClientCheContaGliIndici:
+    def __init__(self, client):
+        self._client = client
+        self.indici: list[str] = []
+
+    def create_payload_index(self, collection_name, field_name, field_schema, **kwargs):
+        self.indici.append(field_name)
+        return self._client.create_payload_index(collection_name, field_name=field_name,
+                                                 field_schema=field_schema, **kwargs)
+
+    def __getattr__(self, nome):
+        return getattr(self._client, nome)
+
+
+def test_indice_ricreato_su_collezione_esistente(client):
+    indice(client).indicizza(chunk())
+    spia = ClientCheContaGliIndici(client)
+    Indice(spia, "ricettario", "bge", EmbedderFinto()).indicizza(chunk())
+    # anche su una collezione che esiste già l'indice sul campo filtrato viene (ri)creato
+    assert "capitolo" in spia.indici

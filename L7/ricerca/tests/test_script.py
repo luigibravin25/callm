@@ -9,6 +9,7 @@ import ingestion
 import valuta
 from app.config import carica_configurazione
 from app.corpus import analizza
+from app.errori import ErroreRicerca
 from app.indice import Risultato
 from tests.finti import EmbedderFinto
 from tests.test_corpus import TESTO_PROVA
@@ -89,3 +90,20 @@ def test_log_senza_richieste_http():
     for nome in ("httpx", "httpx2"):
         # livello proprio del logger (quello ereditato dal root di pytest non conta)
         assert logging.getLogger(nome).level == logging.WARNING, nome
+
+
+def test_modello_controllato_prima_del_corpus(conf, monkeypatch, caplog):
+    # collezione costruita con "bge"; la configurazione indica un altro modello
+    client = QdrantClient(":memory:")
+    monkeypatch.setattr(ingestion, "carica_corpus", lambda percorso: analizza(TESTO_PROVA))
+    ingestion.esegui(conf, client, EmbedderFinto())
+
+    def corpus_vietato(percorso):
+        raise AssertionError("il corpus non va letto se il modello è diverso")
+
+    monkeypatch.setattr(ingestion, "carica_corpus", corpus_vietato)
+    monkeypatch.setenv("EMBEDDING_MODEL", "altro")
+    caplog.clear()
+    with pytest.raises(ErroreRicerca):
+        ingestion.esegui(carica_configurazione(), client, EmbedderFinto())
+    assert "corpus letto" not in caplog.text

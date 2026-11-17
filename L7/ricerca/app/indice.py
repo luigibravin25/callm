@@ -21,6 +21,11 @@ from app.errori import ErroreRicerca
 
 log = logging.getLogger("ricerca")
 
+# forma del testo passato all'embedder, registrata nel metadata della collezione
+TESTO_INDICIZZATO = "testo"
+# campi del payload filtrati dalla ricerca, con il tipo del loro indice
+CAMPI_INDICIZZATI = {"capitolo": PayloadSchemaType.KEYWORD}
+
 # namespace fisso degli ID: stesso numero di ricetta e stessa posizione → stesso ID a ogni ingestion
 NAMESPACE_ID = uuid.UUID("6f1d2c4e-8a3b-5e7f-9c1d-2b4a6e8f0a13")
 
@@ -77,10 +82,17 @@ class Indice:
         self.client.create_collection(
             self.collezione, vectors_config=VectorParams(size=dimensione, distance=Distance.COSINE),
             metadata={"modello_embedding": self.modello, "dimensione": dimensione})
-        # indice sul campo filtrato dalla ricerca
-        self.client.create_payload_index(self.collezione, field_name="capitolo",
-                                         field_schema=PayloadSchemaType.KEYWORD)
         log.info("creata la collezione %s (modello %s, dimensione %d)", self.collezione, self.modello, dimensione)
+
+    # indici sui campi filtrati: si creano a ogni ingestion (senza effetto se ci sono già), così non si
+    # perdono se un'ingestion si interrompe subito dopo aver creato la collezione
+    def _crea_indici(self) -> None:
+        for campo, tipo in CAMPI_INDICIZZATI.items():
+            self.client.create_payload_index(self.collezione, field_name=campo, field_schema=tipo)
+
+    def registrazione(self) -> dict:
+        """Metadata della collezione (modello, dimensione, chunking, testo indicizzato); {} se assente."""
+        return self._leggi_registrazione() or {}
 
     # --- controlli ---
 
@@ -101,7 +113,7 @@ class Indice:
 
     # --- ingestion ---
 
-    def indicizza(self, chunk: list[Chunk], lotto: int = 64) -> EsitoIngestion:
+    def indicizza(self, chunk: list[Chunk], chunking: str = "", lotto: int = 64) -> EsitoIngestion:
         """Scrive un punto per chunk (upsert); a scrittura completa cancella i punti non prodotti (orfani)."""
         # il cambio di modello si blocca prima di calcolare embedding
         self.controlla_modello()
@@ -121,6 +133,11 @@ class Indice:
         orfani = [i for i in self._tutti_gli_id() if i not in prodotti]
         if orfani:
             self.client.delete(self.collezione, points_selector=PointIdsList(points=orfani))
+        self._crea_indici()
+        # metadata aggiornato solo a scrittura completa (i campi esistenti restano): un'ingestion interrotta
+        # non dichiara un chunking o un testo indicizzato che non sono stati scritti per intero
+        self.client.update_collection(self.collezione,
+                                      metadata={"chunking": chunking, "testo_indicizzato": TESTO_INDICIZZATO})
         return EsitoIngestion(chunk=len(chunk), scritti=len(prodotti), orfani=len(orfani),
                               punti=self.conta_punti())
 
