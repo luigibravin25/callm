@@ -1,0 +1,13 @@
+# dipendenze del back-end (immagine Docker del back-end e venv di L6 tramite ../requirements.txt)
+# Python 3.14; versioni fissate, uguali in tutti i file di requisiti
+
+# API del back-end (step 7): endpoint, validazione, documentazione OpenAPI
+fastapi==0.162.5
+# server ASGI che esegue il servizio
+uvicorn==0.54.0
+# client HTTP verso l'agente
+httpx==0.28.1
+# modelli e sessioni delle chat in PostgreSQL, tabelle create all'avvio
+sqlalchemy==2.1.8
+# driver PostgreSQL per SQLAlchemy; "binary" porta libpq gia' compilata (niente compilazione)
+psycopg[binary]==3.3.9

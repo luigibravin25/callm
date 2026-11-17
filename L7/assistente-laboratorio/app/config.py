@@ -1,0 +1,185 @@
+# librerie standard: variabili d'ambiente, lettura dei file TOML, percorsi, classi di dati, fusi
+import os
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+# cartella assistente-laboratorio/: i percorsi relativi della configurazione partono da qui
+CARTELLA_PROGETTO = Path(__file__).resolve().parent.parent
+
+FUSO_DI_RISERVA = "Europe/Rome"  # usato se FUSO_PREDEFINITO non e' impostata
+AMBITO_PREDEFINITO = "config/ambito.toml"  # usato se AMBITO_FILE non e' impostata
+
+
+# contenitore della configurazione: frozen=True la rende immutabile dopo la creazione
+@dataclass(frozen=True)
+class Settings:
+    base_url: str  # indirizzo dell'API di LM Studio (LM_BASE_URL)
+    model: str  # identificativo del modello caricato (LM_MODEL)
+    max_steps: int  # numero massimo di giri modello-strumenti per una domanda
+    fuso_predefinito: str  # fuso dell'orologio quando l'utente non indica un luogo
+    ambito_file: Path  # file TOML con l'ambito dell'agente
+    max_revisioni: int = 2  # quante volte il revisore puo' rimandare la risposta all'agente
+    soglia_riassunto: int = 16  # oltre questi messaggi si riassumono i piu' vecchi
+    messaggi_recenti: int = 6  # messaggi recenti (almeno) conservati interi dal riassunto
+
+
+# nome riservato: argomento del router per tutto cio' che e' fuori ambito
+ALTRO = "altro"
+
+
+# argomento dell'ambito: il router sceglie uno di questi nomi (o "altro")
+@dataclass(frozen=True)
+class Argomento:
+    nome: str  # nome mandato al modello nello schema (es. ora_data_fusi)
+    descrizione: str  # cosa comprende, scritto nel prompt del router
+
+
+# ambito dell'agente letto da config/ambito.toml: entra nel prompt del router
+@dataclass(frozen=True)
+class Ambito:
+    descrizione: str  # di cosa puo' parlare l'agente
+    rifiuto: str  # risposta fissa per le domande fuori ambito
+    esempi_in_ambito: tuple[str, ...] = ()  # esempi di domande accettate
+    esempi_fuori_ambito: tuple[str, ...] = ()  # esempi di domande rifiutate
+    argomenti: tuple[Argomento, ...] = ()  # argomenti in ambito (step 5: router per argomento)
+
+
+# fuso da usare quando l'utente non indica un luogo (usato anche da tooltime)
+def fuso_predefinito() -> str:
+    """Variabile FUSO_PREDEFINITO senza spazi, oppure Europe/Rome."""
+    # una variabile vuota o fatta di spazi diventa "" e "or" passa alla riserva
+    return os.environ.get("FUSO_PREDEFINITO", "").strip() or FUSO_DI_RISERVA
+
+
+# legge una variabile d'ambiente che deve esserci per forza
+def _obbligatoria(nome: str) -> str:
+    # strip() toglie spazi e a capo: una variabile fatta solo di spazi conta come vuota
+    valore = os.environ.get(nome, "").strip()
+    if not valore:
+        raise ValueError(f"Variabile d'ambiente mancante: {nome}")
+    return valore
+
+
+# costruisce la configurazione completa e controlla che i valori siano validi
+def load_settings() -> Settings:
+    """Legge la configurazione dalle variabili d'ambiente (nessun file .env)."""
+    base_url = _obbligatoria("LM_BASE_URL")
+    model = _obbligatoria("LM_MODEL")
+    # MAX_STEPS e' facoltativa: se manca vale 5
+    grezzo = os.environ.get("MAX_STEPS", "5").strip()
+    try:
+        max_steps = int(grezzo)
+    except ValueError:
+        max_steps = 0  # un testo non numerico cade nel controllo qui sotto
+    if max_steps < 1:
+        raise ValueError(f"MAX_STEPS deve essere un intero positivo, trovato: {grezzo!r}")
+    fuso = fuso_predefinito()
+    # prova a creare il fuso: se il nome non esiste, ZoneInfo solleva un errore
+    try:
+        ZoneInfo(fuso)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        raise ValueError(f"FUSO_PREDEFINITO non e' un fuso IANA valido: {fuso!r}") from None
+    # percorso dell'ambito: se e' relativo parte dalla cartella del progetto, non da quella corrente
+    ambito_file = Path(os.environ.get("AMBITO_FILE", "").strip() or AMBITO_PREDEFINITO)
+    if not ambito_file.is_absolute():
+        ambito_file = CARTELLA_PROGETTO / ambito_file
+    # MAX_REVISIONI e' facoltativa: se manca vale 2; 0 = il revisore valuta ma non rimanda
+    grezzo = os.environ.get("MAX_REVISIONI", "2").strip()
+    try:
+        max_revisioni = int(grezzo)
+    except ValueError:
+        max_revisioni = -1  # un testo non numerico cade nel controllo qui sotto
+    if max_revisioni < 0:
+        raise ValueError(f"MAX_REVISIONI deve essere un intero >= 0, trovato: {grezzo!r}")
+    # riassunto della cronologia: soglia >= 1, messaggi recenti tra 1 e soglia - 1
+    soglia = _intero_minimo("SOGLIA_RIASSUNTO", 16, 1)
+    recenti = _intero_minimo("MESSAGGI_RECENTI", 6, 1)
+    if recenti >= soglia:
+        raise ValueError(f"MESSAGGI_RECENTI ({recenti}) deve essere minore di "
+                         f"SOGLIA_RIASSUNTO ({soglia})")
+    return Settings(base_url=base_url, model=model, max_steps=max_steps,
+                    fuso_predefinito=fuso, ambito_file=ambito_file,
+                    max_revisioni=max_revisioni, soglia_riassunto=soglia,
+                    messaggi_recenti=recenti)
+
+
+# legge una variabile intera facoltativa con un valore minimo
+def _intero_minimo(nome: str, predefinito: int, minimo: int) -> int:
+    grezzo = os.environ.get(nome, str(predefinito)).strip()
+    try:
+        valore = int(grezzo)
+    except ValueError:
+        valore = minimo - 1  # un testo non numerico cade nel controllo qui sotto
+    if valore < minimo:
+        raise ValueError(f"{nome} deve essere un intero >= {minimo}, trovato: {grezzo!r}")
+    return valore
+
+
+# controlla un campo di testo obbligatorio del file dell'ambito
+def _testo(dati: dict, campo: str, percorso: Path) -> str:
+    valore = dati.get(campo)
+    if not isinstance(valore, str) or not valore.strip():
+        raise ValueError(f"{percorso.name}: il campo '{campo}' manca o e' vuoto")
+    return valore.strip()
+
+
+# controlla un elenco facoltativo di esempi (lista di testi)
+def _esempi(dati: dict, campo: str, percorso: Path) -> tuple[str, ...]:
+    valore = dati.get(campo, [])
+    if not isinstance(valore, list) or not all(isinstance(e, str) for e in valore):
+        raise ValueError(f"{percorso.name}: il campo '{campo}' deve essere una lista di testi")
+    return tuple(e.strip() for e in valore if e.strip())
+
+
+# controlla un campo di testo di una voce di [[argomenti]]; l'errore nomina la voce
+def _campo_voce(voce: dict, campo: str, percorso: Path, posizione: str) -> str:
+    valore = voce.get(campo)
+    if not isinstance(valore, str) or not valore.strip():
+        raise ValueError(f"{percorso.name}: {posizione}: il campo '{campo}' manca o e' vuoto")
+    return valore.strip()
+
+
+# controlla gli argomenti dell'ambito ([[argomenti]]): almeno uno, testi non vuoti, nomi unici,
+# "altro" riservato
+def _argomenti(dati: dict, percorso: Path) -> tuple[Argomento, ...]:
+    valore = dati.get("argomenti")
+    if not isinstance(valore, list) or not valore:
+        raise ValueError(f"{percorso.name}: servono uno o piu' [[argomenti]] con nome e descrizione")
+    argomenti = []
+    for n, voce in enumerate(valore, start=1):
+        if not isinstance(voce, dict):
+            raise ValueError(f"{percorso.name}: ogni voce di [[argomenti]] vuole nome e descrizione")
+        # l'errore dice quale voce (numero e nome) e quale campo: senza, "descrizione" sembrava
+        # il campo in cima al file
+        etichetta = voce.get("nome") if isinstance(voce.get("nome"), str) else ""
+        posizione = f"[[argomenti]] voce {n} ({etichetta.strip() or 'senza nome'})"
+        nome = _campo_voce(voce, "nome", percorso, posizione)
+        descrizione = _campo_voce(voce, "descrizione", percorso, posizione)
+        if nome == ALTRO:
+            raise ValueError(f"{percorso.name}: l'argomento '{ALTRO}' e' riservato (fuori ambito)")
+        if any(a.nome == nome for a in argomenti):
+            raise ValueError(f"{percorso.name}: argomento '{nome}' ripetuto")
+        argomenti.append(Argomento(nome, descrizione))
+    return tuple(argomenti)
+
+
+# legge e controlla il file TOML dell'ambito
+def load_ambito(percorso: Path) -> Ambito:
+    """Ambito dal file TOML; ogni problema diventa un ValueError con file e campo."""
+    try:
+        # tomllib vuole il file in binario: la codifica UTF-8 la gestisce lui
+        with open(percorso, "rb") as f:
+            dati = tomllib.load(f)
+    except FileNotFoundError:
+        raise ValueError(f"File dell'ambito non trovato: {percorso}") from None
+    except tomllib.TOMLDecodeError as errore:
+        raise ValueError(f"{percorso.name}: TOML non valido ({errore})") from None
+    return Ambito(
+        descrizione=_testo(dati, "descrizione", percorso),
+        rifiuto=_testo(dati, "rifiuto", percorso),
+        esempi_in_ambito=_esempi(dati, "esempi_in_ambito", percorso),
+        esempi_fuori_ambito=_esempi(dati, "esempi_fuori_ambito", percorso),
+        argomenti=_argomenti(dati, percorso),
+    )

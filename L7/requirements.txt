@@ -1,0 +1,11 @@
+# venv di sviluppo di L6 (Python 3.14, creato con Python 3.14.5): tutte le dipendenze dei componenti
+# piu' gli strumenti di test. Le immagini Docker (step 9) installano solo il file del proprio componente.
+# Dipendenze nuove solo motivate e concordate.
+
+# agente: grafo LangGraph, client e server MCP, servizio HTTP
+-r assistente-laboratorio/requirements.txt
+# back-end: API, database PostgreSQL, client verso l'agente
+-r backend/requirements.txt
+
+# test automatici (solo nel venv, non nelle immagini)
+pytest==9.1.1
