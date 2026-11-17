@@ -79,8 +79,8 @@ Con `--solo-dosi` (stesso k = 5):
 
 Confronto con la partenza:
 - Gnocchi 400 g: invariato (1° posto, «sì»): il chunk con l'indizio è quello con l'elenco.
-- Gnocchi che si sciolgono: resta 1°, ma con il chunk 1 (con elenco) invece del 2; score da 0.6285 a 0.5992.
-  L'indizio è anche lì.
+- Gnocchi che si sciolgono: resta 1° con l'indizio (il chunk della 89 con l'elenco contiene anch'esso «si
+  liquefecero»); score da 0.6285 a 0.5992.
 - Cappelletti: dal 1° al 4° posto, e il chunk trovato (con l'elenco) non contiene «mangiatore discreto»,
   che sta in un chunk senza dosi.
 - Pollo alla cacciatora e cacciucco: le ricette 208 e 455 non hanno elenco, quindi il filtro le esclude.
