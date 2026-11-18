@@ -7,7 +7,8 @@ import pytest
 
 from langchain_core.messages import HumanMessage
 
-from app.adattatore_mcp import (ErroreMCP, InfoArgomento, carica_strumenti, configurazione_server,
+from app.adattatore_mcp import (ErroreMCP, InfoArgomento, carica_strumenti, carica_strumenti_ricerca,
+                                configurazione_ricerca, configurazione_server,
                                 elenca_prompt, leggi_preferenze, ottieni_prompt)
 
 # cartella del progetto: i sottoprocessi importano app/ da qui, da qualsiasi cartella
@@ -164,3 +165,42 @@ def test_server_rotto_e_errore_mcp(caplog):
     assert not isinstance(errore.value, PromptNonValido)
     assert any(r.levelno == logging.WARNING and "prompts/get spiega non riuscita" in r.getMessage()
                for r in caplog.records)
+
+
+# --- lezione 8, esercizio 2: server di ricerca accanto a quello dell'assistente ---
+
+# Verifica come parte il server di ricerca: cartella ricerca/, variabili passate solo se impostate.
+def test_configurazione_ricerca_passa_le_variabili(monkeypatch):
+    monkeypatch.setenv("EMBEDDING_MODEL", "bge")
+    monkeypatch.setenv("QDRANT_URL", "")
+    conf = configurazione_ricerca()
+    assert conf["command"] == sys.executable
+    assert conf["args"] == ["-m", "mcp_ricerca.server"]
+    assert Path(conf["cwd"]).name == "ricerca" and Path(conf["cwd"]).parent == CARTELLA.parent
+    assert conf["env"]["EMBEDDING_MODEL"] == "bge"
+    assert "QDRANT_URL" not in conf["env"]
+    assert conf["env"]["FASTMCP_LOG_LEVEL"] == "CRITICAL" and conf["env"]["PYTHONIOENCODING"] == "utf-8"
+
+
+# Verifica la discovery del server di ricerca vero (nessun servizio: tools/list non usa Qdrant).
+def test_carica_strumenti_ricerca(caplog):
+    with caplog.at_level(logging.INFO, logger="mcp"):
+        strumenti = carica_strumenti_ricerca()
+    assert [t.name for t in strumenti] == ["search_documents"]
+    assert "tools/list ricerca: search_documents" in _log_mcp(caplog)
+
+
+# Verifica che un errore del tool di ricerca arrivi come testo per il modello (capitolo controllato
+# prima di Qdrant e LM Studio: nessun servizio).
+def test_ricerca_errore_del_tool(monkeypatch):
+    monkeypatch.setenv("EMBEDDING_MODEL", "bge")
+    cerca = carica_strumenti_ricerca()[0]
+    risultato = cerca.invoke({"query": "brodo", "capitolo": "DOLCI"})
+    assert "sconosciuto" in risultato and "PASTICCERIA" in risultato
+
+
+# Verifica che un server di ricerca che non parte non fermi l'agente: nessun tool e un avviso.
+def test_ricerca_cartella_inesistente(tmp_path, caplog):
+    with caplog.at_level(logging.INFO, logger="mcp"):
+        assert carica_strumenti_ricerca(tmp_path / "manca") == []
+    assert any(m.startswith("server ricerca non disponibile") for m in _log_mcp(caplog))
