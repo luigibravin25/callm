@@ -119,3 +119,18 @@ class ModelloFlussoFinto(BaseChatModel):
         elif not str(risposta.content):
             # risposta vuota: un pezzo vuoto, cosi' lo streaming produce comunque un messaggio
             yield ChatGenerationChunk(message=AIMessageChunk(content=""))
+
+
+# finto search_documents (lezione 8): registra gli argomenti e restituisce il JSON del server di ricerca
+# dell'esercizio 1 con i passaggi dati (solo i campi che servono ai test)
+def search_documents_finto(registro: list, ids: tuple[str, ...] = ("R89-1", "R89-2")):
+    # import qui: servono solo a chi usa questo finto strumento
+    from langchain_core.tools import tool
+
+    @tool("search_documents")
+    def search_documents(query: str, top_k: int = 5, capitolo: str = "") -> str:
+        """Ricerca finta nel ricettario per i test: restituisce sempre gli stessi passaggi."""
+        registro.append({"query": query, "top_k": top_k, "capitolo": capitolo})
+        return json.dumps({"modalita": "base", "query": query, "top_k": top_k, "capitolo": capitolo,
+                           "nota": None, "passaggi": [{"id": i, "testo": f"testo di {i}"} for i in ids]})
+    return search_documents

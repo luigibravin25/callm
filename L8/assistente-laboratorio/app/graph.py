@@ -9,7 +9,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
-# parti del progetto: ambito, prompt dell'agente, revisore, riassunto, router
+# parti del progetto: ambito, citazioni, prompt dell'agente, revisore, riassunto, router
+from app.citazioni import controlla, riga_log
 from app.config import Ambito
 from app.llm import SYSTEM_PROMPT
 from app.revisore import MSG_REVISORE, REVISORE, valuta
@@ -22,6 +23,8 @@ log_agente = logging.getLogger("agente")
 log_rifiuto = logging.getLogger("rifiuto")
 log_revisore = logging.getLogger("revisore")
 log_riassunto = logging.getLogger("riassunto")
+# lezione 8: esito del controllo delle citazioni a fine turno
+log_citazioni = logging.getLogger("citazioni")
 
 # name delle risposte fisse del programma (risposta vuota, limite): non sono del modello
 PROGRAMMA = "programma"
@@ -255,6 +258,19 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
         # RemoveMessage: add_messages toglie dallo stato il messaggio con quell'id
         return {"messages": [RemoveMessage(id=i) for i in ids] + nuovi}
 
+    # nodo "citazioni" (lezione 8): a fine turno gli id citati devono venire dai passaggi del turno;
+    # l'esito va solo nel log, la risposta all'utente resta quella del modello
+    def citazioni(state: State) -> dict:
+        messaggi = state["messages"]
+        # messaggi del turno senza le chiamate mai eseguite (limite di passaggi, server assente)
+        turno = [m for m in messaggi[_ultima_domanda(messaggi) + 1:]
+                 if not (isinstance(m, ToolMessage) and m.content in (MSG_NON_DISPONIBILE, MSG_NON_ESEGUITA))]
+        esito = controlla(turno, str(messaggi[-1].content))
+        # citazioni sconosciute: avviso, così si notano nel terminale dell'agente
+        livello = logging.WARNING if esito.sconosciute else logging.INFO
+        log_citazioni.log(livello, riga_log(esito))
+        return {}
+
     # montaggio del grafo
     g = StateGraph(State)
     g.add_node("riassunto", riassunto)
@@ -265,6 +281,7 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
     g.add_node("limite", limite)
     g.add_node("revisore", revisore)
     g.add_node("pulizia", pulizia)
+    g.add_node("citazioni", citazioni)
     # si parte dal riassunto della cronologia, poi il router
     g.add_edge(START, "riassunto")
     g.add_edge("riassunto", "router")
@@ -280,6 +297,8 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
     g.add_conditional_edges("revisore", dopo_revisore,
                             {"modello": "modello", "pulizia": "pulizia"})
     g.add_edge("limite", "pulizia")
-    g.add_edge("pulizia", END)
+    # dopo la pulizia il controllo delle citazioni, poi la fine del turno
+    g.add_edge("pulizia", "citazioni")
+    g.add_edge("citazioni", END)
     # compile() controlla il grafo e lo rende eseguibile con invoke()
     return g.compile()
