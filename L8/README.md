@@ -61,7 +61,7 @@ Ambiente: `& .\venv\Scripts\python.exe -m pip install -r requirements.txt` (venv
 
 | Suite | Comando (PowerShell) | Esito (aggiornato all'esercizio 1, 2026-11-18) |
 |---|---|---|
-| Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 154 passati (126 della lezione 7 + 28 del server MCP, `tests/test_mcp_*.py`) |
+| Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 155 passati (126 della lezione 7 + 29 del server MCP, `tests/test_mcp_*.py`) |
 | Agente (lezioni 5-6) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 345 passati, 12 saltati |
 | Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 30 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
 

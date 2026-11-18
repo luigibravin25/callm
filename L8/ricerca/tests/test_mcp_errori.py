@@ -158,3 +158,13 @@ def test_log_del_server_senza_rumore(monkeypatch):
     assert avvii == [{"show_banner": False}]
     assert not logging.getLogger("mcp.server.lowlevel.server").isEnabledFor(logging.INFO)
     assert logging.getLogger("mcp_ricerca").isEnabledFor(logging.INFO)
+
+
+def test_client_qdrant_riusato(monkeypatch):
+    # crea_indice vera: un solo client Qdrant per indirizzo, non uno nuovo (mai chiuso) a ogni chiamata
+    monkeypatch.setenv("EMBEDDING_MODEL", "bge")
+    monkeypatch.setenv("QDRANT_URL", "http://127.0.0.1:6391")
+    primo, secondo = server.crea_indice(), server.crea_indice()
+    assert primo.client is secondo.client
+    monkeypatch.setenv("QDRANT_URL", "http://127.0.0.1:6392")
+    assert server.crea_indice().client is not primo.client

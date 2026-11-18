@@ -3,7 +3,8 @@
 Avvio in stdio, da L8\\ricerca:  & ..\\venv\\Scripts\\python.exe -m mcp_ricerca.server
 Configurazione dalle variabili d'ambiente della ricerca (EMBEDDING_MODEL, QDRANT_URL, ...).
 """
-# librerie standard: JSON, log, variabili d'ambiente, misura del tempo
+# librerie standard: cache, JSON, log, variabili d'ambiente, misura del tempo
+import functools
 import json
 import logging
 import os
@@ -59,10 +60,16 @@ def configura_log() -> None:
         logging.getLogger(nome).setLevel(logging.WARNING)
 
 
+@functools.cache
+def client_qdrant(url: str) -> QdrantClient:
+    """Un solo client per indirizzo, riusato tra le chiamate (niente connessioni lasciate aperte a ogni ricerca)."""
+    return QdrantClient(url=url)
+
+
 def crea_indice() -> Indice:
     """Indice sopra la collezione della configurazione (letta a ogni chiamata); i test la sostituiscono."""
     conf = carica_configurazione()
-    return Indice(QdrantClient(url=conf.qdrant_url), conf.collezione, conf.modello_embedding,
+    return Indice(client_qdrant(conf.qdrant_url), conf.collezione, conf.modello_embedding,
                   EmbedderLMStudio(conf.lm_base_url, conf.modello_embedding))
 
 

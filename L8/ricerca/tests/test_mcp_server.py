@@ -102,7 +102,9 @@ def test_top_k_ridotto():
 
 def test_top_k_come_stringa():
     # il modello può mandare il numero come testo: FastMCP lo converte
-    assert len(cerca(query="brodo", top_k="3")["passaggi"]) <= 3
+    r = cerca(query="brodo", top_k="3")
+    # convertito davvero a 3, non solo «al massimo 3 passaggi»
+    assert r["top_k"] == 3 and len(r["passaggi"]) <= 3
 
 
 def test_filtro_capitolo():
