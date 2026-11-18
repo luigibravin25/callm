@@ -109,3 +109,9 @@ def test_filtro_capitolo():
     r = cerca(query="brodo", capitolo=" brodi, gelatina e sughi ")
     assert r["capitolo"] == "BRODI, GELATINA E SUGHI"
     assert r["passaggi"] and {p["capitolo"] for p in r["passaggi"]} == {"BRODI, GELATINA E SUGHI"}
+
+
+def test_capitolo_solo_spazi():
+    # solo spazi = nessun filtro, come la stringa vuota (non un capitolo sconosciuto)
+    r = cerca(query="brodo", capitolo="   ")
+    assert r["capitolo"] == "" and r["passaggi"]

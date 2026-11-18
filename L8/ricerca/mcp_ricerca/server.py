@@ -84,8 +84,8 @@ def _cerca(query: str, top_k: int, capitolo: str) -> RisultatoRicerca:
     """Ricerca vera e propria: gli errori previsti sono ErroreRicerca o errori del client di Qdrant."""
     # top_k entro il massimo del codice (oltre: ridotto, con nota)
     k, nota = limita_top_k(top_k)
-    # stringa vuota = nessun filtro; il confronto senza maiuscole lo fa la ricerca della lezione 7
-    risultati = crea_indice().cerca(query, capitolo=capitolo or None, k=k)
+    # stringa vuota o di soli spazi = nessun filtro; il confronto senza maiuscole lo fa la ricerca della lezione 7
+    risultati = crea_indice().cerca(query, capitolo=capitolo.strip() or None, k=k)
     return RisultatoRicerca(modalita=MODALITA, query=query, top_k=k,
                             capitolo=capitolo.strip().upper() if capitolo.strip() else "", nota=nota,
                             passaggi=[passaggio(r) for r in risultati])
