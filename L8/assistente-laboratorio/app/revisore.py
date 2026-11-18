@@ -18,6 +18,9 @@ FRASE_TUTTE_LE_PARTI = ("Controlla che la risposta risponda a tutte le parti del
 FRASE_NON_I_DATI = ("Non controllare se i dati sono veri: l'assistente li ha presi dai suoi "
                     "strumenti.")
 FRASE_SALUTI = "Una risposta breve a un saluto o a un ringraziamento è coerente."
+# lezione 8: un'astensione dichiarata non va rimandata all'agente (spingerebbe a inventare)
+FRASE_ASTENSIONE = ("Una risposta che dichiara di non aver trovato l'informazione nel ricettario "
+                    "è coerente.")
 # ritocco 1 (prova reale con gemma): il modello scriveva "false" nel motivo e bocciava anche
 # le risposte complete; il motivo deve elencare le parti coperte e quelle mancanti
 FRASE_MOTIVO = ("Nel motivo elenca le parti della domanda e, per ognuna, se la risposta la "
@@ -49,6 +52,7 @@ def prompt_revisore() -> str:
         FRASE_TUTTE_LE_PARTI,
         FRASE_NON_I_DATI,
         FRASE_SALUTI,
+        FRASE_ASTENSIONE,
         FRASE_MOTIVO,
         ESEMPIO_OUTPUT,
     ])

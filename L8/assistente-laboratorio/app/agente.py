@@ -148,17 +148,21 @@ def prepara(settings: Settings, ambito: Ambito) -> Agente:
         preferenze = valida(adattatore_mcp.leggi_preferenze(), settings.fuso_predefinito)
         prompts = adattatore_mcp.elenca_prompt()
         partito, motivo = True, ""
+    # lezione 8: server di ricerca a parte; se non parte l'elenco è vuoto (avviso nel log)
+    strumenti = strumenti + adattatore_mcp.carica_strumenti_ricerca()
+    nomi = tuple(t.name for t in strumenti)
     grafo = build_graph(llm.build_llm(settings, strumenti), llm.build_router_llm(settings, ambito),
                         llm.build_revisore_llm(settings), llm.build_riassunto_llm(settings),
                         ambito, settings.max_steps, settings.max_revisioni,
                         settings.soglia_riassunto, settings.messaggi_recenti,
                         strumenti=strumenti,
-                        system_prompt=llm.prompt_agente(preferenze, bool(strumenti)),
+                        system_prompt=llm.prompt_agente(preferenze, "tooltime" in nomi,
+                                                        "search_documents" in nomi),
                         fuso_predefinito=preferenze.fuso)
     # controlli dal vivo di /stato con i valori di questa configurazione
     from app.stato import verifica_mcp, verifica_modello
     return Agente(grafo=grafo, prompts=prompts, mcp_partito=partito,
-                  strumenti=tuple(t.name for t in strumenti), motivo_mcp=motivo,
+                  strumenti=nomi, motivo_mcp=motivo,
                   verifica_modello=lambda: verifica_modello(settings.base_url, settings.model),
                   verifica_mcp=lambda: verifica_mcp(partito),
                   fuso_predefinito=preferenze.fuso)

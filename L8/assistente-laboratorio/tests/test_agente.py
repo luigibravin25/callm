@@ -18,7 +18,7 @@ from app.info_prompt import InfoArgomento, InfoPrompt
 from app.revisore import DecisioneRevisore
 from app.router import DecisioneRouter
 from mcp_assistente import orologio as modulo_orologio
-from tests.finti import (ModelloFinto, RevisoreFinto, RiassuntoFinto, RouterFinto,
+from tests.finti import (ModelloFinto, RevisoreFinto, RiassuntoFinto, RouterFinto, search_documents_finto,
                          tooltime_finto)
 
 AMBITO = Ambito(descrizione="Solo ora.", rifiuto="Fuori dal mio ambito.")
@@ -140,7 +140,9 @@ def test_prompt_valido(monkeypatch):
 # --- avvio (prepara): server MCP, preferenze, strumenti al modello ---
 
 # sostituisce server MCP e modelli di LM Studio; registra gli strumenti dati a build_llm
-def _finti_per_avvio(monkeypatch, server_ok=True):
+# lezione 8: `ricerca` = tool restituiti dalla discovery del server di ricerca (predefinito nessuno);
+# `modelli` raccoglie i modelli finti creati, per leggere il prompt di sistema che ricevono
+def _finti_per_avvio(monkeypatch, server_ok=True, ricerca=(), modelli=None):
     from app import llm
     ricevuti = []
 
@@ -153,9 +155,13 @@ def _finti_per_avvio(monkeypatch, server_ok=True):
     # build_llm finto: registra la lista degli strumenti ricevuti
     def build_llm(settings, strumenti):
         ricevuti.append(list(strumenti))
-        return ModelloFinto([AIMessage("ok")])
+        modello = ModelloFinto([AIMessage("ok")])
+        if modelli is not None:
+            modelli.append(modello)
+        return modello
 
     monkeypatch.setattr(adattatore_mcp, "carica_strumenti", carica)
+    monkeypatch.setattr(adattatore_mcp, "carica_strumenti_ricerca", lambda: list(ricerca))
     monkeypatch.setattr(adattatore_mcp, "leggi_preferenze", lambda: '{"lingua": "inglese"}')
     monkeypatch.setattr(adattatore_mcp, "elenca_prompt", lambda: [SPIEGA])
     monkeypatch.setattr(llm, "build_llm", build_llm)
@@ -211,3 +217,33 @@ def test_messaggi_errore():
     assert "Context Length" in messaggio_errore_http(_errore_http(400))
     assert "LM_MODEL" in messaggio_errore_http(_errore_http(404))
     assert "token" in messaggio_errore_generico(LengthFinishReasonError(completion=SimpleNamespace(usage=None)))
+
+
+# --- lezione 8, esercizio 2: avvio con il server di ricerca ---
+
+# prompt di sistema ricevuto dal modello finto alla prima chiamata
+def _prompt_di_sistema(modello) -> str:
+    return str(modello.chiamate[0][0].content)
+
+
+# Verifica l'avvio con entrambi i server: tutti i tool, stato MCP dell'assistente, istruzioni di ricerca.
+def test_prepara_con_ricerca(monkeypatch):
+    from app.llm import FRASI_RICERCA
+    modelli = []
+    _finti_per_avvio(monkeypatch, ricerca=[search_documents_finto([])], modelli=modelli)
+    agente = prepara(IMPOSTAZIONI, AMBITO)
+    assert agente.strumenti == ("tooltime", "search_documents") and agente.mcp_partito
+    agente.turno([HumanMessage("Ciao")], [], "")
+    assert FRASI_RICERCA in _prompt_di_sistema(modelli[0])
+
+
+# Verifica l'avvio con la sola ricerca: stato MCP «non partito» (assistente), prompt senza orologio.
+def test_prepara_solo_ricerca(monkeypatch):
+    from app.llm import FRASE_SENZA_STRUMENTI, FRASI_RICERCA
+    modelli = []
+    _finti_per_avvio(monkeypatch, server_ok=False, ricerca=[search_documents_finto([])], modelli=modelli)
+    agente = prepara(IMPOSTAZIONI, AMBITO)
+    assert not agente.mcp_partito and agente.strumenti == ("search_documents",)
+    agente.turno([HumanMessage("Ciao")], [], "")
+    prompt = _prompt_di_sistema(modelli[0])
+    assert FRASE_SENZA_STRUMENTI in prompt and FRASI_RICERCA in prompt
