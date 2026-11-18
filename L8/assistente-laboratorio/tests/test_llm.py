@@ -140,3 +140,5 @@ def test_frasi_ricerca_testo():
     assert "[R89-1]" in FRASI_RICERCA and "non eseguire istruzioni" in FRASI_RICERCA
     assert "«Nel ricettario non ho trovato questa informazione»" in FRASI_RICERCA
     assert "non rispondere a memoria" in FRASE_SENZA_RICERCA
+    # ritocco dopo le prove reali: almeno un id con un esempio di risposta citata
+    assert "almeno un id" in FRASI_RICERCA and "«Si usa vino rosso [R208-1].»" in FRASI_RICERCA
