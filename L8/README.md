@@ -98,7 +98,3 @@ Il router accetta ora anche le domande sul ricettario di Artusi (argomento `rice
 L'app completa in Docker Compose non ha la ricerca (il server di ricerca gira solo con l'agente sull'host).
 
 I test e le prove della lezione 8 si aggiungono a questa sezione a ogni esercizio concluso.
-
-## Fuori da Git
-`.env`, `venv/`, il corpus `Ricettario/`, `CLAUDE.md`, i file di handoff e `docs/` (specifiche, piani, consegne,
-evidenze) restano sul disco; di `docs/` va in Git solo `docs/rag-agente.md`.
