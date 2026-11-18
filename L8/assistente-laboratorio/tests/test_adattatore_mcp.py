@@ -204,3 +204,15 @@ def test_ricerca_cartella_inesistente(tmp_path, caplog):
     with caplog.at_level(logging.INFO, logger="mcp"):
         assert carica_strumenti_ricerca(tmp_path / "manca") == []
     assert any(m.startswith("server ricerca non disponibile") for m in _log_mcp(caplog))
+
+
+# Verifica (revisione finale) un server di ricerca che parte ma non ha tool utilizzabili: avviso come se
+# non fosse partito, non una riga tools/list vuota.
+def test_ricerca_senza_tool_validi(monkeypatch, caplog):
+    from app import adattatore_mcp
+    monkeypatch.setattr(adattatore_mcp, "schema_valido", lambda tool: False)
+    with caplog.at_level(logging.INFO, logger="mcp"):
+        assert carica_strumenti_ricerca() == []
+    messaggi = _log_mcp(caplog)
+    assert any(m.startswith("server ricerca non disponibile") for m in messaggi)
+    assert not any(m.startswith("tools/list ricerca") for m in messaggi)

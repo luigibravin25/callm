@@ -186,6 +186,10 @@ def carica_strumenti_ricerca(cartella: Path = CARTELLA_RICERCA) -> list[BaseTool
     for tool in scoperti:
         if not schema_valido(tool):
             log.warning("tool %s scartato: schema con anyOf o senza type", tool.name)
+    # server partito ma senza tool utilizzabili: per l'agente è come se non ci fosse
+    if not validi:
+        log.warning("server ricerca non disponibile (nessun tool utilizzabile): nessuna ricerca")
+        return []
     log.info("tools/list ricerca: %s", ", ".join(t.name for t in validi))
     return validi
 

@@ -247,3 +247,16 @@ def test_prepara_solo_ricerca(monkeypatch):
     agente.turno([HumanMessage("Ciao")], [], "")
     prompt = _prompt_di_sistema(modelli[0])
     assert FRASE_SENZA_STRUMENTI in prompt and FRASI_RICERCA in prompt
+
+
+# Verifica (revisione finale) l'avvio senza server di ricerca: il modello riceve la frase del ricettario
+# non disponibile e non le istruzioni di ricerca.
+def test_prepara_senza_ricerca(monkeypatch):
+    from app.llm import FRASE_SENZA_RICERCA, FRASI_RICERCA
+    modelli = []
+    _finti_per_avvio(monkeypatch, modelli=modelli)
+    agente = prepara(IMPOSTAZIONI, AMBITO)
+    assert agente.strumenti == ("tooltime",)
+    agente.turno([HumanMessage("Ciao")], [], "")
+    prompt = _prompt_di_sistema(modelli[0])
+    assert FRASE_SENZA_RICERCA in prompt and FRASI_RICERCA not in prompt

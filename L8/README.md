@@ -62,7 +62,7 @@ Ambiente: `& .\venv\Scripts\python.exe -m pip install -r requirements.txt` (venv
 | Suite | Comando (PowerShell) | Esito (aggiornato all'esercizio 2, 2026-11-18) |
 |---|---|---|
 | Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 155 passati (126 della lezione 7 + 29 del server MCP, `tests/test_mcp_*.py`) |
-| Agente (lezioni 5-6 e aggancio alla ricerca) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 373 passati, 12 saltati (345 di prima + 28 dell'esercizio 2) |
+| Agente (lezioni 5-6 e aggancio alla ricerca) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 377 passati, 12 saltati (345 di prima + 32 dell'esercizio 2) |
 | Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 30 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
 
 Prove reali della lezione 7 (servizi accesi), da `L8\ricerca`:
@@ -96,5 +96,9 @@ $env:EMBEDDING_MODEL = "text-embedding-bge-m3"
 
 Il router accetta ora anche le domande sul ricettario di Artusi (argomento `ricettario` in `config/ambito.toml`).
 L'app completa in Docker Compose non ha la ricerca (il server di ricerca gira solo con l'agente sull'host).
+`GET /stato` e i comandi `/prompt` riguardano solo il server dell'assistente (orologio, preferenze, prompt): con
+quel server spento e la ricerca accesa `/stato` dice `non_disponibile` ma tra gli strumenti compare
+`search_documents`; lo stato della ricerca si legge nel log di avvio (`tools/list ricerca` oppure
+`server ricerca non disponibile`).
 
 I test e le prove della lezione 8 si aggiungono a questa sezione a ogni esercizio concluso.

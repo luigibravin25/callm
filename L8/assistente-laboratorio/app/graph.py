@@ -129,6 +129,8 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
     preferenze per tooltime senza fuso."""
     # ToolNode solo se ci sono strumenti (senza server MCP la lista e' vuota)
     nodo_strumenti = ToolNode(list(strumenti)) if strumenti else None
+    # nomi dei tool disponibili (lezione 8: una chiamata a un tool assente riceve «non disponibile»)
+    nomi_strumenti = {t.name for t in strumenti}
 
     # nodo "riassunto": oltre la soglia sostituisce i messaggi vecchi con un riassunto
     def riassunto(state: State) -> dict:
@@ -192,14 +194,22 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
             state = {**state, "messages": state["messages"][:-1] + [richiesta]}
         for c in richiesta.tool_calls:
             log_agente.info("chiamata strumento %s con argomenti %s", c["name"], c["args"])
-        if nodo_strumenti is None:
-            # server MCP non partito: ogni chiamata riceve un errore, cosi' la chat non cade
-            # e la cronologia resta valida (una risposta per ogni tool_call)
-            out = {"messages": [ToolMessage(MSG_NON_DISPONIBILE, tool_call_id=c["id"],
-                                            name=c["name"], status="error")
-                                for c in richiesta.tool_calls]}
-        else:
-            out = nodo_strumenti.invoke(state, config)
+        # lezione 8: con due server uno puo' mancare; le chiamate a tool che il grafo non ha (server
+        # non partito) ricevono lo stesso errore di quando non c'e' nessun server
+        mancanti = [c for c in richiesta.tool_calls if c["name"] not in nomi_strumenti]
+        presenti = [c for c in richiesta.tool_calls if c["name"] in nomi_strumenti]
+        # server MCP non partito: ogni chiamata riceve un errore, cosi' la chat non cade
+        # e la cronologia resta valida (una risposta per ogni tool_call)
+        non_disponibili = [ToolMessage(MSG_NON_DISPONIBILE, tool_call_id=c["id"], name=c["name"],
+                                       status="error") for c in mancanti]
+        eseguiti = []
+        if presenti:
+            # il ToolNode esegue le chiamate dell'ultimo messaggio: gli si passa una copia con le sole
+            # chiamate ai tool presenti (la cronologia tiene il messaggio con tutte le chiamate)
+            solo_presenti = richiesta.model_copy(update={"tool_calls": presenti})
+            stato_presenti = {**state, "messages": state["messages"][:-1] + [solo_presenti]}
+            eseguiti = nodo_strumenti.invoke(stato_presenti, config)["messages"]
+        out = {"messages": non_disponibili + eseguiti}
         for m in out["messages"]:
             log_agente.info("risultato strumento %s: %s", m.name, m.content)
         # il messaggio completato (stesso id) sostituisce quello vecchio nella cronologia
