@@ -59,3 +59,8 @@ def test_riga_log():
         "verificate=R208-1 sconosciute=- ricerche=1 passaggi=5"
     assert riga_log(EsitoCitazioni(("R89-1", "R89-2"), ("R999-1",), 2, 7)) == \
         "verificate=R89-1,R89-2 sconosciute=R999-1 ricerche=2 passaggi=7"
+
+
+# Verifica (revisione finale) che un id attaccato ad altre lettere o cifre non valga come citazione.
+def test_id_citati_solo_id_interi():
+    assert id_citati("[XR89-1] [R89-12b] [R89-1]") == ["R89-1"]

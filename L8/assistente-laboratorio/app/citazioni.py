@@ -15,7 +15,8 @@ from langchain_core.messages import BaseMessage, ToolMessage
 NOME_RICERCA = "search_documents"
 # un gruppo tra parentesi quadre (senza parentesi annidate) e, dentro, un id citabile
 GRUPPO = re.compile(r"\[([^\[\]]*)\]")
-ID_CITABILE = re.compile(r"R\d+-\d+")
+# \b: solo id interi (non dentro «XR89-1» o «R89-12b», che altrimenti varrebbero R89-1 o R89-12)
+ID_CITABILE = re.compile(r"\bR\d+-\d+\b")
 
 
 # esito del controllo di un turno: cosa è stato citato, cosa no, quante ricerche e quanti passaggi
