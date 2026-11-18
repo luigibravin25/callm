@@ -27,7 +27,7 @@ passaggi verificabili. Quattro esercizi, ognuno sul suo ramo:
 
 | Esercizio | Cosa aggiunge | Stato |
 |---|---|---|
-| 1 · server MCP di ricerca | server FastMCP con il tool `search_documents` (query, `top_k` limitato, filtro), risultato con id citabile, errori del tool, un log per chiamata | da implementare |
+| 1 · server MCP di ricerca | server FastMCP con il tool `search_documents` (query, `top_k` limitato, filtro), risultato con id citabile, errori del tool, un log per chiamata | fatto |
 | 2 · aggancio all'agente | il server si aggiunge ai server MCP dell'agente; istruzioni per citare gli id e astenersi; controllo delle citazioni a fine turno | da implementare |
 | 3 · riscrittura e reranking | riscrittura/scomposizione della domanda con fusione RRF, reranking listwise, attivabili dalla configurazione; confronto di quattro configurazioni | da implementare |
 | 4 · soglie sullo score | due soglie dalla configurazione: passaggi affidabili, di affidabilità media, esclusi; calibrazione sugli score di bge-m3 | da implementare |
@@ -59,9 +59,9 @@ Modelli (LM Studio sull'host, dalla configurazione): chat `google/gemma-4-e2b`; 
 I test automatici non hanno bisogno di LM Studio né di Qdrant (embedder, modello e Qdrant finti o in memoria).
 Ambiente: `& .\venv\Scripts\python.exe -m pip install -r requirements.txt` (venv di `L8`).
 
-| Suite | Comando (PowerShell) | Esito all'inizio della lezione 8 (2026-11-17) |
+| Suite | Comando (PowerShell) | Esito (aggiornato all'esercizio 1, 2026-11-18) |
 |---|---|---|
-| Ricerca (lezione 7) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 126 passati |
+| Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 153 passati (126 della lezione 7 + 27 del server MCP, `tests/test_mcp_*.py`) |
 | Agente (lezioni 5-6) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 345 passati, 12 saltati |
 | Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 30 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
 
@@ -71,6 +71,15 @@ Prove reali della lezione 7 (servizi accesi), da `L8\ricerca`:
 & ..\venv\Scripts\python.exe valuta.py                     # sei domande con fonte attesa, tabella Markdown
 & ..\venv\Scripts\python.exe valuta.py --solo-dosi
 & ..\venv\Scripts\python.exe cerca.py "Che vino si usa nel pollo alla cacciatora?"
+```
+
+Prova reale del server MCP di ricerca (esercizio 1), da `L8\ricerca`: `prova_mcp.py` avvia il server in stdio
+come farà l'agente; lo stdout mostra discovery e risultati, lo stderr la riga di log del server.
+
+```powershell
+& ..\venv\Scripts\python.exe prova_mcp.py --discovery                 # tool con schema e resource dei capitoli
+& ..\venv\Scripts\python.exe prova_mcp.py "Che vino si usa nel pollo alla cacciatora?"
+& ..\venv\Scripts\python.exe prova_mcp.py "brodo" --capitolo "DOLCI"  # errore del tool, senza traceback
 ```
 
 I test e le prove della lezione 8 si aggiungono a questa sezione a ogni esercizio concluso.
