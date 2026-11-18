@@ -47,9 +47,15 @@ mcp = FastMCP("ricerca", mask_error_details=True)
 
 
 def configura_log() -> None:
-    """Log su stderr (stdout è il canale MCP in stdio), senza le richieste HTTP di httpx."""
-    logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s", stream=sys.stderr)
-    for nome in ("httpx", "httpx2"):
+    """Log su stderr (stdout è il canale MCP in stdio): solo le righe del server e gli avvisi delle librerie."""
+    # su Windows lo stderr reindirizzato usa la codifica locale: «→» e le lettere accentate in UTF-8
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+    logging.basicConfig(level=logging.WARNING, format="[%(name)s] %(message)s", stream=sys.stderr)
+    # le righe delle chiamate del tool
+    log.setLevel(logging.INFO)
+    # fuori le richieste HTTP di httpx e le righe «Processing request …» della libreria mcp
+    for nome in ("httpx", "httpx2", "mcp"):
         logging.getLogger(nome).setLevel(logging.WARNING)
 
 
@@ -121,7 +127,8 @@ def capitoli() -> str:
 def main() -> None:
     """Avvio del server in stdio con il log su stderr."""
     configura_log()
-    mcp.run()
+    # senza banner: su stderr restano solo le righe di log
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":

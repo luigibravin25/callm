@@ -148,3 +148,13 @@ def test_query_lunga_troncata_nel_log(monkeypatch, caplog):
 
 def test_logger_fastmcp_silenziato():
     assert logging.getLogger("fastmcp").level == logging.CRITICAL
+
+
+def test_log_del_server_senza_rumore(monkeypatch):
+    # in stdio: niente banner di FastMCP e niente righe «Processing request …» della libreria mcp
+    avvii = []
+    monkeypatch.setattr(server.mcp, "run", lambda **kwargs: avvii.append(kwargs))
+    server.main()
+    assert avvii == [{"show_banner": False}]
+    assert not logging.getLogger("mcp.server.lowlevel.server").isEnabledFor(logging.INFO)
+    assert logging.getLogger("mcp_ricerca").isEnabledFor(logging.INFO)
