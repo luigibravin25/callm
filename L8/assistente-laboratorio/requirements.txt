@@ -1,0 +1,19 @@
+# dipendenze dell'agente (immagine Docker dell'agente e venv di L6 tramite ../requirements.txt)
+# Python 3.14; versioni fissate, uguali in tutti i file di requisiti
+
+# grafo dell'agente: stato, nodi, archi condizionali, ToolNode
+langgraph==1.2.17
+# client compatibile OpenAI verso LM Studio (ChatOpenAI, bind_tools, with_structured_output)
+langchain-openai==1.7.2
+# database dei fusi orari IANA per zoneinfo (su Windows e nelle immagini slim non c'e' quello di sistema)
+tzdata==2026.5
+# server MCP (step 4): tooltime e resource utente://preferenze, trasporto stdio
+fastmcp==3.4.11
+# client MCP per LangChain: tool MCP come strumenti dell'agente, lettura della resource
+langchain-mcp-adapters==0.3.2
+# servizio HTTP dell'agente (step 6): endpoint, validazione, documentazione OpenAPI su /docs
+fastapi==0.162.5
+# server ASGI che esegue il servizio
+uvicorn==0.54.0
+# client HTTP della CLI verso l'agente e di /stato verso LM Studio
+httpx==0.28.1
