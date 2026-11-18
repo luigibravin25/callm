@@ -9,7 +9,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
-# parti del progetto: ambito, prompt dell'agente, revisore, riassunto, router
+# parti del progetto: ambito, citazioni, prompt dell'agente, revisore, riassunto, router
+from app.citazioni import controlla, riga_log
 from app.config import Ambito
 from app.llm import SYSTEM_PROMPT
 from app.revisore import MSG_REVISORE, REVISORE, valuta
@@ -22,6 +23,8 @@ log_agente = logging.getLogger("agente")
 log_rifiuto = logging.getLogger("rifiuto")
 log_revisore = logging.getLogger("revisore")
 log_riassunto = logging.getLogger("riassunto")
+# lezione 8: esito del controllo delle citazioni a fine turno
+log_citazioni = logging.getLogger("citazioni")
 
 # name delle risposte fisse del programma (risposta vuota, limite): non sono del modello
 PROGRAMMA = "programma"
@@ -126,6 +129,8 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
     preferenze per tooltime senza fuso."""
     # ToolNode solo se ci sono strumenti (senza server MCP la lista e' vuota)
     nodo_strumenti = ToolNode(list(strumenti)) if strumenti else None
+    # nomi dei tool disponibili (lezione 8: una chiamata a un tool assente riceve «non disponibile»)
+    nomi_strumenti = {t.name for t in strumenti}
 
     # nodo "riassunto": oltre la soglia sostituisce i messaggi vecchi con un riassunto
     def riassunto(state: State) -> dict:
@@ -189,14 +194,22 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
             state = {**state, "messages": state["messages"][:-1] + [richiesta]}
         for c in richiesta.tool_calls:
             log_agente.info("chiamata strumento %s con argomenti %s", c["name"], c["args"])
-        if nodo_strumenti is None:
-            # server MCP non partito: ogni chiamata riceve un errore, cosi' la chat non cade
-            # e la cronologia resta valida (una risposta per ogni tool_call)
-            out = {"messages": [ToolMessage(MSG_NON_DISPONIBILE, tool_call_id=c["id"],
-                                            name=c["name"], status="error")
-                                for c in richiesta.tool_calls]}
-        else:
-            out = nodo_strumenti.invoke(state, config)
+        # lezione 8: con due server uno puo' mancare; le chiamate a tool che il grafo non ha (server
+        # non partito) ricevono lo stesso errore di quando non c'e' nessun server
+        mancanti = [c for c in richiesta.tool_calls if c["name"] not in nomi_strumenti]
+        presenti = [c for c in richiesta.tool_calls if c["name"] in nomi_strumenti]
+        # server MCP non partito: ogni chiamata riceve un errore, cosi' la chat non cade
+        # e la cronologia resta valida (una risposta per ogni tool_call)
+        non_disponibili = [ToolMessage(MSG_NON_DISPONIBILE, tool_call_id=c["id"], name=c["name"],
+                                       status="error") for c in mancanti]
+        eseguiti = []
+        if presenti:
+            # il ToolNode esegue le chiamate dell'ultimo messaggio: gli si passa una copia con le sole
+            # chiamate ai tool presenti (la cronologia tiene il messaggio con tutte le chiamate)
+            solo_presenti = richiesta.model_copy(update={"tool_calls": presenti})
+            stato_presenti = {**state, "messages": state["messages"][:-1] + [solo_presenti]}
+            eseguiti = nodo_strumenti.invoke(stato_presenti, config)["messages"]
+        out = {"messages": non_disponibili + eseguiti}
         for m in out["messages"]:
             log_agente.info("risultato strumento %s: %s", m.name, m.content)
         # il messaggio completato (stesso id) sostituisce quello vecchio nella cronologia
@@ -255,6 +268,19 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
         # RemoveMessage: add_messages toglie dallo stato il messaggio con quell'id
         return {"messages": [RemoveMessage(id=i) for i in ids] + nuovi}
 
+    # nodo "citazioni" (lezione 8): a fine turno gli id citati devono venire dai passaggi del turno;
+    # l'esito va solo nel log, la risposta all'utente resta quella del modello
+    def citazioni(state: State) -> dict:
+        messaggi = state["messages"]
+        # messaggi del turno senza le chiamate mai eseguite (limite di passaggi, server assente)
+        turno = [m for m in messaggi[_ultima_domanda(messaggi) + 1:]
+                 if not (isinstance(m, ToolMessage) and m.content in (MSG_NON_DISPONIBILE, MSG_NON_ESEGUITA))]
+        esito = controlla(turno, str(messaggi[-1].content))
+        # citazioni sconosciute: avviso, così si notano nel terminale dell'agente
+        livello = logging.WARNING if esito.sconosciute else logging.INFO
+        log_citazioni.log(livello, riga_log(esito))
+        return {}
+
     # montaggio del grafo
     g = StateGraph(State)
     g.add_node("riassunto", riassunto)
@@ -265,6 +291,7 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
     g.add_node("limite", limite)
     g.add_node("revisore", revisore)
     g.add_node("pulizia", pulizia)
+    g.add_node("citazioni", citazioni)
     # si parte dal riassunto della cronologia, poi il router
     g.add_edge(START, "riassunto")
     g.add_edge("riassunto", "router")
@@ -280,6 +307,8 @@ def build_graph(llm, router_llm, revisore_llm, riassunto_llm, ambito: Ambito,
     g.add_conditional_edges("revisore", dopo_revisore,
                             {"modello": "modello", "pulizia": "pulizia"})
     g.add_edge("limite", "pulizia")
-    g.add_edge("pulizia", END)
+    # dopo la pulizia il controllo delle citazioni, poi la fine del turno
+    g.add_edge("pulizia", "citazioni")
+    g.add_edge("citazioni", END)
     # compile() controlla il grafo e lo rende eseguibile con invoke()
     return g.compile()

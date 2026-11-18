@@ -35,6 +35,12 @@ URI_PREFERENZE = "utente://preferenze"  # resource delle preferenze dell'utente
 TIMEOUT_S = 30  # discovery, lettura o chiamata bloccata: meglio un errore che un'attesa infinita
 # variabili da passare al server (il client stdio inoltra solo un elenco ristretto di variabili)
 VARIABILI_SERVER = ("PREFERENZE_FILE", "FUSO_PREDEFINITO")
+# lezione 8: server di ricerca della cartella ricerca/ accanto a questo progetto, avviato con "python -m"
+CARTELLA_RICERCA = CARTELLA_PROGETTO.parent / "ricerca"
+MODULO_RICERCA = "mcp_ricerca.server"
+# variabili della ricerca da passare al suo server (le CHUNK_* le controlla la sua configurazione)
+VARIABILI_RICERCA = ("EMBEDDING_MODEL", "LM_BASE_URL", "QDRANT_URL", "QDRANT_COLLEZIONE",
+                     "CHUNK_STRATEGIA", "CHUNK_DIMENSIONE", "CHUNK_OVERLAP")
 
 
 # errore proprio dell'adattatore: il server non parte o non pubblica tool utilizzabili
@@ -65,6 +71,17 @@ def configurazione_server(modulo: str = MODULO_SERVER) -> dict:
     # sys.executable: lo stesso Python del programma (quello del venv)
     return {"command": sys.executable, "args": ["-m", modulo], "transport": "stdio",
             "cwd": str(CARTELLA_PROGETTO), "env": env}
+
+
+# descrive come avviare il server di ricerca (lezione 8): stesso schema del server dell'assistente
+def configurazione_ricerca(cartella: Path = CARTELLA_RICERCA) -> dict:
+    """Voce di MultiServerMCPClient per mcp_ricerca.server, avviato dalla cartella della ricerca."""
+    # stesse variabili fisse dell'altro server: FastMCP silenzioso, accenti leggibili su stderr
+    env = {"FASTMCP_LOG_LEVEL": "CRITICAL", "PYTHONIOENCODING": "utf-8"}
+    # solo le variabili della ricerca impostate e non vuote
+    env.update({v: os.environ[v] for v in VARIABILI_RICERCA if os.environ.get(v, "").strip()})
+    return {"command": sys.executable, "args": ["-m", MODULO_RICERCA], "transport": "stdio",
+            "cwd": str(cartella), "env": env}
 
 
 # controlla che lo schema del tool sia accettato da gemma in LM Studio
@@ -152,6 +169,28 @@ def carica_strumenti(modulo: str = MODULO_SERVER) -> list[BaseTool]:
     if not validi:
         raise ErroreMCP(f"il server {modulo} non pubblica tool utilizzabili")
     log.info("tools/list: %s", ", ".join(t.name for t in validi))
+    return validi
+
+
+# discovery del server di ricerca (lezione 8): se non parte l'agente resta senza ricerca
+def carica_strumenti_ricerca(cartella: Path = CARTELLA_RICERCA) -> list[BaseTool]:
+    """tools/list del solo server di ricerca; ogni errore diventa un elenco vuoto con un avviso."""
+    client = MultiServerMCPClient({"ricerca": configurazione_ricerca(cartella)})
+    try:
+        scoperti = _esegui(client.get_tools)
+    except Exception as errore:
+        log.warning("server ricerca non disponibile (%s): nessuna ricerca", _motivo(errore))
+        return []
+    # stesso filtro dello schema e stessi tool sincroni del server dell'assistente
+    validi = [_sincrono(t) for t in scoperti if schema_valido(t)]
+    for tool in scoperti:
+        if not schema_valido(tool):
+            log.warning("tool %s scartato: schema con anyOf o senza type", tool.name)
+    # server partito ma senza tool utilizzabili: per l'agente è come se non ci fosse
+    if not validi:
+        log.warning("server ricerca non disponibile (nessun tool utilizzabile): nessuna ricerca")
+        return []
+    log.info("tools/list ricerca: %s", ", ".join(t.name for t in validi))
     return validi
 
 

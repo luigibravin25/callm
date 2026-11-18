@@ -9,14 +9,15 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from openai import APIConnectionError
 
 from app.config import Ambito
-from app.graph import MSG_VUOTO, build_graph, messaggi_da_pulire
+from app.graph import MSG_NON_DISPONIBILE, MSG_VUOTO, build_graph, messaggi_da_pulire
 from app.revisore import DecisioneRevisore
 from app.router import DecisioneRouter
 from app.graph import completa_fuso
 from app.llm import SYSTEM_PROMPT, prompt_agente
 from app.preferenze import Preferenze
 from mcp_assistente import orologio as modulo_orologio
-from tests.finti import ModelloFinto, RevisoreFinto, RiassuntoFinto, RouterFinto, tooltime_finto
+from tests.finti import (ModelloFinto, RevisoreFinto, RiassuntoFinto, RouterFinto, search_documents_finto,
+                         tooltime_finto)
 
 AMBITO = Ambito(descrizione="Solo ora, data e fusi orari.", rifiuto="Fuori dal mio ambito.")
 IN_AMBITO = DecisioneRouter(categoria="conversazione", motivo="chiede l'ora")
@@ -32,7 +33,7 @@ def NO(motivo="incompleta"):
 # tutti i log di router, agente e rifiuto finiscono in caplog
 @pytest.fixture(autouse=True)
 def log(caplog):
-    for nome in ("router", "agente", "rifiuto", "revisore", "riassunto"):
+    for nome in ("router", "agente", "rifiuto", "revisore", "riassunto", "citazioni"):
         caplog.set_level(logging.INFO, logger=nome)
     return caplog
 
@@ -53,10 +54,11 @@ def _chiamata(id_="c1"):
 # (revisore predefinito: approva sempre; riassunto predefinito: testo fisso "riassunto")
 def _esegui(agente, router, domanda="Che ore sono?", max_steps=5, revisore=None,
             max_revisioni=2, cronologia=(), riassunto="", riassunto_llm=None, soglia=16,
-            recenti=6, registro=None, fuso="Europe/Rome", system_prompt=SYSTEM_PROMPT):
+            recenti=6, registro=None, fuso="Europe/Rome", system_prompt=SYSTEM_PROMPT,
+            strumenti=None):
     revisore = revisore or RevisoreFinto([OK])
-    # strumento finto: registro raccoglie gli argomenti di ogni chiamata
-    strumenti = [tooltime_finto(registro if registro is not None else [])]
+    # strumento finto: registro raccoglie gli argomenti di ogni chiamata (lezione 8: strumenti a scelta)
+    strumenti = strumenti or [tooltime_finto(registro if registro is not None else [])]
     riassunto_llm = riassunto_llm or RiassuntoFinto(["riassunto"])
     grafo = build_graph(agente, router, revisore, riassunto_llm, AMBITO, max_steps=max_steps,
                         max_revisioni=max_revisioni, soglia_riassunto=soglia,
@@ -479,3 +481,100 @@ def test_testi_fissi_come_costanti():
                         "riassunto": ""})
     assert [m.content for m in out["messages"] if isinstance(m, ToolMessage)] == \
         [MSG_NON_DISPONIBILE]
+
+
+# --- lezione 8, esercizio 2: controllo delle citazioni a fine turno ---
+
+# chiamata a search_documents come la scriverebbe il modello
+def _cerca(id_="s1"):
+    return {"name": "search_documents", "args": {"query": "gnocchi di patate"}, "id": id_}
+
+
+# strumenti dei test delle citazioni: ricerca finta (passaggi R89-1, R89-2) e orologio
+def _con_ricerca():
+    return [search_documents_finto([]), tooltime_finto([])]
+
+
+# righe del logger citazioni con il loro livello
+def _citazioni(log):
+    return [(r.levelname, r.getMessage()) for r in log.records if r.name == "citazioni"]
+
+
+# Verifica la citazione valida: ricerca chiamata, id citato tra quelli ricevuti, riga INFO.
+def test_citazione_valida(log):
+    agente = ModelloFinto([AIMessage("", tool_calls=[_cerca()]), AIMessage("Patate e farina [R89-1].")])
+    out = _esegui(agente, RouterFinto([IN_AMBITO]), domanda="Gnocchi?", strumenti=_con_ricerca())
+    assert _citazioni(log) == [("INFO", "verificate=R89-1 sconosciute=- ricerche=1 passaggi=2")]
+    assert out["messages"][-1].content == "Patate e farina [R89-1]."
+
+
+# Verifica la citazione sconosciuta: riga WARNING, risposta del modello invariata (solo log).
+def test_citazione_sconosciuta(log):
+    agente = ModelloFinto([AIMessage("", tool_calls=[_cerca()]), AIMessage("Farina [R999-1].")])
+    out = _esegui(agente, RouterFinto([IN_AMBITO]), domanda="Gnocchi?", strumenti=_con_ricerca())
+    assert _citazioni(log) == [("WARNING", "verificate=- sconosciute=R999-1 ricerche=1 passaggi=2")]
+    assert out["messages"][-1].content == "Farina [R999-1]."
+
+
+# Verifica la risposta senza strumenti: nessuna citazione, nessuna ricerca.
+def test_nessuna_citazione_senza_ricerca(log):
+    _esegui(ModelloFinto([AIMessage("Ciao!")]), RouterFinto([IN_AMBITO]), domanda="Ciao",
+            strumenti=_con_ricerca())
+    assert _citazioni(log) == [("INFO", "verificate=- sconosciute=- ricerche=0 passaggi=0")]
+
+
+# Verifica che contino solo i passaggi del turno: un id ricevuto nel turno precedente è sconosciuto.
+def test_id_del_turno_precedente_sconosciuto(log):
+    primo = ModelloFinto([AIMessage("", tool_calls=[_cerca()]), AIMessage("Patate [R89-1].")])
+    out = _esegui(primo, RouterFinto([IN_AMBITO]), domanda="Gnocchi?", strumenti=_con_ricerca())
+    log.clear()
+    _esegui(ModelloFinto([AIMessage("Come detto, patate [R89-1].")]), RouterFinto([IN_AMBITO]),
+            domanda="E quindi?", cronologia=out["messages"], strumenti=_con_ricerca())
+    assert _citazioni(log) == [("WARNING", "verificate=- sconosciute=R89-1 ricerche=0 passaggi=0")]
+
+
+# Verifica che una ricerca non eseguita (limite di passaggi) non conti come ricerca.
+def test_chiamata_non_eseguita_non_conta(log):
+    agente = ModelloFinto([AIMessage("", tool_calls=[_cerca()])])
+    _esegui(agente, RouterFinto([IN_AMBITO]), domanda="Gnocchi?", max_steps=0, strumenti=_con_ricerca())
+    assert _citazioni(log) == [("INFO", "verificate=- sconosciute=- ricerche=0 passaggi=0")]
+
+
+# Verifica che il rifiuto del router non passi dal controllo delle citazioni.
+def test_rifiuto_senza_riga_citazioni(log):
+    _esegui(ModelloFinto([AIMessage("mai")]), RouterFinto([FUORI]), strumenti=_con_ricerca())
+    assert _citazioni(log) == []
+
+
+# finto search_documents che fallisce come il tool vero (errore del tool restituito al modello come testo)
+def _ricerca_in_errore():
+    from langchain_core.tools import ToolException, tool
+
+    @tool("search_documents")
+    def search_documents(query: str, top_k: int = 5, capitolo: str = "") -> str:
+        """Ricerca finta che risponde sempre con un errore del tool."""
+        raise ToolException("capitolo 'DOLCI' sconosciuto")
+    # come i tool dell'adattatore MCP: l'errore diventa un messaggio per il modello
+    search_documents.handle_tool_error = True
+    return search_documents
+
+
+# Verifica (revisione finale) un errore di search_documents attraverso il ToolNode: conta come ricerca,
+# nessun passaggio ricevuto.
+def test_errore_della_ricerca_nel_grafo(log):
+    agente = ModelloFinto([AIMessage("", tool_calls=[_cerca()]), AIMessage("Non trovo nulla.")])
+    _esegui(agente, RouterFinto([IN_AMBITO]), domanda="Dolci?", strumenti=[_ricerca_in_errore()])
+    assert _citazioni(log) == [("INFO", "verificate=- sconosciute=- ricerche=1 passaggi=0")]
+
+
+# Verifica (revisione finale) una chiamata a un tool che il grafo non ha (server non partito): risposta
+# «non disponibile» come senza server, non l'errore di LangGraph; gli altri tool vengono eseguiti.
+def test_tool_mancante_non_disponibile(log):
+    chiamate = [{"name": "tooltime", "args": {"fuso": "Asia/Tokyo"}, "id": "t1"}, _cerca("s1")]
+    agente = ModelloFinto([AIMessage("", tool_calls=chiamate), AIMessage("Patate [R89-1].")])
+    out = _esegui(agente, RouterFinto([IN_AMBITO]), domanda="Ora e gnocchi?",
+                  strumenti=[search_documents_finto([])])
+    risposte = {m.name: m for m in out["messages"] if isinstance(m, ToolMessage)}
+    assert risposte["tooltime"].content == MSG_NON_DISPONIBILE and risposte["tooltime"].status == "error"
+    assert "R89-1" in risposte["search_documents"].content
+    assert _citazioni(log) == [("INFO", "verificate=R89-1 sconosciute=- ricerche=1 passaggi=2")]

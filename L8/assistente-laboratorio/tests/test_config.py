@@ -4,9 +4,10 @@ import pytest
 from app.config import CARTELLA_PROGETTO, load_ambito, load_settings
 
 # frase di rifiuto attesa nel file vero dell'ambito
+# (lezione 8: compare anche il ricettario di Pellegrino Artusi)
 RIFIUTO = ("Posso aiutarti solo con ora, data e fusi orari, con i concetti della lezione (MCP, "
-           "LangGraph, agenti, LLM) e con la nostra conversazione. Questa domanda è fuori dal mio "
-           "ambito.")
+           "LangGraph, agenti, LLM), con le ricette del ricettario di Pellegrino Artusi e con la nostra "
+           "conversazione. Questa domanda è fuori dal mio ambito.")
 
 
 # imposta le due variabili obbligatorie e toglie le facoltative
@@ -87,6 +88,16 @@ def test_ambito_versionato_con_concetti_e_conversazione():
     assert "Spiegami cos'è il Model Context Protocol" in a.esempi_in_ambito
     assert "Riassumi la nostra conversazione" in a.esempi_in_ambito
     assert "Spiegami la storia dell'Impero romano" in a.esempi_fuori_ambito
+
+
+# Verifica (lezione 8) che l'ambito vero comprenda il ricettario di Artusi e che la carbonara non sia
+# più un esempio fuori ambito (altrimenti il router rifiuterebbe le domande di cucina).
+def test_ambito_versionato_con_ricettario():
+    a = load_ambito(CARTELLA_PROGETTO / "config" / "ambito.toml")
+    assert "ricettario" in [x.nome for x in a.argomenti]
+    assert "Dammi la ricetta della carbonara" not in a.esempi_fuori_ambito
+    assert "Che vino si usa nel pollo alla cacciatora?" in a.esempi_in_ambito
+    assert "Artusi" in a.descrizione and "Artusi" in a.rifiuto
 
 
 # Verifica che un file dell'ambito inesistente dia un errore con il suo nome.
@@ -174,7 +185,7 @@ BASE = 'descrizione = "ora"\nrifiuto = "no"\n'
 def test_argomenti_del_file_vero():
     from app.config import Argomento
     a = load_ambito(CARTELLA_PROGETTO / "config" / "ambito.toml")
-    assert [x.nome for x in a.argomenti] == ["ora_data_fusi", "concetti_lezione",
+    assert [x.nome for x in a.argomenti] == ["ora_data_fusi", "concetti_lezione", "ricettario",
                                              "conversazione_in_corso", "saluti"]
     assert all(isinstance(x, Argomento) and x.descrizione for x in a.argomenti)
 

@@ -4,18 +4,20 @@
 
 # di cosa puo' parlare l'agente: entra nel prompt del router
 descrizione = """
-Assistente di laboratorio: ora, data e fusi orari, concetti della lezione e la conversazione
-in corso.
+Assistente di laboratorio: ora, data e fusi orari, concetti della lezione, ricette, ingredienti,
+dosi e procedimenti del ricettario di Pellegrino Artusi e la conversazione in corso.
 """
 
 # esempi che aiutano il modello piccolo a decidere (facoltativi)
 esempi_in_ambito = ["Che ore sono a Tokyo?", "Che giorno è oggi?", "Ciao, cosa sai fare?",
-                    "Spiegami cos'è il Model Context Protocol", "Riassumi la nostra conversazione"]
-esempi_fuori_ambito = ["Dammi la ricetta della carbonara", "Quanti km sono 10 miglia?", "Scrivi una funzione Python",
+                    "Spiegami cos'è il Model Context Protocol", "Riassumi la nostra conversazione",
+                    "Che vino si usa nel pollo alla cacciatora?"]
+# lezione 8: niente ricette tra i fuori ambito (le domande di cucina vanno alla ricerca nel ricettario)
+esempi_fuori_ambito = ["Quanti km sono 10 miglia?", "Scrivi una funzione Python",
                        "Spiegami la storia dell'Impero romano"]
 
 # risposta fissa del nodo rifiuto (nessuna chiamata al modello)
-rifiuto = "Posso aiutarti solo con ora, data e fusi orari, con i concetti della lezione (MCP, LangGraph, agenti, LLM) e con la nostra conversazione. Questa domanda è fuori dal mio ambito."
+rifiuto = "Posso aiutarti solo con ora, data e fusi orari, con i concetti della lezione (MCP, LangGraph, agenti, LLM), con le ricette del ricettario di Pellegrino Artusi e con la nostra conversazione. Questa domanda è fuori dal mio ambito."
 
 # argomenti in ambito: il router sceglie uno di questi nomi oppure "altro" (= fuori ambito);
 # "altro" e' riservato e non va scritto qui
@@ -27,6 +29,11 @@ descrizione = "ora e data correnti in Italia o in qualunque luogo del mondo, fus
 [[argomenti]]
 nome = "concetti_lezione"
 descrizione = "spiegare i concetti della lezione: Model Context Protocol (MCP), LangGraph, agenti, LLM"
+
+# lezione 8: domande sul ricettario, a cui l'agente risponde con il tool search_documents
+[[argomenti]]
+nome = "ricettario"
+descrizione = "ricette, ingredienti, dosi e procedimenti di cucina del ricettario di Pellegrino Artusi (La scienza in cucina e l'arte di mangiar bene)"
 
 [[argomenti]]
 nome = "conversazione_in_corso"

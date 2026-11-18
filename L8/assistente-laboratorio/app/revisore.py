@@ -18,6 +18,10 @@ FRASE_TUTTE_LE_PARTI = ("Controlla che la risposta risponda a tutte le parti del
 FRASE_NON_I_DATI = ("Non controllare se i dati sono veri: l'assistente li ha presi dai suoi "
                     "strumenti.")
 FRASE_SALUTI = "Una risposta breve a un saluto o a un ringraziamento è coerente."
+# lezione 8: un'astensione dichiarata non va rimandata all'agente (spingerebbe a inventare)
+# (ritocco dopo le prove reali: con la prima frase gemma scriveva ancora «mancante» nel motivo)
+FRASE_ASTENSIONE = ("Se la risposta dichiara di non aver trovato l'informazione nel ricettario, ogni "
+                    "parte della domanda è coperta e la risposta è coerente.")
 # ritocco 1 (prova reale con gemma): il modello scriveva "false" nel motivo e bocciava anche
 # le risposte complete; il motivo deve elencare le parti coperte e quelle mancanti
 FRASE_MOTIVO = ("Nel motivo elenca le parti della domanda e, per ognuna, se la risposta la "
@@ -27,6 +31,10 @@ FRASE_MOTIVO = ("Nel motivo elenca le parti della domanda e, per ognuna, se la r
 ESEMPIO_OUTPUT = ('Esempio per "Che ore sono a Roma e che tempo fa a Milano?" con risposta '
                   '"A Roma sono le 10.": {"motivo": "ora a Roma: coperta; tempo a Milano: '
                   'mancante", "coerente": false}')
+# lezione 8, come il ritocco 2: un esempio concreto di astensione giudicata coerente
+ESEMPIO_ASTENSIONE = ('Esempio per "Come si prepara la carbonara?" con risposta "Nel ricettario non ho '
+                      'trovato questa informazione.": {"motivo": "preparazione della carbonara: astensione '
+                      'dichiarata, coperta", "coerente": true}')
 
 # indicazione per l'agente quando la risposta non e' coerente (entra nella cronologia)
 MSG_REVISORE = ("[Revisore] La risposta precedente non è coerente con la domanda dell'utente: "
@@ -49,8 +57,10 @@ def prompt_revisore() -> str:
         FRASE_TUTTE_LE_PARTI,
         FRASE_NON_I_DATI,
         FRASE_SALUTI,
+        FRASE_ASTENSIONE,
         FRASE_MOTIVO,
         ESEMPIO_OUTPUT,
+        ESEMPIO_ASTENSIONE,
     ])
 
 

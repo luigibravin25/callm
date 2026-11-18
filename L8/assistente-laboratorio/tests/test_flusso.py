@@ -1,5 +1,7 @@
 # test degli eventi del turno in streaming (step 10): grafo vero, modello finto a pezzi, router e
 # revisore finti; nessuna richiesta a LM Studio
+import logging
+
 import httpx
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
@@ -11,7 +13,8 @@ from app.flusso import eventi_turno
 from app.graph import MSG_VUOTO, build_graph
 from app.revisore import DecisioneRevisore
 from app.router import DecisioneRouter
-from tests.finti import ModelloFlussoFinto, RevisoreFinto, RiassuntoFinto, RouterFinto, tooltime_finto
+from tests.finti import (ModelloFlussoFinto, RevisoreFinto, RiassuntoFinto, RouterFinto,
+                         search_documents_finto, tooltime_finto)
 
 AMBITO = Ambito(descrizione="Solo ora, data e fusi orari.", rifiuto="Fuori dal mio ambito.")
 IN_AMBITO = DecisioneRouter(categoria="conversazione", motivo="chiede l'ora")
@@ -24,11 +27,11 @@ def NO(motivo):
 
 
 # grafo con il modello finto a pezzi e lo strumento finto
-def _grafo(risposte, router=None, revisore=None, max_steps=5, max_revisioni=2):
+def _grafo(risposte, router=None, revisore=None, max_steps=5, max_revisioni=2, strumenti=None):
     return build_graph(ModelloFlussoFinto(risposte=risposte), router or RouterFinto([IN_AMBITO]),
                        revisore or RevisoreFinto([OK]), RiassuntoFinto(["riassunto"]), AMBITO,
                        max_steps=max_steps, max_revisioni=max_revisioni,
-                       strumenti=[tooltime_finto([])], fuso_predefinito="Europe/Rome")
+                       strumenti=strumenti or [tooltime_finto([])], fuso_predefinito="Europe/Rome")
 
 
 def _ingresso(domanda="Che ore sono?"):
@@ -168,3 +171,16 @@ def test_testo_parola_per_parola():
                         AMBITO, strumenti=[tooltime_finto([])])
     testi = [e.dati["testo"] for e in eventi_turno(grafo, _ingresso(), "Europe/Rome") if e.tipo == "testo"]
     assert testi == ["A ", "Tokyo ", "sono ", "le ", "21.\n", "Ciao"]
+
+
+# Verifica (lezione 8) il controllo delle citazioni in streaming: riga nel log, nessun evento in più.
+def test_citazioni_in_streaming(caplog):
+    caplog.set_level(logging.INFO, logger="citazioni")
+    chiamata = {"name": "search_documents", "args": {"query": "gnocchi"}, "id": "s1"}
+    grafo = _grafo([AIMessage("", tool_calls=[chiamata]), AIMessage("Patate [R89-1].")],
+                   strumenti=[search_documents_finto([])])
+    eventi = _eventi(grafo, "Gnocchi?")
+    assert set(_tipi(eventi)) <= {"fase", "bozza", "testo", "strumento", "stato_finale"}
+    assert _testo(eventi).endswith("Patate [R89-1].")
+    righe = [r.getMessage() for r in caplog.records if r.name == "citazioni"]
+    assert righe == ["verificate=R89-1 sconosciute=- ricerche=1 passaggi=2"]

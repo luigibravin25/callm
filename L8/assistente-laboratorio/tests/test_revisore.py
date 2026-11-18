@@ -5,7 +5,7 @@ import httpx
 import pytest
 from openai import APIConnectionError
 
-from app.revisore import (ESEMPIO_OUTPUT, FRASE_MOTIVO, FRASE_NON_I_DATI, FRASE_SALUTI,
+from app.revisore import (ESEMPIO_OUTPUT, FRASE_ASTENSIONE, FRASE_MOTIVO, FRASE_NON_I_DATI, FRASE_SALUTI,
                           FRASE_TUTTE_LE_PARTI, DecisioneRevisore, messaggi_per_revisore,
                           prompt_revisore, valuta)
 from tests.finti import RevisoreFinto
@@ -17,7 +17,7 @@ RISPOSTA = "A Tokyo sono le 10."
 # Verifica che il prompt del revisore contenga regole ed esempio e non parli di strumenti.
 def test_prompt_contiene_le_regole():
     prompt = prompt_revisore()
-    for frase in (FRASE_TUTTE_LE_PARTI, FRASE_NON_I_DATI, FRASE_SALUTI, FRASE_MOTIVO,
+    for frase in (FRASE_TUTTE_LE_PARTI, FRASE_NON_I_DATI, FRASE_SALUTI, FRASE_ASTENSIONE, FRASE_MOTIVO,
                   ESEMPIO_OUTPUT):
         assert frase in prompt
     assert "tooltime" not in prompt
@@ -63,3 +63,16 @@ def test_errore_di_connessione_sale():
     errore = APIConnectionError(request=httpx.Request("POST", "http://x"))
     with pytest.raises(APIConnectionError):
         valuta(RevisoreFinto([errore]), DOMANDA, RISPOSTA)
+
+
+# Verifica (lezione 8) il testo approvato della frase sull'astensione.
+def test_frase_astensione():
+    # ritocco dopo le prove reali: la frase sola non bastava, serve anche l'esempio dell'output
+    from app.revisore import ESEMPIO_ASTENSIONE
+    assert FRASE_ASTENSIONE == ("Se la risposta dichiara di non aver trovato l'informazione nel "
+                                "ricettario, ogni parte della domanda è coperta e la risposta è coerente.")
+    assert ESEMPIO_ASTENSIONE == ('Esempio per "Come si prepara la carbonara?" con risposta "Nel ricettario '
+                                  'non ho trovato questa informazione.": {"motivo": "preparazione della '
+                                  'carbonara: astensione dichiarata, coperta", "coerente": true}')
+    # in fondo al prompt, dopo l'esempio di sempre
+    assert prompt_revisore().endswith(ESEMPIO_OUTPUT + "\n" + ESEMPIO_ASTENSIONE)
