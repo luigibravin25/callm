@@ -25,7 +25,7 @@ class ChatLMStudio:
                                                                       timeout=timeout, max_retries=0)
 
     def completa_json(self, sistema: str, utente: str, nome_schema: str, schema: dict) -> str:
-        """Testo della risposta (JSON secondo `schema`); errore di LM Studio o risposta vuota → ErroreRicerca."""
+        """Testo della risposta (JSON secondo `schema`, "" se vuota); errore di LM Studio → ErroreRicerca."""
         try:
             risposta = self.client.chat.completions.create(
                 model=self.modello,
@@ -40,8 +40,6 @@ class ChatLMStudio:
             # LM Studio spento, modello non caricato, timeout, errore HTTP
             raise ErroreRicerca(f"chat non riuscita da LM Studio ({self.base_url}, modello {self.modello}): "
                                 f"{errore}") from errore
-        contenuto = risposta.choices[0].message.content
-        # nessun testo (per esempio un modello che ragiona e finisce i token): risposta inutilizzabile
-        if contenuto is None:
-            raise ErroreRicerca(f"risposta vuota da LM Studio ({self.base_url}, modello {self.modello})")
-        return contenuto
+        # nessun testo (per esempio un modello che ragiona e finisce i token): testo vuoto, che il recupero
+        # segnala come «risposta vuota»
+        return risposta.choices[0].message.content or ""

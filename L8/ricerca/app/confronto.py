@@ -56,7 +56,7 @@ def confronto_con_base(base: EsitoDomanda, altro: EsitoDomanda) -> str:
     return ""
 
 
-# media con una cifra decimale e massimo
+# media e massimo con `cifre` decimali (con una cifra il massimo senza decimali inutili, es. 1.5/2)
 def _media_max(valori: list[float], cifre: int) -> str:
     if not valori:
         return "—"

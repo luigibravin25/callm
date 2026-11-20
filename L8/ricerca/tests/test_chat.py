@@ -46,11 +46,10 @@ def test_errore_di_lm_studio():
         chat.completa_json("s", "u", "x", {})
 
 
-# Verifica che una risposta senza contenuto sia un errore.
+# Verifica che una risposta senza contenuto diventi testo vuoto (il recupero la segnala come «risposta vuota»).
 def test_contenuto_assente():
     chat = ChatLMStudio("http://lm/v1", "gemma", client=ClientChatFinto(contenuto=None))
-    with pytest.raises(ErroreRicerca, match="vuota"):
-        chat.completa_json("s", "u", "x", {})
+    assert chat.completa_json("s", "u", "x", {}) == ""
 
 
 # Verifica il modello finto usato dai test del recupero.

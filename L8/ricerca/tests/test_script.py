@@ -145,3 +145,14 @@ def test_confronta_senza_lm_model(monkeypatch, caplog):
         confronta.main([])
     assert uscita.value.code == 1
     assert "LM_MODEL" in caplog.text
+
+
+
+# Verifica che il sorgente di confronta.py compili senza avvisi (sequenze di escape nel docstring).
+def test_confronta_senza_avvisi_di_sintassi():
+    import warnings
+    from pathlib import Path
+    sorgente = (Path(__file__).resolve().parents[1] / "confronta.py").read_text(encoding="utf-8")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compile(sorgente, "confronta.py", "exec")

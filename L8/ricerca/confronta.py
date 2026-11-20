@@ -1,4 +1,4 @@
-"""Confronto delle quattro configurazioni del recupero (lezione 8, esercizio 3) sulle stesse domande.
+r"""Confronto delle quattro configurazioni del recupero (lezione 8, esercizio 3) sulle stesse domande.
 
 Uso, da L8\ricerca (Qdrant e LM Studio accesi, $env:EMBEDDING_MODEL e $env:LM_MODEL impostate):
   & ..\venv\Scripts\python.exe confronta.py [-k N]

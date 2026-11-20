@@ -54,10 +54,11 @@ def test_riscrittura_errore_della_chiamata():
     assert query == ["D?"] and ripiego == "riscrittura: errore della chiamata → sola domanda"
 
 
-# Verifica il ripiego con una risposta vuota (modello che ragiona e non scrive il JSON).
-def test_riscrittura_risposta_vuota():
-    _, ripiego = query_di_ricerca("D?", ChatFinta([""]))
-    assert ripiego == "riscrittura: JSON non valido → sola domanda"
+# Verifica il ripiego con una risposta vuota (modello che ragiona e non scrive il JSON): motivo esplicito.
+@pytest.mark.parametrize("risposta", ["", "  \n"])
+def test_riscrittura_risposta_vuota(risposta):
+    _, ripiego = query_di_ricerca("D?", ChatFinta([risposta]))
+    assert ripiego == "riscrittura: risposta vuota → sola domanda"
 
 
 # Verifica il ripiego con elementi che non sono testi.
@@ -254,3 +255,16 @@ def test_reranking_un_candidato_per_riga():
     riordina("D?", a_capo, chat, "vettoriale")
     righe = chat.chiamate[0][1].split("\n")
     assert len(righe) == 4 and righe[2].endswith("Latte, decilitri 4. Semolino, grammi 150.")
+
+
+
+# Verifica il motivo «risposta vuota» anche nel reranking.
+def test_reranking_risposta_vuota():
+    ordinati, ripiego, _ = riordina("D?", CANDIDATI, ChatFinta([""]), "vettoriale")
+    assert ordinati == CANDIDATI and ripiego == "reranking: risposta vuota → ordine vettoriale"
+
+
+# Verifica che un id scritto in minuscolo sia riconosciuto.
+def test_reranking_id_in_minuscolo():
+    ordinati, ripiego, scartati = riordina("D?", CANDIDATI, ChatFinta(['{"id": ["r208-1"]}']), "vettoriale")
+    assert [r.numero for r in ordinati] == [208] and ripiego is None and scartati == 0

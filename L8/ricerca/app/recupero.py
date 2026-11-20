@@ -59,6 +59,9 @@ def query_di_ricerca(domanda: str, chat: Chat) -> tuple[list[str], str | None]:
     except Exception:
         # qualsiasi errore della chiamata (LM Studio spento, timeout): mai un errore verso l'agente
         return [domanda], "riscrittura: errore della chiamata → sola domanda"
+    # nessun testo (modello che ragiona e finisce i token): motivo distinto dal JSON non valido
+    if not risposta.strip():
+        return [domanda], "riscrittura: risposta vuota → sola domanda"
     riscritte = _elenco_json(risposta, "query")
     if riscritte is None:
         return [domanda], "riscrittura: JSON non valido → sola domanda"
@@ -123,6 +126,9 @@ def riordina(domanda: str, candidati: list[Risultato], chat: Chat,
     except Exception:
         # qualsiasi errore della chiamata: mai un errore verso l'agente
         return candidati, f"reranking: errore della chiamata → ordine {partenza}", 0
+    # nessun testo (modello che ragiona e finisce i token): motivo distinto dal JSON non valido
+    if not risposta.strip():
+        return candidati, f"reranking: risposta vuota → ordine {partenza}", 0
     ricevuti = _elenco_json(risposta, "id")
     if ricevuti is None:
         return candidati, f"reranking: JSON non valido → ordine {partenza}", 0
@@ -134,8 +140,9 @@ def riordina(domanda: str, candidati: list[Risultato], chat: Chat,
     visti: set[str] = set()
     scartati = 0
     for grezzo in ricevuti:
-        # id senza spazi e parentesi quadre ai bordi (il modello può scriverli come nel messaggio)
-        pulito = grezzo.strip().strip("[]").strip()
+        # id senza spazi e parentesi quadre ai bordi (il modello può scriverli come nel messaggio), in maiuscolo
+        # come gli id citabili (r89-1 = R89-1)
+        pulito = grezzo.strip().strip("[]").strip().upper()
         # id inventato o già visto: scartato e contato
         if pulito not in per_id or pulito in visti:
             scartati += 1
