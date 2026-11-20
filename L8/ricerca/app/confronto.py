@@ -101,7 +101,9 @@ def _cella(e: EsitoDomanda) -> str:
 
 def tabelle_markdown(esiti: dict[str, list[EsitoDomanda]], intestazione: dict[str, str]) -> str:
     """Parametri della prova, tabella riassuntiva e tabella domanda per domanda (da copiare in rag-agente.md)."""
-    configurazioni = [c for c in CONFIGURAZIONI if c in esiti]
+    # colonne nell'ordine delle chiavi (base per prima: è il riferimento di migliorata/peggiorata); così si possono
+    # confrontare anche colonne fuori da CONFIGURAZIONI, come «base + soglie» (esercizio 4)
+    configurazioni = list(esiti)
     testa = [f"- {chiave}: {valore}" for chiave, valore in intestazione.items()]
     # tabella riassuntiva: una riga per metrica, una colonna per configurazione
     riepiloghi = {c: riepilogo(esiti[c]) for c in configurazioni}

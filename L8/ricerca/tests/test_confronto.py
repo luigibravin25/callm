@@ -68,3 +68,14 @@ def test_celle_domanda_per_domanda():
     assert "| vino? | 2 | 1 migliorata | assente peggiorata | astensione peggiorata |" in testo
     assert "| a e b? | 1/2 (pos. 1) | 2/2 (pos. 1) migliorata | 1/2 (pos. 1) | astensione peggiorata |" in testo
     assert "| sushi? | 2 passaggi | astensione migliorata | 1 passaggi | astensione migliorata |" in testo
+
+
+# --- lezione 8, esercizio 4: confronto con e senza soglie ---
+
+# Verifica la colonna «base + soglie» accanto a base, con le astensioni dovute alle soglie.
+def test_colonna_base_con_soglie():
+    esiti = {"base": [es(SEMPLICE, [208]), es(VUOTA, [5])], "base + soglie": [es(SEMPLICE, []), es(VUOTA, [])]}
+    testo = tabelle_markdown(esiti, {})
+    assert "| metrica | base | base + soglie |" in testo
+    assert "| astensioni corrette | 0/1 | 1/1 |" in testo and "| astensioni errate | 0/1 | 1/1 |" in testo
+    assert "| sushi? | 1 passaggi | astensione migliorata |" in testo
