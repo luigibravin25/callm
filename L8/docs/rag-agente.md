@@ -239,16 +239,15 @@ configurazione non valida restano errori del tool, come nell'esercizio 1.
                 "tuorli salsa maionese", "uova gnocchi alla romana"],
 "ripieghi": [],
 [mcp_ricerca] query="Quanti tuorli servono per la salsa maionese e quante uova per gli gnocchi alla r…" top_k=5
-capitolo=- modalita=entrambe query=3 llm=2 → 2 passaggi (R126-1 0.6377, R230-1 0.5446) in 21.15s
+capitolo=- modalita=entrambe query=3 llm=2 → 2 passaggi (R126-1 0.6377, R231-2 0.6413) in 24.70s
 ```
 
-La prima chiamata è durata 60 s perché LM Studio caricava gemma; a modello caricato 21-22 s. L'agente aspetta ogni
-tool al massimo 30 s (`TIMEOUT_S`): con `entrambe` il margine è stretto (a cui si somma l'avvio del processo del
-server).
+Durate: 60 s alla prima chiamata della giornata (LM Studio caricava gemma), poi 21-25 s. L'agente aspetta ogni tool
+al massimo 30 s (`TIMEOUT_S`): con `entrambe` il margine è stretto (a cui si somma l'avvio del processo del server).
 
 ### Confronto delle quattro configurazioni (2026-11-20)
 Domande: le 6 della lezione 7 e 4 nuove (2 composte, 2 senza risposta), con fonti decise prima e controllate sul
-testo (`ricerca/valutazione/domande.toml`). Comando, da `L8\ricerca` con Qdrant e LM Studio accesi (circa 8 minuti):
+testo (`ricerca/valutazione/domande.toml`). Comando, da `L8\ricerca` con Qdrant e LM Studio accesi (circa 9 minuti):
 
 ```powershell
 $env:EMBEDDING_MODEL = "text-embedding-bge-m3"
@@ -265,13 +264,13 @@ $env:PYTHONUTF8 = "1"
 | metrica | base | riscrittura | reranking | entrambe |
 |---|---|---|---|---|
 | fonte nei primi k | 7/7 | 7/7 | 7/7 | 7/7 |
-| MRR | 0.929 | 0.929 | 1.000 | 0.929 |
-| copertura delle composte | 4/4 | 4/4 | 3/4 | 2/4 |
+| MRR | 0.929 | 0.929 | 0.929 | 0.929 |
+| copertura delle composte | 4/4 | 4/4 | 4/4 | 4/4 |
 | astensioni corrette | 0/3 | 0/3 | 0/3 | 0/3 |
 | astensioni errate | 0/7 | 0/7 | 0/7 | 0/7 |
 | chiamate LLM (media/max) | 0.0/0 | 1.0/1 | 1.0/1 | 2.0/2 |
-| latenza s (media/max) | 0.31/2.00 | 7.89/9.04 | 17.88/21.37 | 21.33/26.25 |
-| ripieghi | 0 | 0 | 1 | 2 |
+| latenza s (media/max) | 0.35/2.38 | 8.26/9.49 | 21.34/26.35 | 22.92/28.12 |
+| ripieghi | 0 | 0 | 2 | 3 |
 
 | domanda | base | riscrittura | reranking | entrambe |
 |---|---|---|---|---|
@@ -279,46 +278,50 @@ $env:PYTHONUTF8 = "1"
 | Quanti cappelletti bastano a chi mangia con moderazione? | 1 | 1 | 1 | 1 |
 | Che vino si usa nel pollo alla cacciatora? | 1 | 1 | 1 | 1 |
 | Perché gli gnocchi si disfano quando li butto nell'acqua? | 1 | 1 | 1 | 1 |
-| Com'è il cacciucco sulle coste dell'Adriatico? | 2 | 2 | 1 migliorata | 2 |
-| Come si prepara il tiramisù? | 5 passaggi | 5 passaggi | 3 passaggi | 2 passaggi |
-| Quanti tuorli servono per la salsa maionese e quante uova per gli gnocchi alla romana? | 2/2 (pos. 1) | 2/2 (pos. 1) | 2/2 (pos. 1) | 1/2 (pos. 1) peggiorata |
-| Quanta salvia va sui saltimbocca alla romana e quante uova servono per il pan di Spagna? | 2/2 (pos. 1) | 2/2 (pos. 1) | 1/2 (pos. 1) peggiorata | 1/2 (pos. 1) peggiorata |
-| Come si prepara il sushi? | 5 passaggi | 5 passaggi | 2 passaggi | 3 passaggi |
+| Com'è il cacciucco sulle coste dell'Adriatico? | 2 | 2 | 2 | 2 |
+| Come si prepara il tiramisù? | 5 passaggi | 5 passaggi | 3 passaggi | 1 passaggi |
+| Quanti tuorli servono per la salsa maionese e quante uova per gli gnocchi alla romana? | 2/2 (pos. 1) | 2/2 (pos. 1) | 2/2 (pos. 1) | 2/2 (pos. 1) |
+| Quanta salvia va sui saltimbocca alla romana e quante uova servono per il pan di Spagna? | 2/2 (pos. 1) | 2/2 (pos. 1) | 2/2 (pos. 1) | 2/2 (pos. 1) |
+| Come si prepara il sushi? | 5 passaggi | 5 passaggi | 4 passaggi | 5 passaggi |
 | Quanto cioccolato serve per la torta Sacher? | 5 passaggi | 5 passaggi | 5 passaggi | 5 passaggi |
 
 Celle: posizione della fonte; per le composte fonti trovate / attese e posizione della prima; per le domande senza
 risposta i passaggi restituiti oppure «astensione». Il dettaglio (passaggi, query riscritte, ripieghi per domanda) è
-in `docs/evidenze-lezione8/esercizio3-dettaglio.txt`: una seconda esecuzione ha dato le stesse posizioni e gli
-stessi ripieghi (temperatura 0).
+in `docs/evidenze-lezione8/esercizio3-dettaglio.txt`, un'esecuzione separata con gli stessi esiti (temperatura 0).
+
+**Prima e dopo la revisione finale.** Una prima esecuzione (prima delle correzioni della revisione) mandava a gemma
+i candidati con gli a capo del testo, su più righe: lì il reranking migliorava il cacciucco (2 → 1, MRR 1.000) ma
+perdeva una parte delle composte (copertura 3/4 in `reranking`, 2/4 in `entrambe`). Con un candidato per riga, come
+chiede la specifica, le composte restano 4/4 e il cacciucco torna a 2 per un ripiego (punto seguente). La differenza
+mostra quanto il reranking di un modello piccolo dipende dalla forma del messaggio.
 
 ### Casi migliorati e peggiorati
-- **Cacciucco, reranking: migliorata (2 → 1).** In `base` il primo passaggio è «Acciughe alla marinara» (R481-1),
-  che non parla del cacciucco; gemma lo scarta e mette primo R455-1 «Cacciucco I», che contiene «brodetto». Con
-  `entrambe` il miglioramento si perde per un ripiego: gemma restituisce tre id inesistenti, resta l'ordine RRF, dove
-  la query riscritta `cacciucco adriatico ricetta` porta in testa «Cacciucco II» (R456-1).
-- **Saltimbocca e pan di Spagna, reranking ed entrambe: peggiorata (2/2 → 1/2).** La scomposizione funziona (query
-  `quantità salvia saltimbocca alla romana` e `quantità uova pan di Spagna`, che porta «Pane di Spagna» da 0.519 a
-  0.667), ma il reranking tiene «Pane di Spagna» e scarta «Saltimbocca alla romana» (R222-1), il chunk con «mezza
-  foglia di salvia», tenendo al suo posto «Ciarlotta» o «Salame inglese».
-- **Maionese e gnocchi alla romana, entrambe: peggiorata (2/2 → 1/2).** La riscrittura alza i due chunk di «Gnocchi
-  alla romana» (0.643 e 0.641 invece di 0.601), ma il reranking li scarta e tiene «Gnocchi di semolino» (R230-1), che
-  non è la fonte. Con il solo reranking la copertura resta 2/2.
-- **Domande senza risposta: nessuna astensione.** Il reranking riduce i passaggi (sushi da 5 a 2-3, tiramisù da 5 a
-  2-3), ma tiene sempre qualcosa di vicino: «Soufflet di riso» e «Riso in composta» per il sushi, «Pasticcio a
-  sorpresa» per il tiramisù. Sulla Sacher, in `reranking` ed `entrambe`, gemma restituisce solo id inventati:
-  ripiego sull'ordine di partenza, 5 passaggi sui dolci al cioccolato. L'astensione resta affidata alle istruzioni
-  dell'agente (esercizio 2).
-- **Domande semplici:** la fonte è prima in tutte le configurazioni; il reranking lascia spesso un solo passaggio
-  (per esempio solo R89-1 per gli gnocchi): meno contesto, senza perdere la fonte.
+- **Nessuna domanda migliorata o peggiorata nella posizione della fonte:** con k=5 la fonte è già tra i primi 5 in
+  `base` per tutte le domande (MRR 0.929, l'unica fonte non prima è il cacciucco, dietro «Acciughe alla marinara»).
+- **Composte:** la scomposizione funziona in entrambe (query `tuorli salsa maionese` + `uova gnocchi alla romana`;
+  `quantità salvia saltimbocca alla romana` + `quantità uova pan di Spagna`) e alza gli score dei chunk giusti
+  («Pane di Spagna» da 0.519 a 0.667, «Gnocchi alla romana» da 0.601 a 0.641). Il reranking tiene entrambe le parti
+  e accorcia l'elenco a 2-3 passaggi (in `entrambe` esattamente le due fonti).
+- **Cacciucco:** in `reranking` ed `entrambe` gemma restituisce gli id senza la «R» (`["455-1", "455-3", "456-1",
+  "495-1"]` invece di `R455-1`, …): per il codice sono id inventati, quindi ripiego sull'ordine di partenza e
+  posizione 2 come in `base`. Senza il ripiego, la sua scelta (Cacciucco I per primo) avrebbe portato la fonte al
+  primo posto.
+- **Domande senza risposta: nessuna astensione.** Il reranking riduce i passaggi (tiramisù da 5 a 3 e a 1, sushi da
+  5 a 4) ma tiene sempre qualcosa di vicino («Pasticcio a sorpresa» per il tiramisù, «Riso in composta» e «Soufflet
+  di riso» per il sushi). Sulla Sacher (e sul sushi in `entrambe`) gemma restituisce solo id non validi: ripiego,
+  5 passaggi. L'astensione resta affidata alle istruzioni dell'agente (esercizio 2).
+- **Domande semplici:** la fonte resta prima; il reranking lascia 1-2 passaggi (per esempio solo R89-2 per gli
+  gnocchi): meno contesto da leggere per l'agente, senza perdere la fonte.
 
 ### Quale configurazione, su quali domande, a quale costo
-- `base` trova già la fonte tra i primi 5 per tutte le domande (MRR 0.929) in 0.3 s di media: con bge-m3 e questo
+- `base` trova la fonte tra i primi 5 per tutte le domande (MRR 0.929) in 0.35 s di media: con bge-m3 e questo
   corpus è il riferimento difficile da battere.
-- `riscrittura` non cambia nessuna posizione della fonte (k=5) ma alza gli score dei chunk giusti nelle composte
-  (scomposizione corretta in entrambe); costa una chiamata a gemma, circa 8 s per domanda.
-- `reranking` è l'unica configurazione che migliora una posizione (cacciucco, MRR 1.000) e accorcia l'elenco dei
-  passaggi, ma perde una parte di una composta e non porta astensioni; circa 18 s per domanda.
-- `entrambe` somma i costi (2 chiamate, circa 21 s, massimo 26 s) e qui dà i risultati peggiori sulle composte: il
-  reranking, giudicando la domanda intera con un modello piccolo, scarta passaggi che rispondono a una parte.
-- Ripieghi osservati: 3 su 40 ricerche, tutti `reranking: id inventati` (cacciucco in `entrambe`, Sacher in
-  `reranking` ed `entrambe`); nessun ripiego della riscrittura.
+- `riscrittura` non cambia la posizione della fonte (k=5) ma scompone bene le composte e alza gli score dei chunk
+  giusti; costa una chiamata a gemma, circa 8 s per domanda.
+- `reranking` accorcia molto l'elenco (meno passaggi irrilevanti per l'agente) senza perdere fonti, ma non porta
+  astensioni e a volte ripiega; circa 21 s per domanda, massimo 26 s.
+- `entrambe` dà gli elenchi più puliti sulle composte (solo le due fonti) ma è la più cara: 2 chiamate, circa 23 s,
+  massimo 28 s, vicino al limite di 30 s dell'agente.
+- Ripieghi osservati: 5 su 40 ricerche, tutti `reranking: id inventati` (cacciucco e Sacher in `reranking`;
+  cacciucco, sushi e Sacher in `entrambe`), almeno nel caso del cacciucco per gli id scritti senza «R»; nessun
+  ripiego della riscrittura.

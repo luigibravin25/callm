@@ -61,7 +61,7 @@ Ambiente: `& .\venv\Scripts\python.exe -m pip install -r requirements.txt` (venv
 
 | Suite | Comando (PowerShell) | Esito (aggiornato all'esercizio 3, 2026-11-20) |
 |---|---|---|
-| Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 239 passati (126 della lezione 7 + 29 del server MCP + 84 dell'esercizio 3) |
+| Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 242 passati (126 della lezione 7 + 29 del server MCP + 87 dell'esercizio 3) |
 | Agente (lezioni 5-6 e aggancio alla ricerca) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 378 passati, 12 saltati (345 di prima + 32 dell'esercizio 2 + 1 dell'esercizio 3) |
 | Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 30 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
 
@@ -111,7 +111,7 @@ Modalità avanzata della ricerca (esercizio 3): la sceglie la configurazione del
 | `RICERCA_CANDIDATI` | candidati per query, 10-20 | 10 |
 | `RERANK_TETTO` | candidati mandati al reranking, 10-20 | 10 |
 
-Confronto delle quattro configurazioni sulle dieci domande di `ricerca/valutazione/domande.toml` (circa 8 minuti
+Confronto delle quattro configurazioni sulle dieci domande di `ricerca/valutazione/domande.toml` (circa 9 minuti
 con gemma), da `L8\ricerca`, servizi accesi; tabelle e commento in `docs/rag-agente.md`:
 
 ```powershell
