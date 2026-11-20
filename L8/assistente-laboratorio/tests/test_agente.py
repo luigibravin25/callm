@@ -267,5 +267,7 @@ def test_prepara_senza_ricerca(monkeypatch):
 # Verifica la frase sulle fasce in coda alle istruzioni della ricerca (testo approvato nella specifica, §10).
 def test_frase_delle_fasce_nelle_istruzioni():
     from app.llm import FRASI_RICERCA
-    assert "(da verificare sulla fonte)" in FRASI_RICERCA
+    # ritocco dopo la prova reale (gemma non dichiarava la verifica): una frase fissa in fondo alla risposta
+    assert "anche un solo passaggio con affidabilita «media»" in FRASI_RICERCA
+    assert "termina la risposta con la frase: «Da verificare sulla fonte.»" in FRASI_RICERCA
     assert "lista di passaggi vuota" in FRASI_RICERCA and FRASI_RICERCA.endswith("non citare nessun id.")
