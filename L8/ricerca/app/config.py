@@ -75,7 +75,8 @@ def _decimale(nome: str, predefinito: float, minimo: float = -1.0, massimo: floa
     try:
         valore = float(grezzo)
     except ValueError:
-        raise ErroreRicerca(f"{nome}={grezzo!r} non è un numero (ammesso: numero tra {minimo:g} e {massimo:g})") from None
+        raise ErroreRicerca(f"{nome}={grezzo!r} non è un numero (ammesso: numero tra {minimo:g} e "
+                            f"{massimo:g})") from None
     if not minimo <= valore <= massimo:
         raise ErroreRicerca(f"{nome}={valore:g} non valido (ammesso: numero tra {minimo:g} e {massimo:g})")
     return valore
