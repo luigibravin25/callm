@@ -11,7 +11,7 @@ export const MSG_PENSA = "Sto pensando";
 export const MSG_REVISORE_CONTROLLA = "Il revisore sta controllando…";
 export const ETICHETTA_BOZZA = "bozza, in revisione";
 export function MSG_STRUMENTO_IN_USO(nome: string): string {
-  return `${iconaStrumento(nome)} Sto usando ${nome}…`;
+  return `${iconaStrumento(nome)} Sto usando ${nomeLeggibile(nome)}…`;
 }
 export function MSG_AVVISO_REVISORE(motivo: string): string {
   return `Il revisore ha chiesto una correzione: ${motivo}`;
@@ -77,8 +77,17 @@ export function gruppoData(iso: string | null | undefined, adesso = new Date()):
 }
 
 // icona di ogni strumento conosciuto; gli altri hanno la chiave inglese
-const ICONE: Record<string, string> = { tooltime: "🕒" };
+const ICONE: Record<string, string> = { tooltime: "🕒", search_documents: "📖" };
 const ICONA_PREDEFINITA = "🔧";
+
+// nome mostrato all'utente per gli strumenti con un nome tecnico poco chiaro (lezione 8: la ricerca nel
+// ricettario di Artusi); gli altri si mostrano con il loro nome
+const NOMI: Record<string, string> = { search_documents: "Ricettario" };
+
+// nome leggibile di uno strumento (riga degli strumenti e riga di stato dello streaming)
+export function nomeLeggibile(nome: string): string {
+  return NOMI[nome] ?? nome;
+}
 
 // icona di uno strumento (riga degli strumenti e riga di stato dello streaming)
 export function iconaStrumento(nome: string): string {
@@ -97,5 +106,5 @@ function nomeStrumento(voce: unknown): string | null {
 export function rigaStrumenti(strumenti: unknown): string | null {
   if (!Array.isArray(strumenti)) return null;
   const nomi = [...new Set(strumenti.map(nomeStrumento).filter((n): n is string => n !== null))];
-  return nomi.length ? nomi.map((n) => `${iconaStrumento(n)} ${n}`).join(" · ") : null;
+  return nomi.length ? nomi.map((n) => `${iconaStrumento(n)} ${nomeLeggibile(n)}`).join(" · ") : null;
 }
