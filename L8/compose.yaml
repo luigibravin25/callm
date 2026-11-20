@@ -6,6 +6,8 @@
 # Lezione 7: quinto servizio qdrant (indice vettoriale della ricerca), indipendente dagli altri.
 #   docker compose up -d qdrant   →   solo Qdrant, su http://127.0.0.1:6333 (serve comunque il .env
 #   con le POSTGRES_*: Compose legge tutto il file)
+# Lezione 8: l'agente ha anche il server MCP di ricerca (codice da ricerca/, contesto di build aggiuntivo) e
+# interroga qdrant sulla rete interna; modalità e soglie dal .env (una variabile della shell vince sul .env).
 
 services:
   # interfaccia di chat: nginx con i file statici e il proxy /api verso il back-end
@@ -57,7 +59,11 @@ services:
 
   # grafo LangGraph con il server MCP stdio (processo nel container); NON esposto
   agente:
-    build: ./assistente-laboratorio
+    build:
+      context: ./assistente-laboratorio
+      # lezione 8: secondo contesto con il server MCP di ricerca (Dockerfile: COPY --from=ricerca ...)
+      additional_contexts:
+        ricerca: ./ricerca
     environment:
       # LM Studio sull'host: 127.0.0.1 nel container sarebbe il container stesso
       LM_BASE_URL: http://host.docker.internal:1234/v1
@@ -75,6 +81,22 @@ services:
       AGENTE_PORTA: "8000"
       # per la CLI dentro il container: docker compose exec -it agente python -m app.cli
       AGENTE_URL: http://127.0.0.1:8000
+      # lezione 8: ricerca nel ricettario (passate dall'agente al server di ricerca); LM_BASE_URL e LM_MODEL
+      # qui sopra valgono anche per embedding, riscrittura e reranking
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-bge-m3}
+      # Qdrant sulla rete interna di Compose (indirizzo fisso, come gli altri)
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLEZIONE: ${QDRANT_COLLEZIONE:-ricettario}
+      # modalità (base, riscrittura, reranking, entrambe), candidati, tetto e soglie: stessi predefiniti dell'host
+      RICERCA_MODALITA: ${RICERCA_MODALITA:-base}
+      RICERCA_CANDIDATI: ${RICERCA_CANDIDATI:-10}
+      RERANK_TETTO: ${RERANK_TETTO:-10}
+      SOGLIA_ALTA: ${SOGLIA_ALTA:-0.60}
+      SOGLIA_BASSA: ${SOGLIA_BASSA:-0.51}
+    # Qdrant parte prima dell'agente ma non lo blocca: senza Qdrant l'agente resta con il solo orologio
+    depends_on:
+      qdrant:
+        condition: service_started
     volumes:
       # ambito e preferenze dall'host, in sola lettura: dopo una modifica "docker compose restart agente"
       - ./assistente-laboratorio/config:/app/config:ro

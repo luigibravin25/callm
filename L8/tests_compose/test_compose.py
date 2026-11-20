@@ -20,7 +20,9 @@ pytestmark = pytest.mark.skipif(shutil.which("docker") is None, reason="docker n
 # variabili che compose.yaml legge: tolte dall'ambiente del comando, perché quelle della shell hanno
 # la precedenza su --env-file (un valore vero finirebbe nell'output di un test fallito)
 VARIABILI_DI_COMPOSE = ("POSTGRES_", "LM_", "MAX_", "FUSO_", "SOGLIA_", "MESSAGGI_", "AGENTE_", "AMBITO_",
-                        "PREFERENZE_", "DATABASE_", "BACKEND_")
+                        "PREFERENZE_", "DATABASE_", "BACKEND_",
+                        # lezione 8: variabili della ricerca (spesso impostate in PowerShell per l'agente sull'host)
+                        "EMBEDDING_", "QDRANT_", "RICERCA_", "RERANK_")
 
 
 def ambiente_pulito() -> dict[str, str]:
@@ -168,3 +170,44 @@ def test_a_capo_unix_per_i_file_docker():
 def test_streaming_nel_backend():
     # STREAMING dal .env, attivo se manca (prova.env non la imposta)
     assert servizi()["backend"]["environment"]["STREAMING"] == "true"
+
+
+
+# --- lezione 8: ricerca nel servizio dell'agente ---
+
+# Verifica le variabili della ricerca con i predefiniti e il contesto di build aggiuntivo «ricerca».
+def test_agente_con_la_ricerca():
+    a = servizi()["agente"]
+    env = a["environment"]
+    assert (env["EMBEDDING_MODEL"], env["QDRANT_URL"], env["QDRANT_COLLEZIONE"]) == \
+        ("text-embedding-bge-m3", "http://qdrant:6333", "ricettario")
+    assert (env["RICERCA_MODALITA"], env["RICERCA_CANDIDATI"], env["RERANK_TETTO"]) == ("base", "10", "10")
+    assert (env["SOGLIA_ALTA"], env["SOGLIA_BASSA"]) == ("0.60", "0.51")
+    contesti = a["build"]["additional_contexts"]
+    assert contesti["ricerca"].replace("\\", "/").rstrip("/").endswith("L8/ricerca")
+
+
+# Verifica che Qdrant parta prima dell'agente senza bloccarlo se non diventa sano.
+def test_qdrant_non_blocca_l_agente():
+    assert servizi()["agente"]["depends_on"]["qdrant"]["condition"] == "service_started"
+
+
+# Verifica che modalità e soglie del .env sostituiscano i predefiniti.
+def test_ricerca_dal_env(tmp_path):
+    env = tmp_path / "prova.env"
+    env.write_text(PROVA_ENV.read_text(encoding="utf-8") + "RICERCA_MODALITA=entrambe\nSOGLIA_BASSA=0.4\n",
+                   encoding="utf-8")
+    esito = esegui_config(env)
+    assert esito.returncode == 0, esito.stderr
+    a = json.loads(esito.stdout)["services"]["agente"]["environment"]
+    assert (a["RICERCA_MODALITA"], a["SOGLIA_BASSA"]) == ("entrambe", "0.4")
+
+
+# Verifica che EMBEDDING_MODEL vuota nel .env (come in .env.example) prenda il predefinito.
+def test_embedding_model_vuota(tmp_path):
+    env = tmp_path / "prova.env"
+    env.write_text(PROVA_ENV.read_text(encoding="utf-8") + "EMBEDDING_MODEL=\n", encoding="utf-8")
+    esito = esegui_config(env)
+    assert esito.returncode == 0, esito.stderr
+    assert json.loads(esito.stdout)["services"]["agente"]["environment"]["EMBEDDING_MODEL"] == \
+        "text-embedding-bge-m3"

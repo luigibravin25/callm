@@ -12,7 +12,8 @@ import pytest
 
 L6 = Path(__file__).resolve().parents[1]
 BASE = "http://127.0.0.1:8080"
-SERVIZI = {"frontend", "backend", "agente", "database"}
+# cinque servizi: dalla lezione 7 «docker compose up -d --build» avvia anche qdrant (la ricerca dell'agente)
+SERVIZI = {"frontend", "backend", "agente", "database", "qdrant"}
 
 pytestmark = pytest.mark.skipif(os.environ.get("RUN_COMPOSE") != "1",
                                 reason='imposta $env:RUN_COMPOSE = "1" con Docker e LM Studio accesi')
