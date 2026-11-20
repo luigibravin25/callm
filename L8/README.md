@@ -145,7 +145,7 @@ Modalità avanzata della ricerca (esercizio 3): la sceglie la configurazione del
 | Variabile | Valori | Predefinito |
 |---|---|---|
 | `RICERCA_MODALITA` | `base`, `riscrittura`, `reranking`, `entrambe` | `base` |
-| `LM_MODEL` | modello di chat per riscrittura e reranking (obbligatoria fuori da `base`) | — |
+| `LM_MODEL` | id del modello di chat di LM Studio (per esempio `google/gemma-4-e2b`) usato da riscrittura e reranking; serve solo se `RICERCA_MODALITA` non è `base` (con l'agente è già impostata e viene passata al server di ricerca) | nessuno |
 | `RICERCA_CANDIDATI` | candidati per query, 10-20 | 10 |
 | `RERANK_TETTO` | candidati mandati al reranking, 10-20 | 10 |
 
