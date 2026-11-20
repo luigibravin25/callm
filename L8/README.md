@@ -114,7 +114,7 @@ Ambiente: `& .\venv\Scripts\python.exe -m pip install -r requirements.txt` (venv
 |---|---|---|
 | Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 285 passati (126 della lezione 7 + 29 del server MCP + 93 dell'esercizio 3 + 37 dell'esercizio 4) |
 | Agente (lezioni 5-6 e aggancio alla ricerca) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 381 passati, 12 saltati (345 di prima + 32 dell'esercizio 2 + 2 dell'esercizio 3 + 2 dell'esercizio 4) |
-| Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 35 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
+| Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 36 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
 
 Prove reali della lezione 7 (servizi accesi), da `L8\ricerca`:
 
