@@ -172,7 +172,6 @@ def test_streaming_nel_backend():
     assert servizi()["backend"]["environment"]["STREAMING"] == "true"
 
 
-
 # --- lezione 8: ricerca nel servizio dell'agente ---
 
 # Verifica le variabili della ricerca con i predefiniti e il contesto di build aggiuntivo «ricerca».
@@ -189,7 +188,10 @@ def test_agente_con_la_ricerca():
 
 # Verifica che Qdrant parta prima dell'agente senza bloccarlo se non diventa sano.
 def test_qdrant_non_blocca_l_agente():
-    assert servizi()["agente"]["depends_on"]["qdrant"]["condition"] == "service_started"
+    qdrant = servizi()["agente"]["depends_on"]["qdrant"]
+    assert qdrant["condition"] == "service_started"
+    # required: false: se il container qdrant non parte (porta occupata, immagine assente) l'app parte lo stesso
+    assert qdrant["required"] is False
 
 
 # Verifica che modalità e soglie del .env sostituiscano i predefiniti.

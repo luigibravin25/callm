@@ -52,3 +52,5 @@ def test_agente_copia_la_ricerca():
         assert riga in righe, riga
     # requisiti della ricerca installati prima di copiare il codice (livello di pip in cache)
     assert righe.index("RUN pip install --no-cache-dir -r /ricerca/requirements.txt") < righe.index("COPY app/ app/")
+    # e dopo i requisiti dell'agente
+    assert righe.index("RUN pip install --no-cache-dir -r requirements.txt") <         righe.index("COPY --from=ricerca requirements.txt /ricerca/requirements.txt")

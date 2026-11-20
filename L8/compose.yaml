@@ -93,10 +93,12 @@ services:
       RERANK_TETTO: ${RERANK_TETTO:-10}
       SOGLIA_ALTA: ${SOGLIA_ALTA:-0.60}
       SOGLIA_BASSA: ${SOGLIA_BASSA:-0.51}
-    # Qdrant parte prima dell'agente ma non lo blocca: senza Qdrant l'agente resta con il solo orologio
+    # Qdrant parte prima dell'agente ma non lo blocca (required: false): se il container qdrant non parte
+    # l'app parte lo stesso; le ricerche rispondono allora con l'errore «Qdrant non raggiungibile»
     depends_on:
       qdrant:
         condition: service_started
+        required: false
     volumes:
       # ambito e preferenze dall'host, in sola lettura: dopo una modifica "docker compose restart agente"
       - ./assistente-laboratorio/config:/app/config:ro

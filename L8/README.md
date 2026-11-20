@@ -100,8 +100,9 @@ Modalità e soglie si leggono dal `.env` (predefiniti uguali all'host): `RICERCA
 (`text-embedding-bge-m3`), `QDRANT_COLLEZIONE` (`ricettario`); `QDRANT_URL` lo fissa `compose.yaml`
 (`http://qdrant:6333`). Dopo una modifica del `.env`: `docker compose up -d agente`. Attenzione: una variabile
 impostata nella finestra di PowerShell (per esempio `$env:RICERCA_MODALITA` usata per l'agente sull'host) vince sul
-`.env` se si lancia `docker compose` dalla stessa finestra. Se Qdrant non è disponibile l'app parte lo stesso e
-l'agente resta con il solo orologio.
+`.env` se si lancia `docker compose` dalla stessa finestra. Se Qdrant non è disponibile l'app parte lo stesso
+(`depends_on` con `required: false`): l'agente ha comunque `search_documents`, ma ogni ricerca risponde con l'errore
+«Qdrant non raggiungibile» e il modello non ha passaggi da citare.
 Configurazione completa dell'app e dettagli dei servizi: [`../L6/README.md`](../L6/README.md).
 
 ## Test
