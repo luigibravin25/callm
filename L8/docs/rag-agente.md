@@ -221,10 +221,11 @@ Prompt approvati (testo esatto in `app/recupero.py`, `PROMPT_RISCRITTURA` e `PRO
 ### Ripieghi (mai un errore verso l'agente)
 | Fase | Caso | Effetto | Nel risultato e nel log |
 |---|---|---|---|
-| riscrittura | LM Studio non risponde, JSON non valido o di forma sbagliata, lista vuota, solo query vuote | si cerca con la sola domanda | `riscrittura: <motivo> → sola domanda` |
-| reranking | LM Studio non risponde, JSON non valido o di forma sbagliata | ordine vettoriale (`reranking`) o RRF (`entrambe`) | `reranking: <motivo> → ordine vettoriale` / `ordine RRF` |
+| riscrittura | LM Studio non risponde, risposta vuota, JSON non valido o di forma sbagliata, lista vuota, nessuna query nuova (solo vuote o copie della domanda) | si cerca con la sola domanda | `riscrittura: <motivo> → sola domanda` |
+| reranking | LM Studio non risponde, risposta vuota, JSON non valido o di forma sbagliata | ordine vettoriale (`reranking`) o RRF (`entrambe`) | `reranking: <motivo> → ordine vettoriale` / `ordine RRF` |
 | reranking | solo id inventati o doppioni | come sopra | `reranking: id inventati → ordine …` |
 | reranking | id validi misti a inventati o doppioni | si tengono i validi | `scartati=n` nella riga di log |
+| reranking | id con spazi, parentesi quadre o in minuscolo (` [r89-1] `) | riconosciuti come `R89-1` | — |
 | reranking | lista vuota | nessun passaggio (astensione, non ripiego) | `"passaggi": []` |
 
 Gli errori dell'indice (domanda vuota, capitolo sconosciuto, Qdrant o embedding irraggiungibili) e una
@@ -242,8 +243,9 @@ configurazione non valida restano errori del tool, come nell'esercizio 1.
 capitolo=- modalita=entrambe query=3 llm=2 → 2 passaggi (R126-1 0.6377, R231-2 0.6413) in 24.70s
 ```
 
-Durate: 60 s alla prima chiamata della giornata (LM Studio caricava gemma), poi 21-25 s. L'agente aspetta ogni tool
-al massimo 30 s (`TIMEOUT_S`): con `entrambe` il margine è stretto (a cui si somma l'avvio del processo del server).
+Durate: 60 s alla prima chiamata della giornata (LM Studio caricava gemma), poi 21-25 s. L'agente aspettava ogni
+tool al massimo 30 s (`TIMEOUT_S` in `assistente-laboratorio/app/adattatore_mcp.py`): con `entrambe` il margine era
+troppo stretto (a cui si somma l'avvio del processo del server), quindi su decisione dell'utente il limite è ora 60 s.
 
 ### Confronto delle quattro configurazioni (2026-11-20)
 Domande: le 6 della lezione 7 e 4 nuove (2 composte, 2 senza risposta), con fonti decise prima e controllate sul
@@ -321,7 +323,7 @@ mostra quanto il reranking di un modello piccolo dipende dalla forma del messagg
 - `reranking` accorcia molto l'elenco (meno passaggi irrilevanti per l'agente) senza perdere fonti, ma non porta
   astensioni e a volte ripiega; circa 21 s per domanda, massimo 26 s.
 - `entrambe` dà gli elenchi più puliti sulle composte (solo le due fonti) ma è la più cara: 2 chiamate, circa 23 s,
-  massimo 28 s, vicino al limite di 30 s dell'agente.
+  massimo 28 s (sotto il limite di 60 s dell'agente per una chiamata MCP).
 - Ripieghi osservati: 5 su 40 ricerche, tutti `reranking: id inventati` (cacciucco e Sacher in `reranking`;
   cacciucco, sushi e Sacher in `entrambe`), almeno nel caso del cacciucco per gli id scritti senza «R»; nessun
   ripiego della riscrittura.
