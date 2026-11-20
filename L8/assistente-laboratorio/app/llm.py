@@ -34,10 +34,11 @@ FRASI_RICERCA = (
     "Ogni risposta presa dai passaggi deve contenere almeno un id, per esempio: «Si usa vino rosso "
     "[R208-1].» "
     # esercizio 4: fasce di affidabilità dei passaggi e lista vuota (testo approvato nella specifica, §10);
-    # ritocco approvato dopo la prova reale: gemma non dichiarava la verifica, ora una frase fissa in fondo
+    # ritocchi approvati dopo le prove reali: gemma non dichiarava la verifica, ora una frase fissa in fondo
+    # con un esempio concreto
     "Ogni passaggio ha il campo affidabilita: «affidabile» oppure «media». Se nella risposta usi anche un "
-    "solo passaggio con affidabilita «media», termina la risposta con la frase: «Da verificare sulla "
-    "fonte.» Se search_documents restituisce una lista di passaggi vuota, rispondi «Nel ricettario non ho "
+    "solo passaggio con affidabilita «media», termina la risposta con la frase «Da verificare sulla "
+    "fonte.», per esempio: «Si usa vino rosso [R208-1]. Da verificare sulla fonte.» Se search_documents restituisce una lista di passaggi vuota, rispondi «Nel ricettario non ho "
     "trovato questa informazione» e non citare nessun id.")
 # senza server di ricerca l'agente non deve rispondere a memoria sulle ricette
 FRASE_SENZA_RICERCA = ("Il ricettario non è disponibile: se ti chiedono ricette, ingredienti o dosi, "
