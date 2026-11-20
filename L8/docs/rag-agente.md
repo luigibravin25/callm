@@ -190,3 +190,135 @@ $env:EMBEDDING_MODEL = "text-embedding-bge-m3"
 I test senza servizi (`tests/test_citazioni.py`, `tests/test_grafo.py`, `tests/test_flusso.py`,
 `tests/test_adattatore_mcp.py`) coprono la chiamata al tool, la citazione valida, quella sconosciuta, l'assenza di
 citazioni, gli id di un turno precedente, le chiamate non eseguite e lo streaming.
+
+## Esercizio 3 · riscrittura, scomposizione e reranking a confronto
+
+Specifica: `docs/specs/esercizio-3-riscrittura-reranking.md`. Il server di ricerca ha una modalità avanzata scelta
+dalla **configurazione del server** (`RICERCA_MODALITA`), non dal modello: lo schema di `search_documents` è
+identico in tutte le modalità (discovery reale in `base` ed `entrambe`: uscite identiche), e il risultato dice quale
+modalità è stata usata, con quali query e con quali ripieghi.
+
+### Come funziona
+Il modulo `ricerca/app/recupero.py` (usato dal server e dallo script di confronto):
+
+| Modalità | Query | Ordine | Chiamate a gemma |
+|---|---|---|---|
+| `base` | la domanda | vettoriale | 0 |
+| `riscrittura` | la domanda + al massimo 2 query riscritte o scomposte | fusione RRF (1/(60 + rango)) | 1 |
+| `reranking` | la domanda | gemma riordina i primi `RERANK_TETTO` candidati e può escluderli | 1 |
+| `entrambe` | come `riscrittura` | RRF, poi reranking sulla domanda originale | 2 |
+
+Ogni query chiede a Qdrant gli stessi `RICERCA_CANDIDATI` (10) chunk in tutte le modalità: tra una configurazione e
+l'altra cambia un solo fattore. Gemma risponde con lo structured output di LM Studio (schemi `{"query": [...]}` e
+`{"id": [...]}`), a temperatura 0. Il testo di ogni candidato mandato al reranking è troncato a 400 caratteri.
+
+Prompt approvati (testo esatto in `app/recupero.py`, `PROMPT_RISCRITTURA` e `PROMPT_RERANKING`):
+- riscrittura: trasformare la domanda in query di ricerca, scomporla se chiede più cose, al massimo 2 query, non
+  rispondere;
+- reranking: restituire gli id utili «anche solo a una sua parte» della domanda, dal più utile, omettere gli altri,
+  lista vuota se nessuno è utile, solo id ricevuti.
+
+### Ripieghi (mai un errore verso l'agente)
+| Fase | Caso | Effetto | Nel risultato e nel log |
+|---|---|---|---|
+| riscrittura | LM Studio non risponde, JSON non valido o di forma sbagliata, lista vuota, solo query vuote | si cerca con la sola domanda | `riscrittura: <motivo> → sola domanda` |
+| reranking | LM Studio non risponde, JSON non valido o di forma sbagliata | ordine vettoriale (`reranking`) o RRF (`entrambe`) | `reranking: <motivo> → ordine vettoriale` / `ordine RRF` |
+| reranking | solo id inventati o doppioni | come sopra | `reranking: id inventati → ordine …` |
+| reranking | id validi misti a inventati o doppioni | si tengono i validi | `scartati=n` nella riga di log |
+| reranking | lista vuota | nessun passaggio (astensione, non ripiego) | `"passaggi": []` |
+
+Gli errori dell'indice (domanda vuota, capitolo sconosciuto, Qdrant o embedding irraggiungibili) e una
+configurazione non valida restano errori del tool, come nell'esercizio 1.
+
+### Prova reale (2026-11-20, `RICERCA_MODALITA=entrambe`)
+`prova_mcp.py` sulla prima domanda composta (evidenza in `docs/evidenze-lezione8/esercizio3-prova-entrambe.txt`):
+
+```text
+"modalita": "entrambe",
+"query_usate": ["Quanti tuorli servono per la salsa maionese e quante uova per gli gnocchi alla romana?",
+                "tuorli salsa maionese", "uova gnocchi alla romana"],
+"ripieghi": [],
+[mcp_ricerca] query="Quanti tuorli servono per la salsa maionese e quante uova per gli gnocchi alla r…" top_k=5
+capitolo=- modalita=entrambe query=3 llm=2 → 2 passaggi (R126-1 0.6377, R230-1 0.5446) in 21.15s
+```
+
+La prima chiamata è durata 60 s perché LM Studio caricava gemma; a modello caricato 21-22 s. L'agente aspetta ogni
+tool al massimo 30 s (`TIMEOUT_S`): con `entrambe` il margine è stretto (a cui si somma l'avvio del processo del
+server).
+
+### Confronto delle quattro configurazioni (2026-11-20)
+Domande: le 6 della lezione 7 e 4 nuove (2 composte, 2 senza risposta), con fonti decise prima e controllate sul
+testo (`ricerca/valutazione/domande.toml`). Comando, da `L8\ricerca` con Qdrant e LM Studio accesi (circa 8 minuti):
+
+```powershell
+$env:EMBEDDING_MODEL = "text-embedding-bge-m3"
+$env:LM_MODEL = "google/gemma-4-e2b"
+$env:PYTHONUTF8 = "1"
+& ..\venv\Scripts\python.exe confronta.py > confronto.md
+```
+
+- modello di embedding: text-embedding-bge-m3
+- modello di chat: google/gemma-4-e2b
+- collezione: ricettario (1326 punti)
+- k: 5 · candidati per query: 10 · tetto del reranking: 10 · temperatura: 0
+
+| metrica | base | riscrittura | reranking | entrambe |
+|---|---|---|---|---|
+| fonte nei primi k | 7/7 | 7/7 | 7/7 | 7/7 |
+| MRR | 0.929 | 0.929 | 1.000 | 0.929 |
+| copertura delle composte | 4/4 | 4/4 | 3/4 | 2/4 |
+| astensioni corrette | 0/3 | 0/3 | 0/3 | 0/3 |
+| astensioni errate | 0/7 | 0/7 | 0/7 | 0/7 |
+| chiamate LLM (media/max) | 0.0/0 | 1.0/1 | 1.0/1 | 2.0/2 |
+| latenza s (media/max) | 0.31/2.00 | 7.89/9.04 | 17.88/21.37 | 21.33/26.25 |
+| ripieghi | 0 | 0 | 1 | 2 |
+
+| domanda | base | riscrittura | reranking | entrambe |
+|---|---|---|---|---|
+| Quanta farina serve per fare gli gnocchi con 400 g di patate? | 1 | 1 | 1 | 1 |
+| Quanti cappelletti bastano a chi mangia con moderazione? | 1 | 1 | 1 | 1 |
+| Che vino si usa nel pollo alla cacciatora? | 1 | 1 | 1 | 1 |
+| Perché gli gnocchi si disfano quando li butto nell'acqua? | 1 | 1 | 1 | 1 |
+| Com'è il cacciucco sulle coste dell'Adriatico? | 2 | 2 | 1 migliorata | 2 |
+| Come si prepara il tiramisù? | 5 passaggi | 5 passaggi | 3 passaggi | 2 passaggi |
+| Quanti tuorli servono per la salsa maionese e quante uova per gli gnocchi alla romana? | 2/2 (pos. 1) | 2/2 (pos. 1) | 2/2 (pos. 1) | 1/2 (pos. 1) peggiorata |
+| Quanta salvia va sui saltimbocca alla romana e quante uova servono per il pan di Spagna? | 2/2 (pos. 1) | 2/2 (pos. 1) | 1/2 (pos. 1) peggiorata | 1/2 (pos. 1) peggiorata |
+| Come si prepara il sushi? | 5 passaggi | 5 passaggi | 2 passaggi | 3 passaggi |
+| Quanto cioccolato serve per la torta Sacher? | 5 passaggi | 5 passaggi | 5 passaggi | 5 passaggi |
+
+Celle: posizione della fonte; per le composte fonti trovate / attese e posizione della prima; per le domande senza
+risposta i passaggi restituiti oppure «astensione». Il dettaglio (passaggi, query riscritte, ripieghi per domanda) è
+in `docs/evidenze-lezione8/esercizio3-dettaglio.txt`: una seconda esecuzione ha dato le stesse posizioni e gli
+stessi ripieghi (temperatura 0).
+
+### Casi migliorati e peggiorati
+- **Cacciucco, reranking: migliorata (2 → 1).** In `base` il primo passaggio è «Acciughe alla marinara» (R481-1),
+  che non parla del cacciucco; gemma lo scarta e mette primo R455-1 «Cacciucco I», che contiene «brodetto». Con
+  `entrambe` il miglioramento si perde per un ripiego: gemma restituisce tre id inesistenti, resta l'ordine RRF, dove
+  la query riscritta `cacciucco adriatico ricetta` porta in testa «Cacciucco II» (R456-1).
+- **Saltimbocca e pan di Spagna, reranking ed entrambe: peggiorata (2/2 → 1/2).** La scomposizione funziona (query
+  `quantità salvia saltimbocca alla romana` e `quantità uova pan di Spagna`, che porta «Pane di Spagna» da 0.519 a
+  0.667), ma il reranking tiene «Pane di Spagna» e scarta «Saltimbocca alla romana» (R222-1), il chunk con «mezza
+  foglia di salvia», tenendo al suo posto «Ciarlotta» o «Salame inglese».
+- **Maionese e gnocchi alla romana, entrambe: peggiorata (2/2 → 1/2).** La riscrittura alza i due chunk di «Gnocchi
+  alla romana» (0.643 e 0.641 invece di 0.601), ma il reranking li scarta e tiene «Gnocchi di semolino» (R230-1), che
+  non è la fonte. Con il solo reranking la copertura resta 2/2.
+- **Domande senza risposta: nessuna astensione.** Il reranking riduce i passaggi (sushi da 5 a 2-3, tiramisù da 5 a
+  2-3), ma tiene sempre qualcosa di vicino: «Soufflet di riso» e «Riso in composta» per il sushi, «Pasticcio a
+  sorpresa» per il tiramisù. Sulla Sacher, in `reranking` ed `entrambe`, gemma restituisce solo id inventati:
+  ripiego sull'ordine di partenza, 5 passaggi sui dolci al cioccolato. L'astensione resta affidata alle istruzioni
+  dell'agente (esercizio 2).
+- **Domande semplici:** la fonte è prima in tutte le configurazioni; il reranking lascia spesso un solo passaggio
+  (per esempio solo R89-1 per gli gnocchi): meno contesto, senza perdere la fonte.
+
+### Quale configurazione, su quali domande, a quale costo
+- `base` trova già la fonte tra i primi 5 per tutte le domande (MRR 0.929) in 0.3 s di media: con bge-m3 e questo
+  corpus è il riferimento difficile da battere.
+- `riscrittura` non cambia nessuna posizione della fonte (k=5) ma alza gli score dei chunk giusti nelle composte
+  (scomposizione corretta in entrambe); costa una chiamata a gemma, circa 8 s per domanda.
+- `reranking` è l'unica configurazione che migliora una posizione (cacciucco, MRR 1.000) e accorcia l'elenco dei
+  passaggi, ma perde una parte di una composta e non porta astensioni; circa 18 s per domanda.
+- `entrambe` somma i costi (2 chiamate, circa 21 s, massimo 26 s) e qui dà i risultati peggiori sulle composte: il
+  reranking, giudicando la domanda intera con un modello piccolo, scarta passaggi che rispondono a una parte.
+- Ripieghi osservati: 3 su 40 ricerche, tutti `reranking: id inventati` (cacciucco in `entrambe`, Sacher in
+  `reranking` ed `entrambe`); nessun ripiego della riscrittura.
