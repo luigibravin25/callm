@@ -6,8 +6,14 @@ AFFIDABILE = "affidabile"
 MEDIA = "media"
 
 
+# decimali dello score usati per la fascia: gli stessi mostrati nel risultato del tool
+DECIMALI = 4
+
+
 def fascia(score: float, alta: float, bassa: float) -> str | None:
-    """Fascia dello score coseno (non arrotondato): affidabile da `alta` in su, media da `bassa` in su, None sotto."""
+    """Fascia dello score coseno a 4 decimali: affidabile da `alta` in su, media da `bassa` in su, None sotto."""
+    # Qdrant calcola lo score in float32 (0.51 diventa 0.50999999): si confronta il valore mostrato nel risultato
+    score = round(score, DECIMALI)
     if score >= alta:
         return AFFIDABILE
     if score >= bassa:

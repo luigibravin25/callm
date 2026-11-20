@@ -192,3 +192,13 @@ def test_modalita_non_valida(monkeypatch, caplog):
     monkeypatch.setenv("RICERCA_MODALITA", "ibrida")
     assert "RICERCA_MODALITA" in errore_di(query="brodo")
     assert all(r.exc_info is None for r in caplog.records)
+
+
+# Verifica che soglie invertite arrivino al client come errore del tool, senza traceback (esercizio 4).
+def test_soglie_invertite_errore_del_tool(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="mcp_ricerca")
+    usa_indice(monkeypatch, Indice(client_con_collezione(), "ricettario", "bge", EmbedderFinto()))
+    monkeypatch.setenv("SOGLIA_ALTA", "0.4")
+    monkeypatch.setenv("SOGLIA_BASSA", "0.5")
+    assert "SOGLIA_BASSA" in errore_di(query="brodo")
+    assert all(r.exc_info is None for r in caplog.records)

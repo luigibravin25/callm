@@ -3,6 +3,7 @@
 import math
 from dataclasses import dataclass
 
+from app.errori import ErroreRicerca
 from app.indice import Risultato
 from app.valutazione import Domanda
 
@@ -39,6 +40,13 @@ def soglie_proposte(righe: list[RigaCalibrazione]) -> tuple[float, float, float,
     eccesso sopra il più alto); se le fasce non si sovrappongono, alta = bassa."""
     fonti = [s for r in righe for s in r.score_fonti.values() if s is not None]
     senza = [s for r in righe if not r.domanda.fonti for s in r.score]
+    # senza dati la regola non si applica: messaggio chiaro invece di un errore di min() o max()
+    if not fonti:
+        raise ErroreRicerca("calibrazione: nessuna fonte attesa trovata tra i primi k (aumentare -k o controllare "
+                            "le domande con fonte)")
+    if not senza:
+        raise ErroreRicerca("calibrazione: nessuna domanda senza risposta tra le domande (servono per la soglia "
+                            "alta)")
     min_fonti, max_senza = min(fonti), max(senza)
     bassa, alta = _per_difetto(min_fonti), _per_eccesso(max_senza)
     # la configurazione deve restare valida (bassa <= alta): senza sovrapposizione nessuna fascia media

@@ -37,3 +37,13 @@ def test_soglie_senza_sovrapposizione():
 def test_tabella_calibrazione():
     testo = tabella_calibrazione([riga(SEMPLICE_208, [ris(208, 0.6141)]), riga(VUOTA, [ris(5, 0.53)])], {"k": "5"})
     assert "0.6141" in testo and "soglia bassa proposta" in testo and "- k: 5" in testo
+
+
+# Verifica un errore chiaro (non un ValueError) se mancano domande con fonte trovata o domande senza risposta.
+def test_soglie_proposte_senza_dati():
+    import pytest
+    from app.errori import ErroreRicerca
+    with pytest.raises(ErroreRicerca, match="nessuna fonte attesa"):
+        soglie_proposte([riga(SEMPLICE_208, [ris(5, 0.6)]), riga(VUOTA, [ris(5, 0.5)])])
+    with pytest.raises(ErroreRicerca, match="nessuna domanda senza risposta"):
+        soglie_proposte([riga(SEMPLICE_208, [ris(208, 0.6)])])

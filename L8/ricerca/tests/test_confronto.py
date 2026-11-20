@@ -79,3 +79,18 @@ def test_colonna_base_con_soglie():
     assert "| metrica | base | base + soglie |" in testo
     assert "| astensioni corrette | 0/1 | 1/1 |" in testo and "| astensioni errate | 0/1 | 1/1 |" in testo
     assert "| sushi? | 1 passaggi | astensione migliorata |" in testo
+
+
+# Verifica l'intestazione del confronto: con --soglie le soglie e niente modello di chat né tetto del reranking.
+def test_intestazione_del_confronto():
+    from app.config import Configurazione
+    from app.confronto import intestazione_confronto
+    from pathlib import Path
+    conf = Configurazione("http://lm/v1", "bge", "http://q", "ricettario", Path("x"), "paragrafi", 1000, 150, 5,
+                          modello_chat="gemma")
+    con_soglie = intestazione_confronto(conf, 5, 1326, soglie=True)
+    assert con_soglie["soglie (alta/bassa)"] == "0.60/0.51"
+    assert "modello di chat" not in con_soglie and "tetto del reranking" not in con_soglie
+    senza = intestazione_confronto(conf, 5, 1326, soglie=False)
+    assert senza["modello di chat"] == "gemma" and senza["tetto del reranking"] == "10"
+    assert "soglie (alta/bassa)" not in senza and senza["collezione"] == "ricettario (1326 punti)"

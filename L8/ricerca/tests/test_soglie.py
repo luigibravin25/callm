@@ -32,3 +32,10 @@ def test_soglie_minime_nessun_escluso():
 def test_filtra_ordine_e_esclusi():
     rimasti, esclusi = filtra([ris(1, 0.5), ris(2, 0.7), ris(3, 0.55)], 0.60, 0.51)
     assert [(r.numero, f) for r, f in rimasti] == [(2, "affidabile"), (3, "media")] and esclusi == 1
+
+
+# Verifica che la fascia usi lo score a 4 decimali, lo stesso mostrato nel risultato: uno score float32 di Qdrant
+# come 0.50999999 (mostrato 0.5100) è di affidabilità media, non escluso (minore della revisione finale).
+def test_fascia_sullo_score_mostrato():
+    assert fascia(0.50999999, 0.60, 0.51) == "media"
+    assert fascia(0.59999997, 0.60, 0.51) == "affidabile"

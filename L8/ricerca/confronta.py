@@ -17,7 +17,7 @@ from qdrant_client import QdrantClient
 from app.avvio import configura_log, esegui as esegui_script
 from app.chat import ChatLMStudio
 from app.config import carica_configurazione
-from app.confronto import CONFIGURAZIONI, EsitoDomanda, tabelle_markdown
+from app.confronto import CONFIGURAZIONI, EsitoDomanda, intestazione_confronto, tabelle_markdown
 from app.embedding import EmbedderLMStudio
 from app.errori import ErroreRicerca
 from app.indice import Indice
@@ -88,17 +88,7 @@ def main(argv: list[str] | None = None) -> None:
                 esiti[configurazione].append(EsitoDomanda(domanda, [r.numero for r in esito.risultati],
                                                           esito.chiamate_llm, latenza, len(esito.ripieghi)))
         # parametri della prova: dicono che cosa è rimasto fisso tra le configurazioni
-        intestazione = {
-            "modello di embedding": conf.modello_embedding,
-            **({"soglie (alta/bassa)": f"{conf.soglia_alta:.2f}/{conf.soglia_bassa:.2f}"} if argomenti.soglie
-               else {}),
-            "modello di chat": conf.modello_chat,
-            "collezione": f"{conf.collezione} ({indice.conta_punti()} punti)",
-            "k": str(k),
-            "candidati per query": str(conf.candidati),
-            "tetto del reranking": str(conf.tetto_rerank),
-            "temperatura": "0",
-        }
+        intestazione = intestazione_confronto(conf, k, indice.conta_punti(), soglie=argomenti.soglie)
         print(tabelle_markdown(esiti, intestazione))
 
     esegui_script(principale)
