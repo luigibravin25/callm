@@ -236,3 +236,21 @@ def test_nessun_candidato_nessun_reranking():
     esito = recupera("D?", 5, None, indice=IndiceFinto({}), chat=ChatFinta([]), modalita="reranking",
                      candidati=10, tetto=10)
     assert esito.risultati == [] and esito.chiamate_llm == 0
+
+
+
+# --- correzioni dopo la revisione finale ---
+
+# Verifica che una risposta con la sola copia della domanda sia un ripiego segnalato (nessuna query valida).
+def test_riscrittura_solo_copia_della_domanda():
+    query, ripiego = query_di_ricerca("Che vino?", ChatFinta(['{"query": [" che vino? "]}']))
+    assert query == ["Che vino?"] and ripiego == "riscrittura: nessuna query valida → sola domanda"
+
+
+# Verifica un candidato per riga anche quando il testo del chunk contiene a capo.
+def test_reranking_un_candidato_per_riga():
+    a_capo = [replace(ris(1, 0, 0.9), testo="Latte, decilitri 4.\nSemolino, grammi 150."), ris(2, 0, 0.8)]
+    chat = ChatFinta(['{"id": []}'])
+    riordina("D?", a_capo, chat, "vettoriale")
+    righe = chat.chiamate[0][1].split("\n")
+    assert len(righe) == 4 and righe[2].endswith("Latte, decilitri 4. Semolino, grammi 150.")

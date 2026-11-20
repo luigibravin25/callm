@@ -19,9 +19,10 @@ class ChatLMStudio:
         self.base_url = base_url
         self.modello = modello
         self.max_tokens = max_tokens
-        # LM Studio non controlla la chiave, ma il client ne vuole una; il timeout evita attese senza fine
+        # LM Studio non controlla la chiave, ma il client ne vuole una; il timeout evita attese senza fine;
+        # nessun retry automatico: una chiamata fallita diventa subito un ripiego, senza moltiplicare l'attesa
         self.client = client if client is not None else openai.OpenAI(base_url=base_url, api_key="lm-studio",
-                                                                      timeout=timeout)
+                                                                      timeout=timeout, max_retries=0)
 
     def completa_json(self, sistema: str, utente: str, nome_schema: str, schema: dict) -> str:
         """Testo della risposta (JSON secondo `schema`); errore di LM Studio o risposta vuota → ErroreRicerca."""

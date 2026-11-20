@@ -60,3 +60,8 @@ def test_chat_finta():
     with pytest.raises(ErroreRicerca):
         chat.completa_json("s", "u", "reranking", {})
     assert [c[2] for c in chat.chiamate] == ["reranking", "reranking"]
+
+
+# Verifica che il client vero non ripeta le chiamate fallite (i retry moltiplicherebbero l'attesa dell'agente).
+def test_nessun_retry_automatico():
+    assert ChatLMStudio("http://lm/v1", "gemma").client.max_retries == 0

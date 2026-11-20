@@ -67,20 +67,18 @@ def query_di_ricerca(domanda: str, chat: Chat) -> tuple[list[str], str | None]:
     # l'originale resta sempre per prima; doppioni confrontati senza maiuscole e spazi ai bordi
     query = [domanda]
     viste = {domanda.strip().lower()}
-    valide = 0
     for testo in riscritte:
         pulita = testo.strip()
         if not pulita:
             continue
-        valide += 1
         if pulita.lower() in viste:
             continue
         viste.add(pulita.lower())
         # al massimo QUERY_MASSIME query in tutto: le altre si scartano
         if len(query) < QUERY_MASSIME:
             query.append(pulita)
-    # solo stringhe vuote o di spazi: nessuna query da usare
-    if valide == 0:
+    # dopo la pulizia (vuote e doppioni, copia della domanda compresa) nessuna query nuova da usare
+    if len(query) == 1:
         return [domanda], "riscrittura: nessuna query valida → sola domanda"
     return query, None
 
@@ -109,8 +107,9 @@ def fondi_rrf(liste: list[list[Risultato]]) -> list[Risultato]:
 
 # messaggio utente del reranking: la domanda, una riga vuota, un candidato per riga con id, titolo e capitolo
 def _messaggio_reranking(domanda: str, candidati: list[Risultato]) -> str:
+    # a capo e spazi multipli del chunk ridotti a uno spazio: un candidato per riga
     righe = [f"[{id_citabile(r.numero, r.indice_chunk)}] {r.titolo} ({r.capitolo}): "
-             f"{tronca(r.testo, TESTO_RERANK)[0]}" for r in candidati]
+             f"{tronca(' '.join(r.testo.split()), TESTO_RERANK)[0]}" for r in candidati]
     return f"Domanda: {domanda}\n\n" + "\n".join(righe)
 
 
