@@ -16,6 +16,13 @@ TOP_K_MASSIMO = 20
 # strategie di chunking ammesse (CHUNK_STRATEGIA)
 STRATEGIE = ("paragrafi", "caratteri")
 
+# modalità di recupero ammesse (RICERCA_MODALITA, lezione 8 esercizio 3)
+MODALITA = ("base", "riscrittura", "reranking", "entrambe")
+# limiti di candidati per query e tetto del reranking: almeno il top_k massimo del tool (10),
+# al massimo il k massimo di Indice.cerca (TOP_K_MASSIMO), così il valore dichiarato è quello usato
+CANDIDATI_MINIMO = 10
+CANDIDATI_MASSIMO = TOP_K_MASSIMO
+
 
 # contenitore della configurazione: frozen=True la rende immutabile dopo la creazione
 @dataclass(frozen=True)
@@ -29,6 +36,11 @@ class Configurazione:
     dimensione: int  # caratteri massimi di un chunk (CHUNK_DIMENSIONE)
     overlap: int  # caratteri ripresi dal chunk precedente (CHUNK_OVERLAP)
     top_k: int  # risultati predefiniti di una ricerca (TOP_K)
+    # lezione 8, esercizio 3: campi in fondo con predefinito (chi crea la configurazione a mano non cambia)
+    modalita: str = "base"  # modalità di recupero (RICERCA_MODALITA)
+    modello_chat: str = ""  # id del modello di chat per riscrittura e reranking (LM_MODEL)
+    candidati: int = CANDIDATI_MINIMO  # candidati chiesti a Qdrant per ogni query (RICERCA_CANDIDATI)
+    tetto_rerank: int = CANDIDATI_MINIMO  # massimo di candidati mandati al reranking (RERANK_TETTO)
 
 
 # valore di una variabile senza spazi ai bordi; vuota o assente → predefinito
@@ -36,15 +48,17 @@ def _testo(nome: str, predefinito: str) -> str:
     return os.environ.get(nome, "").strip() or predefinito
 
 
-# intero di una variabile con il minimo ammesso; errore con nome e valore ammesso
-def _intero(nome: str, predefinito: int, minimo: int) -> int:
+# intero di una variabile con il minimo (e l'eventuale massimo) ammesso; errore con nome e valori ammessi
+def _intero(nome: str, predefinito: int, minimo: int, massimo: int | None = None) -> int:
+    # testo dei valori ammessi: intervallo se c'è un massimo, altrimenti solo il minimo
+    ammesso = f"intero {minimo}-{massimo}" if massimo is not None else f"intero >= {minimo}"
     grezzo = _testo(nome, str(predefinito))
     try:
         valore = int(grezzo)
     except ValueError:
-        raise ErroreRicerca(f"{nome}={grezzo!r} non è un intero (ammesso: intero >= {minimo})") from None
-    if valore < minimo:
-        raise ErroreRicerca(f"{nome}={valore} non valido (ammesso: intero >= {minimo})")
+        raise ErroreRicerca(f"{nome}={grezzo!r} non è un intero (ammesso: {ammesso})") from None
+    if valore < minimo or (massimo is not None and valore > massimo):
+        raise ErroreRicerca(f"{nome}={valore} non valido (ammesso: {ammesso})")
     return valore
 
 
@@ -68,6 +82,15 @@ def carica_configurazione() -> Configurazione:
     corpus = Path(_testo("CORPUS_FILE", "Ricettario/Ricettario.txt"))
     if not corpus.is_absolute():
         corpus = CARTELLA_L7 / corpus
+    # modalità di recupero, senza maiuscole e spazi ai bordi
+    modalita = _testo("RICERCA_MODALITA", "base").lower()
+    if modalita not in MODALITA:
+        raise ErroreRicerca(f"RICERCA_MODALITA={modalita!r} non valida (ammesse: {', '.join(MODALITA)})")
+    # il modello di chat serve solo a riscrittura e reranking
+    modello_chat = _testo("LM_MODEL", "")
+    if modalita != "base" and not modello_chat:
+        raise ErroreRicerca(f"LM_MODEL non impostata: serve alla modalità {modalita} (riscrittura e reranking "
+                            "con il modello di chat di LM Studio), es. $env:LM_MODEL = \"google/gemma-4-e2b\"")
     return Configurazione(
         lm_base_url=_testo("LM_BASE_URL", "http://127.0.0.1:1234/v1"),
         modello_embedding=modello,
@@ -78,4 +101,8 @@ def carica_configurazione() -> Configurazione:
         dimensione=dimensione,
         overlap=overlap,
         top_k=_intero("TOP_K", 5, 1),
+        modalita=modalita,
+        modello_chat=modello_chat,
+        candidati=_intero("RICERCA_CANDIDATI", CANDIDATI_MINIMO, CANDIDATI_MINIMO, CANDIDATI_MASSIMO),
+        tetto_rerank=_intero("RERANK_TETTO", CANDIDATI_MINIMO, CANDIDATI_MINIMO, CANDIDATI_MASSIMO),
     )
