@@ -61,7 +61,7 @@ Ambiente: `& .\venv\Scripts\python.exe -m pip install -r requirements.txt` (venv
 
 | Suite | Comando (PowerShell) | Esito (aggiornato all'esercizio 3, 2026-11-20) |
 |---|---|---|
-| Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 246 passati (126 della lezione 7 + 29 del server MCP + 91 dell'esercizio 3) |
+| Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 248 passati (126 della lezione 7 + 29 del server MCP + 93 dell'esercizio 3) |
 | Agente (lezioni 5-6 e aggancio alla ricerca) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 379 passati, 12 saltati (345 di prima + 32 dell'esercizio 2 + 2 dell'esercizio 3) |
 | Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 30 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
 
@@ -110,6 +110,14 @@ Modalità avanzata della ricerca (esercizio 3): la sceglie la configurazione del
 | `LM_MODEL` | modello di chat per riscrittura e reranking (obbligatoria fuori da `base`) | — |
 | `RICERCA_CANDIDATI` | candidati per query, 10-20 | 10 |
 | `RERANK_TETTO` | candidati mandati al reranking, 10-20 | 10 |
+
+Riscrittura e reranking non mandano mai un errore all'agente: se gemma non risponde o risponde male, la ricerca
+ripiega (sola domanda oppure ordine di partenza) e lo scrive nel campo `ripieghi` del risultato e nella riga di log
+`[mcp_ricerca]`. Gli id restituiti dal reranking vengono normalizzati prima del controllo: spazi e parentesi quadre
+tolti, maiuscole, «R» iniziale aggiunta se manca (gemma scrive a volte `455-1` invece di `R455-1`). Un id vale solo
+se corrisponde a uno dei candidati mandati a gemma: quelli inventati o doppi sono scartati (`scartati=n` nel log) e,
+se non ne resta nessuno valido, si ripiega. L'agente aspetta ogni chiamata MCP al massimo 60 s (`TIMEOUT_S`), perché
+una ricerca in modalità `entrambe` dura fino a circa 28 s più l'avvio del server.
 
 Confronto delle quattro configurazioni sulle dieci domande di `ricerca/valutazione/domande.toml` (circa 9 minuti
 con gemma), da `L8\ricerca`, servizi accesi; tabelle e commento in `docs/rag-agente.md`:
