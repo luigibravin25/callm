@@ -5,6 +5,7 @@ import pytest
 from qdrant_client import QdrantClient
 
 import cerca
+import confronta
 import ingestion
 import valuta
 from app.config import carica_configurazione
@@ -59,7 +60,8 @@ def test_argomenti():
     assert valuta.leggi_argomenti([]).k is None
 
 
-@pytest.mark.parametrize("principale", [lambda: cerca.main(["--help"]), lambda: valuta.main(["--help"])])
+@pytest.mark.parametrize("principale", [lambda: cerca.main(["--help"]), lambda: valuta.main(["--help"]),
+                                        lambda: confronta.main(["--help"])])
 def test_help_senza_configurazione(monkeypatch, capsys, principale):
     # l'aiuto non richiede variabili d'ambiente
     monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
@@ -131,3 +133,15 @@ def test_argomenti_solo_dosi():
     assert cerca.leggi_argomenti(["gnocchi", "--solo-dosi"]).solo_dosi is True
     assert cerca.leggi_argomenti(["gnocchi"]).solo_dosi is False
     assert valuta.leggi_argomenti(["--solo-dosi"]).solo_dosi is True
+
+
+
+# Verifica che il confronto senza LM_MODEL esca con 1 e un messaggio chiaro (prima di qualsiasi servizio).
+def test_confronta_senza_lm_model(monkeypatch, caplog):
+    monkeypatch.setenv("EMBEDDING_MODEL", "bge")
+    for nome in ("LM_MODEL", "RICERCA_MODALITA"):
+        monkeypatch.delenv(nome, raising=False)
+    with pytest.raises(SystemExit) as uscita:
+        confronta.main([])
+    assert uscita.value.code == 1
+    assert "LM_MODEL" in caplog.text
