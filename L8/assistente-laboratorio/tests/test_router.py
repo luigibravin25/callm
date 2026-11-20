@@ -1,0 +1,170 @@
+# test del router: prompt costruito dall'ambito, messaggi passati al modello, decisione e
+# comportamento con un output non valido (la domanda passa all'agente)
+import logging
+
+import httpx
+import pytest
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from openai import APIConnectionError
+from pydantic import ValidationError
+
+from app.config import Ambito, Argomento
+from app.router import (FRASE_NEL_DUBBIO, FRASE_NO_STRUMENTI, FRASE_SOLO_ARGOMENTO,
+                        DecisioneRouter, decidi, messaggi_per_router, prompt_router)
+from tests.finti import RouterFinto
+
+# ambito di prova: testi riconoscibili nel prompt
+AMBITO = Ambito(descrizione="Solo ora e fusi orari.", rifiuto="No.",
+                esempi_in_ambito=("Che ore sono a Lima?",),
+                esempi_fuori_ambito=("Ricetta del tiramisù",))
+
+
+# Verifica che il prompt del router contenga descrizione ed esempi dell'ambito.
+def test_prompt_contiene_ambito_ed_esempi():
+    prompt = prompt_router(AMBITO)
+    assert "Solo ora e fusi orari." in prompt
+    assert "Che ore sono a Lima?" in prompt
+    assert "Ricetta del tiramisù" in prompt
+
+
+# Verifica che il router non nomini gli strumenti e dica di non sceglierli.
+def test_prompt_non_parla_di_strumenti():
+    prompt = prompt_router(AMBITO)
+    assert "tooltime" not in prompt
+    assert FRASE_NO_STRUMENTI in prompt
+
+
+# Verifica le due regole aggiunte dopo la prova con gemma: solo l'argomento,
+# nel dubbio conversazione.
+def test_prompt_valuta_solo_l_argomento():
+    # con gemma il router rifiutava "Che ore sono a Tokyo?" perche' giudicava se l'assistente
+    # avesse abbastanza dettagli: deve guardare solo l'argomento, e nel dubbio far passare
+    prompt = prompt_router(AMBITO)
+    assert FRASE_SOLO_ARGOMENTO in prompt
+    assert FRASE_NEL_DUBBIO in prompt
+
+
+# Verifica che senza risposte precedenti il router riceva solo la domanda.
+def test_messaggi_router_solo_domanda():
+    messaggi = messaggi_per_router(AMBITO, [HumanMessage("Che ore sono?")])
+    assert len(messaggi) == 2
+    assert isinstance(messaggi[0], SystemMessage)
+    assert messaggi[1].content == "Che ore sono?"
+
+
+# Verifica che una domanda di seguito arrivi al router con la risposta precedente,
+# senza ToolMessage.
+def test_messaggi_router_con_risposta_precedente():
+    # la domanda di seguito "e a Londra?" si capisce solo con la risposta precedente
+    chiamata = {"name": "tooltime", "args": {"fuso": "Asia/Tokyo"}, "id": "c1"}
+    cronologia = [HumanMessage("Che ore sono a Tokyo?"),
+                  AIMessage("", tool_calls=[chiamata]),
+                  ToolMessage("Tokyo: sono le ore 10", tool_call_id="c1", name="tooltime"),
+                  AIMessage("A Tokyo sono le 10"),
+                  HumanMessage("e a Londra?")]
+    messaggi = messaggi_per_router(AMBITO, cronologia)
+    assert len(messaggi) == 2  # niente ToolMessage, niente cronologia completa
+    assert messaggi[1].content == ("Risposta precedente dell'assistente: A Tokyo sono le 10"
+                                   "\n\nDomanda dell'utente: e a Londra?")
+
+
+# Verifica che una decisione valida del router venga usata cosi' com'e'.
+def test_decisione_valida():
+    attesa = DecisioneRouter(categoria="fuori_ambito", motivo="ricetta")
+    assert decidi(RouterFinto([attesa]), AMBITO, [HumanMessage("carbonara")]) == attesa
+
+
+# Verifica che una risposta vuota del router mandi la domanda all'agente con un avviso.
+def test_decisione_none_va_all_agente(caplog):
+    caplog.set_level(logging.WARNING, logger="router")
+    decisione = decidi(RouterFinto([None]), AMBITO, [HumanMessage("ciao")])
+    assert decisione.categoria == "conversazione"
+    assert decisione.motivo.startswith("output del router non valido")
+    assert "la domanda passa all'agente" in caplog.text
+
+
+# Verifica che un output non leggibile del router mandi la domanda all'agente con un avviso.
+def test_eccezione_di_validazione_va_all_agente(caplog):
+    caplog.set_level(logging.WARNING, logger="router")
+    decisione = decidi(RouterFinto([ValueError("json rotto")]), AMBITO, [HumanMessage("ciao")])
+    assert decisione.categoria == "conversazione"
+    assert decisione.motivo.startswith("output del router non valido")
+    assert "json rotto" in caplog.text
+
+
+# Verifica l'ordine dei campi dello schema mandato al modello: prima il motivo, poi la decisione.
+def test_motivo_prima_della_decisione():
+    # il modello genera i campi nell'ordine dello schema: prima ragiona (motivo), poi decide.
+    # Con la decisione per prima gemma scriveva "rientra nell'ambito" e poi fuori_ambito.
+    # Dallo step 5 la decisione e' l'argomento (schema_router); DecisioneRouter resta al grafo
+    from app.router import schema_router
+    schema = schema_router(AMBITO).model_json_schema()
+    assert list(schema["properties"]) == ["motivo", "argomento"]
+
+
+# Verifica che lo schema rifiuti una categoria diversa dalle due ammesse.
+def test_categoria_sconosciuta_rifiutata_dallo_schema():
+    with pytest.raises(ValidationError):
+        DecisioneRouter(categoria="altro", motivo="x")
+
+
+# Verifica che LM Studio irraggiungibile non sia trattato come output non valido.
+def test_errore_di_connessione_non_e_output_non_valido():
+    errore = APIConnectionError(request=httpx.Request("POST", "http://x"))
+    with pytest.raises(APIConnectionError):
+        decidi(RouterFinto([errore]), AMBITO, [HumanMessage("ciao")])
+
+
+# Verifica che il router ignori i messaggi del revisore e veda la domanda vera dell'utente.
+def test_router_ignora_i_messaggi_del_revisore():
+    from app.revisore import REVISORE
+    cronologia = [HumanMessage("Che ore sono?"), AIMessage("bozza"),
+                  HumanMessage("[Revisore] manca una parte", name=REVISORE)]
+    assert messaggi_per_router(AMBITO, cronologia)[1].content == "Che ore sono?"
+
+
+# --- router per argomento (step 5) ---
+
+AMBITO_ARG = Ambito(descrizione="Assistente di prova.", rifiuto="No.",
+                    argomenti=(Argomento("ora_data_fusi", "ora e data"),
+                               Argomento("saluti", "saluti e ringraziamenti")))
+
+
+# Verifica lo schema mandato a LM Studio: motivo prima, argomento tra i nomi del file e "altro".
+def test_schema_router_dall_ambito():
+    from app.router import ALTRO, schema_router
+    schema = schema_router(AMBITO_ARG).model_json_schema()
+    assert list(schema["properties"]) == ["motivo", "argomento"]
+    assert schema["properties"]["argomento"]["enum"] == ["ora_data_fusi", "saluti", ALTRO]
+
+
+# Verifica che il prompt elenchi gli argomenti e "altro" come fuori ambito.
+def test_prompt_elenca_gli_argomenti():
+    prompt = prompt_router(AMBITO_ARG)
+    assert "- ora_data_fusi: ora e data" in prompt
+    assert "- saluti: saluti e ringraziamenti" in prompt
+    assert "- altro: tutto il resto (fuori ambito)" in prompt
+
+
+# Verifica la conversione: "altro" -> fuori_ambito, ogni altro argomento -> conversazione.
+@pytest.mark.parametrize("argomento,categoria", [("altro", "fuori_ambito"),
+                                                 ("ora_data_fusi", "conversazione"),
+                                                 ("saluti", "conversazione")])
+def test_decidi_ricava_la_categoria(argomento, categoria):
+    from app.router import schema_router
+    uscita = schema_router(AMBITO_ARG)(motivo="m", argomento=argomento)
+    decisione = decidi(RouterFinto([uscita]), AMBITO_ARG, [HumanMessage("x")])
+    assert decisione == DecisioneRouter(motivo="m", categoria=categoria, argomento=argomento)
+
+
+# Verifica che un errore di programma nel preparare i messaggi salga (minore dello step 1: prima
+# l'except Exception lo trasformava in "output non valido" e la domanda passava all'agente).
+def test_errore_di_programma_nel_router_sale(monkeypatch):
+    from app import router
+
+    def rotto(ambito, messages):
+        raise KeyError("x")
+    monkeypatch.setattr(router, "messaggi_per_router", rotto)
+    with pytest.raises(KeyError):
+        decidi(RouterFinto([DecisioneRouter(categoria="conversazione", motivo="ok")]), AMBITO,
+               [HumanMessage("ciao")])

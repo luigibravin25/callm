@@ -1,0 +1,52 @@
+# domande di valutazione della ricerca (lezione 7): le sei viste in aula, scritte senza copiare le
+# parole del libro. Per ognuna la fonte attesa è decisa prima dell'esecuzione e verificata sul testo;
+# "indizio" è una frase della ricetta che il chunk della fonte deve contenere ("contiene l'informazione").
+# Il tiramisù non è nel libro: niente fonte, si registrano gli score dei risultati.
+
+[[domanda]]
+testo = "Quanta farina serve per fare gli gnocchi con 400 g di patate?"
+fonte = 89  # Gnocchi di patate
+indizio = "grammi 400"
+
+[[domanda]]
+testo = "Quanti cappelletti bastano a chi mangia con moderazione?"
+fonte = 7  # Cappelletti all'uso di Romagna
+indizio = "mangiatore discreto"
+
+[[domanda]]
+testo = "Che vino si usa nel pollo alla cacciatora?"
+fonte = 208  # Pollo alla cacciatora
+indizio = "vino rosso"
+
+[[domanda]]
+testo = "Perché gli gnocchi si disfano quando li butto nell'acqua?"
+fonte = 89  # Gnocchi di patate
+indizio = "si liquefecero"
+
+[[domanda]]
+testo = "Com'è il cacciucco sulle coste dell'Adriatico?"
+fonte = 455  # Cacciucco I
+indizio = "brodetto"
+
+[[domanda]]
+testo = "Come si prepara il tiramisù?"
+
+# --- lezione 8, esercizio 3: domande nuove approvate dall'utente (2026-11-20) ---
+# Fonti e indizi decisi prima di ogni esecuzione e controllati leggendo Ricettario.txt; le composte hanno una
+# fonte per parte (fonti/indizi), le domande senza risposta nessuna fonte (parola assente dal testo).
+
+[[domanda]]
+testo = "Quanti tuorli servono per la salsa maionese e quante uova per gli gnocchi alla romana?"
+fonti = [126, 231]  # Salsa maionese, Gnocchi alla romana
+indizi = ["due torli", "Uova, N. 2."]
+
+[[domanda]]
+testo = "Quanta salvia va sui saltimbocca alla romana e quante uova servono per il pan di Spagna?"
+fonti = [222, 599]  # Saltimbocca alla romana, Pane di Spagna
+indizi = ["mezza foglia di salvia", "Uova, N. 6."]
+
+[[domanda]]
+testo = "Come si prepara il sushi?"  # «sushi»: 0 occorrenze nel testo
+
+[[domanda]]
+testo = "Quanto cioccolato serve per la torta Sacher?"  # «sacher»: 0 occorrenze nel testo
