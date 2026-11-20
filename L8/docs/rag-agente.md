@@ -372,7 +372,8 @@ k = 5, le 10 domande dell'esercizio 3; evidenza in `docs/evidenze-lezione8/eserc
 
 - score minimo di una fonte attesa (`min_fonti`, chunk migliore della fonte): **0.5190** (Pane di Spagna);
 - score massimo di un passaggio delle domande senza risposta (`max_senza`): **0.5907** (Sacher, «Dolce tedesco»);
-- le due fasce si sovrappongono: 5 fonti vere su 9 hanno uno score più basso del primo passaggio della Sacher.
+- le due fasce si sovrappongono: 4 fonti vere su 9 (cappelletti 0.5569, saltimbocca 0.5429, cacciucco 0.5344, pan di
+  Spagna 0.5190) hanno uno score più basso del primo passaggio della Sacher.
 
 **Perché 0.60 e 0.51.** Gli score non sono probabilità: sono similarità coseno di bge-m3, tutte strette tra 0.49 e
 0.72 su questo corpus, e cambierebbero con un altro modello. Poiché le fasce si sovrappongono, nessuna coppia di
@@ -387,7 +388,8 @@ soglie separa le domande con risposta da quelle senza: bisognava scegliere quale
 
 Il margine è stretto: tra la fonte più debole (0.519) e la soglia bassa ci sono 0.009. L'astensione sulle domande
 senza risposta del confronto resta compito dell'agente; la soglia bassa svuota la lista solo per ricerche lontane dal
-libro (per esempio «ramen», score massimo 0.449, o «pad thai», 0.428).
+libro (per esempio «ramen», score massimo 0.4487, o «pad thai», 0.4280: evidenza in
+`docs/evidenze-lezione8/esercizio4-score-ramen-pad-thai.txt`).
 
 ### Confronto con e senza soglie (2026-11-20)
 Comando: `& ..\venv\Scripts\python.exe confronta.py --soglie` (base una volta sola, la seconda colonna filtra gli
@@ -405,7 +407,8 @@ stessi risultati con le soglie della configurazione; non serve `LM_MODEL`; evide
 Le metriche coincidono, ed è l'effetto atteso del criterio: la soglia bassa è calcolata proprio per non escludere
 nessuna fonte di queste domande (quindi né fonti perse né astensioni errate), e i passaggi delle domande senza
 risposta stanno tutti sopra 0.51 (quindi nessuna lista svuotata). Le soglie cambiano però ciò che riceve il modello:
-- i passaggi sotto 0.51 sono esclusi (il sushi passa da 5 a 2 passaggi, cappelletti e cacciucco perdono il quinto);
+- i passaggi sotto 0.51 sono esclusi (il sushi passa da 5 a 2 passaggi, «Perché gli gnocchi si disfano…» da 5 a 3,
+  cappelletti e cacciucco perdono il quinto);
 - ogni passaggio porta la sua fascia: con queste domande solo gnocchi, vino e maionese hanno passaggi affidabili, e
   tutti i passaggi delle domande senza risposta sono di affidabilità media, da dichiarare da verificare.
 
