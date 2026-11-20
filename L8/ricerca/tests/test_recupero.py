@@ -3,8 +3,15 @@
 import pytest
 
 from app.errori import ErroreRicerca
-from app.recupero import PROMPT_RISCRITTURA, query_di_ricerca
+from app.indice import Risultato
+from app.recupero import PROMPT_RISCRITTURA, fondi_rrf, query_di_ricerca
 from tests.finti import ChatFinta
+
+
+# risultato di prova: ricetta `numero`, chunk `chunk` (da 0), score coseno
+def ris(numero: int, chunk: int, score: float, testo: str = "testo di prova") -> Risultato:
+    return Risultato(posizione=1, score=score, numero=numero, titolo=f"Ricetta {numero}", capitolo="DOLCI",
+                     indice_chunk=chunk, totale_chunk=chunk + 1, testo=testo)
 
 
 # --- riscrittura e scomposizione ---
@@ -55,3 +62,26 @@ def test_riscrittura_risposta_vuota():
 def test_riscrittura_elementi_non_testo():
     _, ripiego = query_di_ricerca("D?", ChatFinta(['{"query": [1, null]}']))
     assert ripiego == "riscrittura: JSON non valido → sola domanda"
+
+
+# --- fusione RRF ---
+
+# Verifica l'unione senza doppioni, l'ordine per punteggio RRF e lo score coseno più alto.
+def test_rrf_unione_senza_doppioni():
+    a = [ris(1, 0, 0.9), ris(2, 0, 0.8)]
+    b = [ris(2, 0, 0.85), ris(3, 0, 0.7)]
+    fusi = fondi_rrf([a, b])
+    assert [(r.numero, r.posizione) for r in fusi] == [(2, 1), (1, 2), (3, 3)]
+    assert fusi[0].score == 0.85
+
+
+# Verifica che a pari punteggio RRF venga prima lo score coseno più alto.
+def test_rrf_pari_punteggio_vince_lo_score():
+    fusi = fondi_rrf([[ris(1, 0, 0.5)], [ris(2, 0, 0.6)]])
+    assert [r.numero for r in fusi] == [2, 1]
+
+
+# Verifica che con una sola query l'ordine vettoriale resti com'è.
+def test_rrf_una_sola_lista_ordine_invariato():
+    lista = [ris(5, 0, 0.9), ris(4, 1, 0.8), ris(3, 0, 0.7)]
+    assert [(r.numero, r.indice_chunk) for r in fondi_rrf([lista])] == [(5, 0), (4, 1), (3, 0)]
