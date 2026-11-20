@@ -6,6 +6,8 @@ from dataclasses import replace
 
 from app.chat import Chat
 from app.indice import Risultato
+# id citabile e troncamento del testo: gli stessi del risultato del tool (risultato.py non importa questo modulo)
+from mcp_ricerca.risultato import id_citabile, tronca
 
 # prompt di riscrittura approvato dall'utente (specifica §7.1), testo esatto
 PROMPT_RISCRITTURA = (
@@ -21,6 +23,19 @@ SCHEMA_RISCRITTURA = {"type": "object", "properties": {"query": {"type": "array"
 QUERY_MASSIME = 3
 # costante della fusione per rango (Reciprocal Rank Fusion)
 RRF_K = 60
+
+# prompt di reranking approvato dall'utente (specifica §7.2), testo esatto
+PROMPT_RERANKING = (
+    "Ricevi una domanda e alcuni passaggi di un ricettario, ognuno con un id tra parentesi quadre. Restituisci gli "
+    "id dei passaggi utili a rispondere alla domanda, anche solo a una sua parte, dal più utile al meno utile. "
+    "Ometti i passaggi che non c'entrano. Se nessun passaggio è utile, restituisci una lista vuota. Usa solo gli "
+    "id ricevuti. Rispondi solo con il JSON richiesto."
+)
+# schema JSON della risposta di reranking
+SCHEMA_RERANKING = {"type": "object", "properties": {"id": {"type": "array", "items": {"type": "string"}}},
+                    "required": ["id"]}
+# caratteri massimi del testo di un candidato mandato al reranking (deciso dal codice)
+TESTO_RERANK = 400
 
 
 # elenco di testi sotto `chiave` in una risposta JSON; None se il JSON non è valido o ha un'altra forma
@@ -90,3 +105,45 @@ def fondi_rrf(liste: list[list[Risultato]]) -> list[Risultato]:
     # punteggio RRF decrescente, poi score coseno decrescente, poi id: ordine stabile e riproducibile
     ordine = sorted(punteggi, key=lambda c: (-punteggi[c], -migliori[c].score, c))
     return _rinumera([migliori[c] for c in ordine])
+
+
+# messaggio utente del reranking: la domanda, una riga vuota, un candidato per riga con id, titolo e capitolo
+def _messaggio_reranking(domanda: str, candidati: list[Risultato]) -> str:
+    righe = [f"[{id_citabile(r.numero, r.indice_chunk)}] {r.titolo} ({r.capitolo}): "
+             f"{tronca(r.testo, TESTO_RERANK)[0]}" for r in candidati]
+    return f"Domanda: {domanda}\n\n" + "\n".join(righe)
+
+
+def riordina(domanda: str, candidati: list[Risultato], chat: Chat,
+             partenza: str) -> tuple[list[Risultato], str | None, int]:
+    """Reranking listwise: (candidati riordinati, eventuale ripiego, id scartati). Lista vuota = esclusi tutti;
+    in ripiego si tiene l'ordine ricevuto (`partenza`: "vettoriale" o "RRF")."""
+    try:
+        risposta = chat.completa_json(PROMPT_RERANKING, _messaggio_reranking(domanda, candidati), "reranking",
+                                      SCHEMA_RERANKING)
+    except Exception:
+        # qualsiasi errore della chiamata: mai un errore verso l'agente
+        return candidati, f"reranking: errore della chiamata → ordine {partenza}", 0
+    ricevuti = _elenco_json(risposta, "id")
+    if ricevuti is None:
+        return candidati, f"reranking: JSON non valido → ordine {partenza}", 0
+    # lista vuota: nessun candidato utile, esclusi tutti (astensione, non ripiego)
+    if not ricevuti:
+        return [], None, 0
+    per_id = {id_citabile(r.numero, r.indice_chunk): r for r in candidati}
+    tenuti: list[Risultato] = []
+    visti: set[str] = set()
+    scartati = 0
+    for grezzo in ricevuti:
+        # id senza spazi e parentesi quadre ai bordi (il modello può scriverli come nel messaggio)
+        pulito = grezzo.strip().strip("[]").strip()
+        # id inventato o già visto: scartato e contato
+        if pulito not in per_id or pulito in visti:
+            scartati += 1
+            continue
+        visti.add(pulito)
+        tenuti.append(per_id[pulito])
+    # nessun id valido in una lista non vuota: risposta inaffidabile, si torna all'ordine di partenza
+    if not tenuti:
+        return candidati, f"reranking: id inventati → ordine {partenza}", scartati
+    return _rinumera(tenuti), None, scartati

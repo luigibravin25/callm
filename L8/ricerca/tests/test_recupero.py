@@ -1,10 +1,12 @@
 # test del modulo di recupero (lezione 8, esercizio 3): riscrittura, fusione RRF, reranking, modalità.
 # LLM finto e indice finto: nessun servizio.
+from dataclasses import replace
+
 import pytest
 
 from app.errori import ErroreRicerca
 from app.indice import Risultato
-from app.recupero import PROMPT_RISCRITTURA, fondi_rrf, query_di_ricerca
+from app.recupero import PROMPT_RERANKING, PROMPT_RISCRITTURA, fondi_rrf, query_di_ricerca, riordina
 from tests.finti import ChatFinta
 
 
@@ -85,3 +87,70 @@ def test_rrf_pari_punteggio_vince_lo_score():
 def test_rrf_una_sola_lista_ordine_invariato():
     lista = [ris(5, 0, 0.9), ris(4, 1, 0.8), ris(3, 0, 0.7)]
     assert [(r.numero, r.indice_chunk) for r in fondi_rrf([lista])] == [(5, 0), (4, 1), (3, 0)]
+
+
+# --- reranking listwise ---
+
+CANDIDATI = [ris(89, 0, 0.9), ris(208, 0, 0.8), ris(7, 0, 0.7)]
+
+
+# Verifica l'ordine restituito, gli id omessi esclusi e il messaggio mandato al modello.
+def test_reranking_ordine_ed_esclusi():
+    chat = ChatFinta(['{"id": ["R208-1", "R89-1"]}'])
+    ordinati, ripiego, scartati = riordina("Che vino?", CANDIDATI, chat, "vettoriale")
+    assert [(r.numero, r.posizione) for r in ordinati] == [(208, 1), (89, 2)]
+    assert (ripiego, scartati) == (None, 0)
+    sistema, utente, _ = chat.chiamate[0]
+    assert sistema == PROMPT_RERANKING and utente.startswith("Domanda: Che vino?\n\n[R89-1] Ricetta 89 (DOLCI): ")
+
+
+# Verifica che la lista vuota escluda tutti i candidati senza ripiego.
+def test_reranking_lista_vuota_esclude_tutti():
+    assert riordina("D?", CANDIDATI, ChatFinta(['{"id": []}']), "vettoriale") == ([], None, 0)
+
+
+# Verifica che id inventati e doppioni siano scartati e contati, tenendo quelli validi.
+def test_reranking_scarta_inventati_e_doppioni():
+    ordinati, ripiego, scartati = riordina("D?", CANDIDATI, ChatFinta(['{"id": ["R7-1", "R999-1", "R7-1"]}']),
+                                           "RRF")
+    assert [r.numero for r in ordinati] == [7] and ripiego is None and scartati == 2
+
+
+# Verifica il ripiego sull'ordine di partenza quando tutti gli id sono inventati.
+def test_reranking_solo_inventati():
+    ordinati, ripiego, _ = riordina("D?", CANDIDATI, ChatFinta(['{"id": ["R1-1"]}']), "RRF")
+    assert ordinati == CANDIDATI and ripiego == "reranking: id inventati → ordine RRF"
+
+
+# Verifica il ripiego con JSON non valido o di forma sbagliata.
+@pytest.mark.parametrize("risposta", ["{", '{"id": "R89-1"}', '{"altro": []}'])
+def test_reranking_json_non_valido(risposta):
+    ordinati, ripiego, _ = riordina("D?", CANDIDATI, ChatFinta([risposta]), "vettoriale")
+    assert ordinati == CANDIDATI and ripiego == "reranking: JSON non valido → ordine vettoriale"
+
+
+# Verifica il ripiego con un JSON troncato (token finiti).
+def test_reranking_json_troncato():
+    _, ripiego, _ = riordina("D?", CANDIDATI, ChatFinta(['{"id": ["R89-1", "R2']), "vettoriale")
+    assert ripiego == "reranking: JSON non valido → ordine vettoriale"
+
+
+# Verifica il ripiego quando LM Studio non risponde.
+def test_reranking_errore_della_chiamata():
+    _, ripiego, _ = riordina("D?", CANDIDATI, ChatFinta([ErroreRicerca("spenta")]), "vettoriale")
+    assert ripiego == "reranking: errore della chiamata → ordine vettoriale"
+
+
+# Verifica che un id con spazi o parentesi quadre sia riconosciuto.
+def test_reranking_id_con_parentesi_e_spazi():
+    ordinati, _, _ = riordina("D?", CANDIDATI, ChatFinta(['{"id": [" [R7-1] "]}']), "vettoriale")
+    assert [r.numero for r in ordinati] == [7]
+
+
+# Verifica che il testo di un candidato mandato al modello sia al massimo di 400 caratteri.
+def test_reranking_testo_troncato():
+    lungo = replace(ris(1, 0, 0.9), testo="parola " * 200)
+    chat = ChatFinta(['{"id": []}'])
+    riordina("D?", [lungo], chat, "vettoriale")
+    riga = chat.chiamate[0][1].splitlines()[2]
+    assert len(riga.split(": ", 1)[1]) <= 400
