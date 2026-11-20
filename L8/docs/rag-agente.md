@@ -343,7 +343,8 @@ score coseno di bge-m3, lette dalla configurazione (`SOGLIA_ALTA`, `SOGLIA_BASSA
 | ≥ 0.51 e < 0.60 | `media` | sì |
 | < 0.51 | escluso | no |
 
-Il confronto usa lo score non arrotondato (`ricerca/app/soglie.py`); le soglie valgono in ogni modalità. Se non resta
+Il confronto usa lo score a 4 decimali, lo stesso mostrato nel risultato (`ricerca/app/soglie.py`: Qdrant calcola in
+float32, quindi 0.51 arriverebbe come 0.50999999); le soglie valgono in ogni modalità. Se non resta
 nessun passaggio, la `nota` del risultato lo dichiara: `nessun passaggio rimasto: lista vuota (tutti sotto la soglia
 bassa 0.51)` (oppure `(esclusi tutti dal reranking)`). Se almeno un passaggio è di affidabilità media, la `nota` dice
 all'agente: `alcuni passaggi hanno affidabilità media: se li usi, termina la risposta con «Da verificare sulla
