@@ -228,3 +228,10 @@ def test_configurazione_ricerca_passa_la_modalita(monkeypatch):
     env = configurazione_ricerca()["env"]
     assert (env["LM_MODEL"], env["RICERCA_MODALITA"], env["RICERCA_CANDIDATI"], env["RERANK_TETTO"]) == \
         ("gemma", "entrambe", "12", "10")
+
+
+# Verifica il tempo massimo di una chiamata MCP: 60 s, perché una ricerca in modalità entrambe dura fino a ~28 s
+# più l'avvio del server (decisione dell'utente, 2026-11-20).
+def test_timeout_mcp_60_secondi():
+    from app import adattatore_mcp
+    assert adattatore_mcp.TIMEOUT_S == 60
