@@ -1,0 +1,7 @@
+# contesto di build aggiuntivo «ricerca» dell'immagine dell'agente (compose.yaml): il Dockerfile copia solo
+# requirements.txt, app/ e mcp_ricerca/; fuori le cache di Python dell'host e ciò che non serve all'immagine
+**/__pycache__
+.pytest_cache/
+.env
+tests/
+valutazione/

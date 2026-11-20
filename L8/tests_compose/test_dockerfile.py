@@ -54,3 +54,9 @@ def test_agente_copia_la_ricerca():
     assert righe.index("RUN pip install --no-cache-dir -r /ricerca/requirements.txt") < righe.index("COPY app/ app/")
     # e dopo i requisiti dell'agente
     assert righe.index("RUN pip install --no-cache-dir -r requirements.txt") <         righe.index("COPY --from=ricerca requirements.txt /ricerca/requirements.txt")
+
+
+# Verifica che il contesto «ricerca» escluda le cache di Python (le __pycache__ dell'host non entrano in /ricerca).
+def test_dockerignore_della_ricerca():
+    voci = (L6 / "ricerca" / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    assert "**/__pycache__" in voci and ".env" in voci
