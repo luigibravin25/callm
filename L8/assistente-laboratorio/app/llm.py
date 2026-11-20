@@ -37,9 +37,9 @@ FRASI_RICERCA = (
     # ritocchi approvati dopo le prove reali: gemma non dichiarava la verifica, ora una frase fissa in fondo
     # con un esempio concreto
     "Ogni passaggio ha il campo affidabilita: «affidabile» oppure «media». "
-    # ritocco approvato dopo la prova nel browser: gemma scriveva «(affidabile)» accanto alle citazioni
-    "Non scrivere nella risposta il valore del campo affidabilita; per i passaggi affidabili non aggiungere "
-    "nulla. Se nella risposta usi anche un "
+    # ritocco approvato dopo la prova nel browser: gemma scriveva «(affidabile)» accanto alle citazioni (la
+    # prima versione, «non aggiungere nulla», faceva perdere anche «Da verificare sulla fonte.»)
+    "Non scrivere «(affidabile)» o «(media)» accanto alle citazioni. Se nella risposta usi anche un "
     "solo passaggio con affidabilita «media», termina la risposta con la frase «Da verificare sulla "
     "fonte.», per esempio: «Si usa vino rosso [R208-1]. Da verificare sulla fonte.» Se "
     "search_documents restituisce una lista di passaggi vuota, rispondi «Nel ricettario non ho "
