@@ -357,7 +357,9 @@ fonte.»`. La riga di log aggiunge `soglie=0.60/0.51 esclusi=n`.
 
 Istruzioni dell'agente (in coda a `FRASI_RICERCA`): se la risposta usa anche un solo passaggio di affidabilità media,
 termina con «Da verificare sulla fonte.» (con l'esempio «Si usa vino rosso [R208-1]. Da verificare sulla fonte.»); con
-la lista vuota risponde «Nel ricettario non ho trovato questa informazione» senza citare id.
+la lista vuota risponde «Nel ricettario non ho trovato questa informazione» senza citare id. Dopo la prova nel browser
+si è aggiunto «Non scrivere «(affidabile)» o «(media)» accanto alle citazioni.» (gemma copiava la fascia dopo l'id;
+evidenza in `docs/evidenze-lezione8/compose-prove-ritocco.txt`).
 
 ### Calibrazione (2026-11-20)
 Comando, da `L8\ricerca` con Qdrant e LM Studio accesi: `& ..\venv\Scripts\python.exe calibra.py` (modalità `base`,
