@@ -38,9 +38,11 @@ VARIABILI_SERVER = ("PREFERENZE_FILE", "FUSO_PREDEFINITO")
 # lezione 8: server di ricerca della cartella ricerca/ accanto a questo progetto, avviato con "python -m"
 CARTELLA_RICERCA = CARTELLA_PROGETTO.parent / "ricerca"
 MODULO_RICERCA = "mcp_ricerca.server"
-# variabili della ricerca da passare al suo server (le CHUNK_* le controlla la sua configurazione)
+# variabili della ricerca da passare al suo server (le CHUNK_* le controlla la sua configurazione;
+# dall'esercizio 3 anche modello di chat, modalità, candidati e tetto del reranking)
 VARIABILI_RICERCA = ("EMBEDDING_MODEL", "LM_BASE_URL", "QDRANT_URL", "QDRANT_COLLEZIONE",
-                     "CHUNK_STRATEGIA", "CHUNK_DIMENSIONE", "CHUNK_OVERLAP")
+                     "CHUNK_STRATEGIA", "CHUNK_DIMENSIONE", "CHUNK_OVERLAP",
+                     "LM_MODEL", "RICERCA_MODALITA", "RICERCA_CANDIDATI", "RERANK_TETTO")
 
 
 # errore proprio dell'adattatore: il server non parte o non pubblica tool utilizzabili
