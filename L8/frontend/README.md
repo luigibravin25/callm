@@ -50,7 +50,7 @@ npm run preview        # http://127.0.0.1:5173
   la risposta compare subito intera.
 - **Invio** invia, **Maiusc+Invio** va a capo. Durante la risposta compare «Assistente: …»: solo
   quella chat è bloccata, le altre restano usabili. Sotto la risposta compaiono gli
-  strumenti usati, solo per nome e con la loro icona (per esempio `🕒 tooltime`; 🔧 per gli altri),
+  strumenti usati, solo per nome e con la loro icona (per esempio `🕒 tooltime`, `📖 Ricettario` per la ricerca nel ricettario `search_documents`; 🔧 per gli altri),
   e l'ora.
 - Errori: riquadro nella chat con il messaggio del back-end (per esempio agente non raggiungibile);
   la domanda torna nel campo di testo per reinviarla (il back-end non l'ha salvata). Con il back-end

@@ -99,6 +99,11 @@ preferenze, prompt) e `mcp_ricerca` dell'esercizio 1 (`search_documents`), ognun
 di ricerca non parte, l'agente resta con il solo orologio e un avviso nel log. Il modello decide se e quale tool
 usare; l'host controlla le citazioni a fine turno.
 
+Nell'esercizio 2 la ricerca era solo per l'agente avviato sull'host (Docker Compose invariato). Dopo i quattro
+esercizi, su richiesta dell'utente, è stata aggiunta anche all'app completa in Docker Compose: l'immagine
+dell'agente contiene il server di ricerca e interroga `qdrant:6333`, con modalità e soglie dal `.env` (specifica
+`docs/specs/ricerca-compose.md`, prova reale dal back-end in `docs/evidenze-lezione8/compose-ricerca.txt`).
+
 ### Cosa è stato aggiunto
 - **Adattatore MCP** (`app/adattatore_mcp.py`): secondo server avviato da `L8/ricerca` con lo stesso interprete; gli
   passa `EMBEDDING_MODEL`, `LM_BASE_URL`, `QDRANT_URL`, `QDRANT_COLLEZIONE` e le `CHUNK_*` se impostate.
@@ -352,7 +357,9 @@ fonte.»`. La riga di log aggiunge `soglie=0.60/0.51 esclusi=n`.
 
 Istruzioni dell'agente (in coda a `FRASI_RICERCA`): se la risposta usa anche un solo passaggio di affidabilità media,
 termina con «Da verificare sulla fonte.» (con l'esempio «Si usa vino rosso [R208-1]. Da verificare sulla fonte.»); con
-la lista vuota risponde «Nel ricettario non ho trovato questa informazione» senza citare id.
+la lista vuota risponde «Nel ricettario non ho trovato questa informazione» senza citare id. Dopo la prova nel browser
+si è aggiunto «Non scrivere «(affidabile)» o «(media)» accanto alle citazioni.» (gemma copiava la fascia dopo l'id;
+evidenza in `docs/evidenze-lezione8/compose-prove-ritocco.txt`).
 
 ### Calibrazione (2026-11-20)
 Comando, da `L8\ricerca` con Qdrant e LM Studio accesi: `& ..\venv\Scripts\python.exe calibra.py` (modalità `base`,

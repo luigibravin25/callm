@@ -273,3 +273,7 @@ def test_frase_delle_fasce_nelle_istruzioni():
     assert ("termina la risposta con la frase «Da verificare sulla fonte.», per esempio: «Si usa vino rosso "
             "[R208-1]. Da verificare sulla fonte.»") in FRASI_RICERCA
     assert "lista di passaggi vuota" in FRASI_RICERCA and FRASI_RICERCA.endswith("non citare nessun id.")
+    # ritocco approvato dopo la prova nel browser: gemma scriveva «(affidabile)» accanto alle citazioni; la prima
+    # versione («per i passaggi affidabili non aggiungere nulla») faceva perdere anche «Da verificare sulla fonte.»
+    assert "Non scrivere «(affidabile)» o «(media)» accanto alle citazioni." in FRASI_RICERCA
+    assert "non aggiungere nulla" not in FRASI_RICERCA

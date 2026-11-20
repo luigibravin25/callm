@@ -57,18 +57,20 @@ Modelli (LM Studio sull'host, dalla configurazione): chat `google/gemma-4-e2b`; 
 ## Avvio dell'app completa con Docker Compose
 
 L'app di chat della lezione 6 (front-end, back-end, agente, database) più Qdrant parte con un solo comando da
-`L8\`. Percorso di una richiesta:
+`L8\`; l'agente nel container ha anche la ricerca nel ricettario. Percorso di una richiesta:
 
 ```text
 browser → 127.0.0.1:8080 (frontend: nginx) ── /api → backend:8001 → agente:8000 → LM Studio sull'host
-                                                        └→ database:5432
-qdrant → 127.0.0.1:6333 (usato dagli script e dall'agente sull'host)
+                                                        └→ database:5432       └→ server MCP di ricerca (stdio)
+                                                                                    └→ qdrant:6333
+qdrant → anche 127.0.0.1:6333 (per gli script della ricerca e l'agente sull'host)
 ```
 
 1. `.env` in `L8\` (copiato da `.env.example`, escluso da Git) con `POSTGRES_USER`, `POSTGRES_PASSWORD` (solo
    lettere, cifre, `-` e `_`) e `POSTGRES_DB`; gli indirizzi interni dei container li fissa `compose.yaml`.
-2. LM Studio acceso sull'host con `google/gemma-4-e2b` caricato (l'agente nel container lo raggiunge con
-   `host.docker.internal`).
+2. LM Studio acceso sull'host con `google/gemma-4-e2b` e `text-embedding-bge-m3` caricati (l'agente nel container
+   lo raggiunge con `host.docker.internal`); collezione `ricettario` già presente in Qdrant (volume `l8_dati-qdrant`,
+   altrimenti `ingestion.py` dall'host, sezione precedente).
 3. Avvio e uso:
 
    ```powershell
@@ -87,9 +89,20 @@ qdrant → 127.0.0.1:6333 (usato dagli script e dall'agente sull'host)
 
 Solo `127.0.0.1:8080` (interfaccia) e `127.0.0.1:6333` (Qdrant) sono pubblicate, e solo su questo computer.
 
-**La ricerca nel ricettario non è nell'app in Compose** (decisione dell'esercizio 2: solo host). L'agente nel
-container ha soltanto l'orologio; le risposte con citazioni dal ricettario, le modalità avanzate e le soglie si
-provano con l'agente avviato sull'host (`python -m app.api` + `python -m app.cli`, vedi la sezione «Test» qui sotto).
+**Ricerca nel ricettario nell'app.** L'immagine dell'agente contiene anche il server MCP di ricerca (codice di
+`ricerca/` copiato in `/ricerca` dal contesto di build aggiuntivo `ricerca`, vedi `compose.yaml` e il `Dockerfile`):
+dal browser si possono fare domande sul ricettario, con risposte citate (per esempio «Che vino si usa nel pollo alla
+cacciatora?» → `[R208-1]`). Nel log (`docker compose logs -f agente`) compaiono all'avvio `tools/list ricerca:
+search_documents` e, per ogni domanda, `[mcp_ricerca] …` e `[citazioni] verificate=…`.
+
+Modalità e soglie si leggono dal `.env` (predefiniti uguali all'host): `RICERCA_MODALITA` (`base`),
+`RICERCA_CANDIDATI` e `RERANK_TETTO` (10), `SOGLIA_ALTA` (0.60), `SOGLIA_BASSA` (0.51), `EMBEDDING_MODEL`
+(`text-embedding-bge-m3`), `QDRANT_COLLEZIONE` (`ricettario`); `QDRANT_URL` lo fissa `compose.yaml`
+(`http://qdrant:6333`). Dopo una modifica del `.env`: `docker compose up -d agente`. Attenzione: una variabile
+impostata nella finestra di PowerShell (per esempio `$env:RICERCA_MODALITA` usata per l'agente sull'host) vince sul
+`.env` se si lancia `docker compose` dalla stessa finestra. Se Qdrant non è disponibile l'app parte lo stesso
+(`depends_on` con `required: false`): l'agente ha comunque `search_documents`, ma ogni ricerca risponde con l'errore
+«Qdrant non raggiungibile» e il modello non ha passaggi da citare.
 Configurazione completa dell'app e dettagli dei servizi: [`../L6/README.md`](../L6/README.md).
 
 ## Test
@@ -101,7 +114,7 @@ Ambiente: `& .\venv\Scripts\python.exe -m pip install -r requirements.txt` (venv
 |---|---|---|
 | Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 285 passati (126 della lezione 7 + 29 del server MCP + 93 dell'esercizio 3 + 37 dell'esercizio 4) |
 | Agente (lezioni 5-6 e aggancio alla ricerca) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 381 passati, 12 saltati (345 di prima + 32 dell'esercizio 2 + 2 dell'esercizio 3 + 2 dell'esercizio 4) |
-| Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 30 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
+| Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 36 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
 
 Prove reali della lezione 7 (servizi accesi), da `L8\ricerca`:
 
@@ -133,7 +146,8 @@ $env:EMBEDDING_MODEL = "text-embedding-bge-m3"
 ```
 
 Il router accetta ora anche le domande sul ricettario di Artusi (argomento `ricettario` in `config/ambito.toml`).
-L'app completa in Docker Compose non ha la ricerca (il server di ricerca gira solo con l'agente sull'host).
+Dopo la lezione 8 la ricerca c'è anche nell'app completa in Docker Compose (sezione «Avvio dell'app completa con
+Docker Compose»).
 `GET /stato` e i comandi `/prompt` riguardano solo il server dell'assistente (orologio, preferenze, prompt): con
 quel server spento e la ricerca accesa `/stato` dice `non_disponibile` ma tra gli strumenti compare
 `search_documents`; lo stato della ricerca si legge nel log di avvio (`tools/list ricerca` oppure

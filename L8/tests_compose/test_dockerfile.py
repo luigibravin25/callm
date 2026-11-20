@@ -38,3 +38,25 @@ def test_dockerignore(nome):
     voci = (CONTESTI[nome] / ".dockerignore").read_text(encoding="utf-8").splitlines()
     for voce in (".env", "tests/", "__pycache__/"):
         assert voce in voci, voce
+
+
+# Verifica che l'immagine dell'agente contenga il server di ricerca (contesto di build aggiuntivo «ricerca»):
+# requisiti installati prima del codice, app/ e mcp_ricerca/ in /ricerca, dove l'adattatore li cerca.
+def test_agente_copia_la_ricerca():
+    testo = dockerfile("agente")
+    righe = [r.strip() for r in testo.splitlines() if r.strip() and not r.strip().startswith("#")]
+    for riga in ("COPY --from=ricerca requirements.txt /ricerca/requirements.txt",
+                 "RUN pip install --no-cache-dir -r /ricerca/requirements.txt",
+                 "COPY --from=ricerca app/ /ricerca/app/",
+                 "COPY --from=ricerca mcp_ricerca/ /ricerca/mcp_ricerca/"):
+        assert riga in righe, riga
+    # requisiti della ricerca installati prima di copiare il codice (livello di pip in cache)
+    assert righe.index("RUN pip install --no-cache-dir -r /ricerca/requirements.txt") < righe.index("COPY app/ app/")
+    # e dopo i requisiti dell'agente
+    assert righe.index("RUN pip install --no-cache-dir -r requirements.txt") <         righe.index("COPY --from=ricerca requirements.txt /ricerca/requirements.txt")
+
+
+# Verifica che il contesto «ricerca» escluda le cache di Python (le __pycache__ dell'host non entrano in /ricerca).
+def test_dockerignore_della_ricerca():
+    voci = (L6 / "ricerca" / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    assert "**/__pycache__" in voci and ".env" in voci

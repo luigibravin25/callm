@@ -10,6 +10,7 @@ import {
   MSG_NESSUN_MESSAGGIO,
   MSG_RETE,
   rigaStrumenti,
+  MSG_STRUMENTO_IN_USO,
   testoConferma,
 } from "../../src/formato";
 
@@ -69,6 +70,12 @@ describe("rigaStrumenti", () => {
   test("strumento senza icona propria: chiave inglese; più strumenti separati da ·", () => {
     expect(rigaStrumenti([{ nome: "tooltime" }, { nome: "conta", argomenti: { n: 2 } }]))
       .toBe("🕒 tooltime · 🔧 conta");
+  });
+
+  test("ricerca nel ricettario: nome leggibile con il libro aperto", () => {
+    expect(rigaStrumenti([{ nome: "search_documents", argomenti: { query: "vino" } }])).toBe("📖 Ricettario");
+    expect(rigaStrumenti([{ nome: "tooltime" }, { nome: "search_documents" }])).toBe("🕒 tooltime · 📖 Ricettario");
+    expect(MSG_STRUMENTO_IN_USO("search_documents")).toBe("📖 Sto usando Ricettario…");
   });
 
   test("voci malformate ignorate", () => {
