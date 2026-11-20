@@ -203,7 +203,7 @@ Il modulo `ricerca/app/recupero.py` (usato dal server e dallo script di confront
 
 | Modalità | Query | Ordine | Chiamate a gemma |
 |---|---|---|---|
-| `base` | la domanda | vettoriale | 0 |
+| `base` (predefinita) | la sola domanda: ricerca vettoriale semplice dell'esercizio 1 (embedding bge-m3, Qdrant restituisce i chunk più simili) | vettoriale (score coseno) | 0 |
 | `riscrittura` | la domanda + al massimo 2 query riscritte o scomposte | fusione RRF (1/(60 + rango)) | 1 |
 | `reranking` | la domanda | gemma riordina i primi `RERANK_TETTO` candidati e può escluderli | 1 |
 | `entrambe` | come `riscrittura` | RRF, poi reranking sulla domanda originale | 2 |

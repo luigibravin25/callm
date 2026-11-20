@@ -149,6 +149,15 @@ Modalità avanzata della ricerca (esercizio 3): la sceglie la configurazione del
 | `RICERCA_CANDIDATI` | candidati per query, 10-20 | 10 |
 | `RERANK_TETTO` | candidati mandati al reranking, 10-20 | 10 |
 
+Le quattro modalità di `RICERCA_MODALITA`:
+
+| Modalità | Che cosa fa | Chiamate a gemma |
+|---|---|---|
+| `base` (predefinita) | ricerca vettoriale semplice, quella dell'esercizio 1 e della lezione 7: la domanda diventa un vettore con bge-m3 e Qdrant restituisce i chunk più simili, in ordine di score coseno | nessuna |
+| `riscrittura` | gemma riscrive o scompone la domanda in 1-3 query (la domanda originale è sempre la prima); i risultati delle query si fondono con RRF | 1 |
+| `reranking` | come `base`, poi gemma riordina i candidati e può escluderli | 1 |
+| `entrambe` | riscrittura, poi reranking sulla domanda originale | 2 |
+
 Riscrittura e reranking non mandano mai un errore all'agente: se gemma non risponde o risponde male, la ricerca
 ripiega (sola domanda oppure ordine di partenza) e lo scrive nel campo `ripieghi` del risultato e nella riga di log
 `[mcp_ricerca]`. Gli id restituiti dal reranking vengono normalizzati prima del controllo: spazi e parentesi quadre
