@@ -99,6 +99,11 @@ preferenze, prompt) e `mcp_ricerca` dell'esercizio 1 (`search_documents`), ognun
 di ricerca non parte, l'agente resta con il solo orologio e un avviso nel log. Il modello decide se e quale tool
 usare; l'host controlla le citazioni a fine turno.
 
+Nell'esercizio 2 la ricerca era solo per l'agente avviato sull'host (Docker Compose invariato). Dopo i quattro
+esercizi, su richiesta dell'utente, è stata aggiunta anche all'app completa in Docker Compose: l'immagine
+dell'agente contiene il server di ricerca e interroga `qdrant:6333`, con modalità e soglie dal `.env` (specifica
+`docs/specs/ricerca-compose.md`, prova reale dal back-end in `docs/evidenze-lezione8/compose-ricerca.txt`).
+
 ### Cosa è stato aggiunto
 - **Adattatore MCP** (`app/adattatore_mcp.py`): secondo server avviato da `L8/ricerca` con lo stesso interprete; gli
   passa `EMBEDDING_MODEL`, `LM_BASE_URL`, `QDRANT_URL`, `QDRANT_COLLEZIONE` e le `CHUNK_*` se impostate.
