@@ -6,7 +6,9 @@ from app.errori import ErroreRicerca
 
 # tutte le variabili lette dalla ricerca: si tolgono prima di ogni test per partire puliti
 VARIABILI = ("LM_BASE_URL", "EMBEDDING_MODEL", "QDRANT_URL", "QDRANT_COLLEZIONE", "CORPUS_FILE",
-             "CHUNK_STRATEGIA", "CHUNK_DIMENSIONE", "CHUNK_OVERLAP", "TOP_K")
+             "CHUNK_STRATEGIA", "CHUNK_DIMENSIONE", "CHUNK_OVERLAP", "TOP_K",
+             # lezione 8, esercizio 3: modalità avanzata della ricerca
+             "RICERCA_MODALITA", "LM_MODEL", "RICERCA_CANDIDATI", "RERANK_TETTO")
 
 
 @pytest.fixture(autouse=True)
@@ -66,3 +68,51 @@ def test_percorso_assoluto_invariato(monkeypatch, tmp_path):
 def test_cartella_L7():
     # CARTELLA_L7 è la cartella che contiene ricerca/
     assert (CARTELLA_L7 / "ricerca" / "app" / "config.py").is_file()
+
+
+# --- lezione 8, esercizio 3: modalità, modello di chat, candidati e tetto del reranking ---
+
+# Verifica i predefiniti: modalità base, nessun modello di chat, 10 candidati e tetto 10.
+def test_modalita_predefinita():
+    conf = carica_configurazione()
+    assert (conf.modalita, conf.modello_chat, conf.candidati, conf.tetto_rerank) == ("base", "", 10, 10)
+
+
+# Verifica le modalità avanzate con il modello di chat impostato.
+@pytest.mark.parametrize("modalita", ["riscrittura", "reranking", "entrambe"])
+def test_modalita_avanzata(monkeypatch, modalita):
+    monkeypatch.setenv("RICERCA_MODALITA", modalita)
+    monkeypatch.setenv("LM_MODEL", "gemma")
+    conf = carica_configurazione()
+    assert (conf.modalita, conf.modello_chat) == (modalita, "gemma")
+
+
+# Verifica che una modalità sconosciuta sia un errore con i valori ammessi.
+def test_modalita_non_valida(monkeypatch):
+    monkeypatch.setenv("RICERCA_MODALITA", "ibrida")
+    with pytest.raises(ErroreRicerca, match="RICERCA_MODALITA.*base, riscrittura, reranking, entrambe"):
+        carica_configurazione()
+
+
+# Verifica che LM_MODEL serva solo fuori dalla modalità base.
+def test_lm_model_obbligatoria_fuori_da_base(monkeypatch):
+    monkeypatch.setenv("RICERCA_MODALITA", "reranking")
+    with pytest.raises(ErroreRicerca, match="LM_MODEL"):
+        carica_configurazione()
+
+
+# Verifica i limiti 10-20 di candidati e tetto (anche per un valore non intero).
+@pytest.mark.parametrize("nome", ["RICERCA_CANDIDATI", "RERANK_TETTO"])
+@pytest.mark.parametrize("valore", ["9", "21", "dieci"])
+def test_limiti_candidati_e_tetto(monkeypatch, nome, valore):
+    monkeypatch.setenv(nome, valore)
+    with pytest.raises(ErroreRicerca, match=f"{nome}.*10-20"):
+        carica_configurazione()
+
+
+# Verifica che i valori ai confini siano ammessi.
+def test_candidati_e_tetto_ai_limiti(monkeypatch):
+    monkeypatch.setenv("RICERCA_CANDIDATI", "20")
+    monkeypatch.setenv("RERANK_TETTO", "10")
+    conf = carica_configurazione()
+    assert (conf.candidati, conf.tetto_rerank) == (20, 10)

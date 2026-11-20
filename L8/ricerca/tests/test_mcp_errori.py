@@ -18,6 +18,15 @@ from tests.finti import EmbedderFinto
 # in memoria gli indici sul payload non hanno effetto (Qdrant lo avvisa)
 pytestmark = pytest.mark.filterwarnings("ignore:Payload indexes have no effect:UserWarning")
 
+
+# variabili della modalità avanzata (esercizio 3): ogni test parte dalla modalità base, con il modello di
+# embedding impostato perché il server legge la configurazione a ogni chiamata
+@pytest.fixture(autouse=True)
+def configurazione_base(monkeypatch):
+    monkeypatch.setenv("EMBEDDING_MODEL", "bge")
+    for nome in ("RICERCA_MODALITA", "LM_MODEL", "RICERCA_CANDIDATI", "RERANK_TETTO"):
+        monkeypatch.delenv(nome, raising=False)
+
 # due ricette brevi di due capitoli: bastano per una ricerca riuscita
 RICETTE = [
     Ricetta(1, "Brodo", "BRODI, GELATINA E SUGHI", "brodo di carne con lesso e ossa " * 5),
@@ -132,7 +141,8 @@ def test_log_una_riga_per_chiamata(monkeypatch, caplog):
     errore_di(query="brodo")
     righe = [r.getMessage() for r in caplog.records if r.name == "mcp_ricerca"]
     assert len(righe) == 3
-    assert 'query="brodo" top_k=3 capitolo=- → 2 passaggi (R' in righe[0] and righe[0].endswith("s")
+    assert 'query="brodo" top_k=3 capitolo=- modalita=base query=1 llm=0 → 2 passaggi (R' in righe[0]
+    assert righe[0].endswith("s")
     assert righe[1] == 'query="" top_k=5 capitolo=- → errore: la domanda è vuota'
     assert righe[2].endswith("→ errore inatteso: ValueError: segreto interno")
     assert "Traceback" not in caplog.text
@@ -168,3 +178,13 @@ def test_client_qdrant_riusato(monkeypatch):
     assert primo.client is secondo.client
     monkeypatch.setenv("QDRANT_URL", "http://127.0.0.1:6392")
     assert server.crea_indice().client is not primo.client
+
+
+
+# Verifica che una modalità sconosciuta sia un errore del tool senza traceback nel log.
+def test_modalita_non_valida(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="mcp_ricerca")
+    usa_indice(monkeypatch, Indice(client_con_collezione(), "ricettario", "bge", EmbedderFinto()))
+    monkeypatch.setenv("RICERCA_MODALITA", "ibrida")
+    assert "RICERCA_MODALITA" in errore_di(query="brodo")
+    assert all(r.exc_info is None for r in caplog.records)

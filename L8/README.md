@@ -29,7 +29,7 @@ passaggi verificabili. Quattro esercizi, ognuno sul suo ramo:
 |---|---|---|
 | 1 · server MCP di ricerca | server FastMCP con il tool `search_documents` (query, `top_k` limitato, filtro), risultato con id citabile, errori del tool, un log per chiamata | fatto |
 | 2 · aggancio all'agente | il server si aggiunge ai server MCP dell'agente; istruzioni per citare gli id e astenersi; controllo delle citazioni a fine turno | fatto |
-| 3 · riscrittura e reranking | riscrittura/scomposizione della domanda con fusione RRF, reranking listwise, attivabili dalla configurazione; confronto di quattro configurazioni | da implementare |
+| 3 · riscrittura e reranking | riscrittura/scomposizione della domanda con fusione RRF, reranking listwise, attivabili dalla configurazione; confronto di quattro configurazioni | fatto |
 | 4 · soglie sullo score | due soglie dalla configurazione: passaggi affidabili, di affidabilità media, esclusi; calibrazione sugli score di bge-m3 | da implementare |
 
 Risultati, tracce e confronti della lezione 8: `docs/rag-agente.md` (si compila a ogni esercizio concluso).
@@ -59,10 +59,10 @@ Modelli (LM Studio sull'host, dalla configurazione): chat `google/gemma-4-e2b`; 
 I test automatici non hanno bisogno di LM Studio né di Qdrant (embedder, modello e Qdrant finti o in memoria).
 Ambiente: `& .\venv\Scripts\python.exe -m pip install -r requirements.txt` (venv di `L8`).
 
-| Suite | Comando (PowerShell) | Esito (aggiornato all'esercizio 2, 2026-11-18) |
+| Suite | Comando (PowerShell) | Esito (aggiornato all'esercizio 3, 2026-11-20) |
 |---|---|---|
-| Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 155 passati (126 della lezione 7 + 29 del server MCP, `tests/test_mcp_*.py`) |
-| Agente (lezioni 5-6 e aggancio alla ricerca) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 377 passati, 12 saltati (345 di prima + 32 dell'esercizio 2) |
+| Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 248 passati (126 della lezione 7 + 29 del server MCP + 93 dell'esercizio 3) |
+| Agente (lezioni 5-6 e aggancio alla ricerca) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 379 passati, 12 saltati (345 di prima + 32 dell'esercizio 2 + 2 dell'esercizio 3) |
 | Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 30 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
 
 Prove reali della lezione 7 (servizi accesi), da `L8\ricerca`:
@@ -100,5 +100,35 @@ L'app completa in Docker Compose non ha la ricerca (il server di ricerca gira so
 quel server spento e la ricerca accesa `/stato` dice `non_disponibile` ma tra gli strumenti compare
 `search_documents`; lo stato della ricerca si legge nel log di avvio (`tools/list ricerca` oppure
 `server ricerca non disponibile`).
+
+Modalità avanzata della ricerca (esercizio 3): la sceglie la configurazione del server, non il modello. Variabili
+(nella finestra dell'agente vengono passate al server di ricerca):
+
+| Variabile | Valori | Predefinito |
+|---|---|---|
+| `RICERCA_MODALITA` | `base`, `riscrittura`, `reranking`, `entrambe` | `base` |
+| `LM_MODEL` | modello di chat per riscrittura e reranking (obbligatoria fuori da `base`) | — |
+| `RICERCA_CANDIDATI` | candidati per query, 10-20 | 10 |
+| `RERANK_TETTO` | candidati mandati al reranking, 10-20 | 10 |
+
+Riscrittura e reranking non mandano mai un errore all'agente: se gemma non risponde o risponde male, la ricerca
+ripiega (sola domanda oppure ordine di partenza) e lo scrive nel campo `ripieghi` del risultato e nella riga di log
+`[mcp_ricerca]`. Gli id restituiti dal reranking vengono normalizzati prima del controllo: spazi e parentesi quadre
+tolti, maiuscole, «R» iniziale aggiunta se manca (gemma scrive a volte `455-1` invece di `R455-1`). Un id vale solo
+se corrisponde a uno dei candidati mandati a gemma: quelli inventati o doppi sono scartati (`scartati=n` nel log) e,
+se non ne resta nessuno valido, si ripiega. L'agente aspetta ogni chiamata MCP al massimo 60 s (`TIMEOUT_S`), perché
+una ricerca in modalità `entrambe` dura fino a circa 28 s più l'avvio del server.
+
+Confronto delle quattro configurazioni sulle dieci domande di `ricerca/valutazione/domande.toml` (circa 9 minuti
+con gemma), da `L8\ricerca`, servizi accesi; tabelle e commento in `docs/rag-agente.md`:
+
+```powershell
+$env:EMBEDDING_MODEL = "text-embedding-bge-m3"
+$env:LM_MODEL = "google/gemma-4-e2b"
+$env:PYTHONUTF8 = "1"   # lettere accentate corrette anche reindirizzando l'uscita su file
+& ..\venv\Scripts\python.exe confronta.py > confronto.md
+$env:RICERCA_MODALITA = "entrambe"
+& ..\venv\Scripts\python.exe prova_mcp.py "Quanti tuorli servono per la salsa maionese e quante uova per gli gnocchi alla romana?"
+```
 
 I test e le prove della lezione 8 si aggiungono a questa sezione a ogni esercizio concluso.

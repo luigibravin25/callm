@@ -3,6 +3,7 @@
 # librerie standard: codice asincrono, JSON
 import asyncio
 import json
+import logging
 
 import pytest
 from fastmcp import Client
@@ -12,10 +13,20 @@ from app.chunking import chunk_delle_ricette
 from app.corpus import CAPITOLI, Ricetta
 from app.indice import Indice
 from mcp_ricerca import server
-from tests.finti import EmbedderFinto
+from app.errori import ErroreRicerca
+from tests.finti import ChatFinta, EmbedderFinto
 
 # in memoria gli indici sul payload non hanno effetto (Qdrant lo avvisa): l'indice si verifica sul server
 pytestmark = pytest.mark.filterwarnings("ignore:Payload indexes have no effect:UserWarning")
+
+
+# variabili della modalità avanzata (esercizio 3): ogni test parte dalla modalità base, con il modello di
+# embedding impostato perché il server legge la configurazione a ogni chiamata
+@pytest.fixture(autouse=True)
+def configurazione_base(monkeypatch):
+    monkeypatch.setenv("EMBEDDING_MODEL", "bge")
+    for nome in ("RICERCA_MODALITA", "LM_MODEL", "RICERCA_CANDIDATI", "RERANK_TETTO"):
+        monkeypatch.delenv(nome, raising=False)
 
 
 # testo di prova diverso per ogni ricetta, lungo circa `caratteri`
@@ -76,7 +87,7 @@ def test_resource_capitoli():
 
 def test_formato_del_risultato():
     r = cerca(query="brodo di carne")
-    assert set(r) == {"modalita", "query", "top_k", "capitolo", "nota", "passaggi"}
+    assert set(r) == {"modalita", "query", "query_usate", "ripieghi", "top_k", "capitolo", "nota", "passaggi"}
     assert (r["modalita"], r["query"], r["top_k"], r["capitolo"], r["nota"]) == ("base", "brodo di carne", 5, "", None)
     p = r["passaggi"][0]
     assert set(p) == {"id", "ricetta", "titolo", "capitolo", "posizione", "score", "testo", "troncato"}
@@ -117,3 +128,76 @@ def test_capitolo_solo_spazi():
     # solo spazi = nessun filtro, come la stringa vuota (non un capitolo sconosciuto)
     r = cerca(query="brodo", capitolo="   ")
     assert r["capitolo"] == "" and r["passaggi"]
+
+
+# --- lezione 8, esercizio 3: modalità avanzata ---
+
+# Verifica che argomenti e descrizione del tool siano gli stessi in tutte le modalità.
+@pytest.mark.parametrize("modalita", ["base", "riscrittura", "reranking", "entrambe"])
+def test_schema_identico_in_tutte_le_modalita(monkeypatch, modalita):
+    monkeypatch.setenv("RICERCA_MODALITA", modalita)
+    monkeypatch.setenv("LM_MODEL", "gemma")
+    tool = con_client(lambda c: c.list_tools())[0]
+    assert tool.inputSchema["required"] == ["query"]
+    assert set(tool.inputSchema["properties"]) == {"query", "top_k", "capitolo"}
+    assert tool.description == server.DESCRIZIONE_TOOL
+
+
+# Verifica la modalità base senza LM_MODEL: sola domanda, nessun ripiego.
+def test_base_senza_lm_model():
+    risultato = cerca(query="brodo", top_k=3)
+    assert risultato["modalita"] == "base" and risultato["query_usate"] == ["brodo"] and risultato["ripieghi"] == []
+    assert len(risultato["passaggi"]) == 3
+
+
+# Verifica modalità e query usate nel risultato in entrambe.
+def test_entrambe_nel_risultato(monkeypatch):
+    monkeypatch.setenv("RICERCA_MODALITA", "entrambe")
+    monkeypatch.setenv("LM_MODEL", "gemma")
+    monkeypatch.setattr(server, "crea_chat", lambda conf: ChatFinta(['{"query": ["sugo"]}', '{"id": ["R3-1"]}']))
+    risultato = cerca(query="brodo")
+    assert risultato["modalita"] == "entrambe" and risultato["query_usate"] == ["brodo", "sugo"]
+    assert [p["id"] for p in risultato["passaggi"]] == ["R3-1"]
+
+
+# Verifica il ripiego segnalato nel risultato e nella riga di log, senza errore verso il client.
+def test_ripiego_nel_risultato_e_nel_log(monkeypatch, caplog):
+    monkeypatch.setenv("RICERCA_MODALITA", "reranking")
+    monkeypatch.setenv("LM_MODEL", "gemma")
+    monkeypatch.setattr(server, "crea_chat", lambda conf: ChatFinta([ErroreRicerca("spenta")]))
+    with caplog.at_level(logging.INFO, logger="mcp_ricerca"):
+        risultato = cerca(query="brodo", top_k=2)
+    assert risultato["ripieghi"] == ["reranking: errore della chiamata → ordine vettoriale"]
+    assert len(risultato["passaggi"]) == 2
+    riga = [r.getMessage() for r in caplog.records if r.name == "mcp_ricerca"][-1]
+    assert "modalita=reranking" in riga and "llm=1" in riga and "ripieghi=[reranking: errore" in riga
+
+
+# Verifica che il reranking possa escludere tutti i passaggi (lista vuota, nessun ripiego).
+def test_lista_vuota_dal_reranking(monkeypatch):
+    monkeypatch.setenv("RICERCA_MODALITA", "reranking")
+    monkeypatch.setenv("LM_MODEL", "gemma")
+    monkeypatch.setattr(server, "crea_chat", lambda conf: ChatFinta(['{"id": []}']))
+    risultato = cerca(query="tiramisù")
+    assert risultato["passaggi"] == [] and risultato["ripieghi"] == []
+
+
+# Verifica gli id scartati nella riga di log.
+def test_id_scartati_nel_log(monkeypatch, caplog):
+    monkeypatch.setenv("RICERCA_MODALITA", "reranking")
+    monkeypatch.setenv("LM_MODEL", "gemma")
+    monkeypatch.setattr(server, "crea_chat", lambda conf: ChatFinta(['{"id": ["R1-1", "R99-1"]}']))
+    with caplog.at_level(logging.INFO, logger="mcp_ricerca"):
+        cerca(query="brodo")
+    riga = [r.getMessage() for r in caplog.records if r.name == "mcp_ricerca"][-1]
+    assert "scartati=1" in riga
+
+
+# Verifica che crea_chat non crei un modello in base e lo crei con la configurazione negli altri casi.
+def test_crea_chat(monkeypatch):
+    from app.config import carica_configurazione
+    assert server.crea_chat(carica_configurazione()) is None
+    monkeypatch.setenv("RICERCA_MODALITA", "riscrittura")
+    monkeypatch.setenv("LM_MODEL", "gemma")
+    chat = server.crea_chat(carica_configurazione())
+    assert chat.modello == "gemma" and chat.base_url == "http://127.0.0.1:1234/v1"

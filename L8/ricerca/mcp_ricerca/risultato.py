@@ -9,8 +9,6 @@ from app.indice import Risultato
 TOP_K_MASSIMO_TOOL = 10
 # caratteri massimi del testo di un passaggio restituito al modello
 TESTO_MASSIMO = 800
-# modalità di recupero dell'esercizio 1 (riscrittura e reranking arrivano con l'esercizio 3)
-MODALITA = "base"
 
 
 # un passaggio restituito al modello, con l'id da citare e la sua fonte
@@ -27,12 +25,14 @@ class Passaggio(TypedDict):
 
 # risultato completo del tool
 class RisultatoRicerca(TypedDict):
-    modalita: str  # modalità di recupero usata
+    modalita: str  # modalità di recupero usata (dalla configurazione del server)
     query: str  # domanda cercata
+    query_usate: list[str]  # query cercate davvero, la domanda per prima (esercizio 3)
+    ripieghi: list[str]  # ripieghi di riscrittura o reranking, vuoto se nessuno (esercizio 3)
     top_k: int  # passaggi richiesti, dopo l'eventuale riduzione
     capitolo: str  # capitolo del filtro, "" se nessuno
     nota: str | None  # es. top_k ridotto
-    passaggi: list[Passaggio]
+    passaggi: list[Passaggio]  # anche meno di top_k, o nessuno se il reranking li esclude tutti
 
 
 def id_citabile(numero: int, indice_chunk: int) -> str:

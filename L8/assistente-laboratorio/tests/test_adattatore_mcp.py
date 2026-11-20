@@ -216,3 +216,22 @@ def test_ricerca_senza_tool_validi(monkeypatch, caplog):
     messaggi = _log_mcp(caplog)
     assert any(m.startswith("server ricerca non disponibile") for m in messaggi)
     assert not any(m.startswith("tools/list ricerca") for m in messaggi)
+
+
+# --- lezione 8, esercizio 3: modalità della ricerca ---
+
+# Verifica che modello di chat, modalità, candidati e tetto arrivino al server di ricerca.
+def test_configurazione_ricerca_passa_la_modalita(monkeypatch):
+    for nome, valore in {"LM_MODEL": "gemma", "RICERCA_MODALITA": "entrambe", "RICERCA_CANDIDATI": "12",
+                         "RERANK_TETTO": "10"}.items():
+        monkeypatch.setenv(nome, valore)
+    env = configurazione_ricerca()["env"]
+    assert (env["LM_MODEL"], env["RICERCA_MODALITA"], env["RICERCA_CANDIDATI"], env["RERANK_TETTO"]) == \
+        ("gemma", "entrambe", "12", "10")
+
+
+# Verifica il tempo massimo di una chiamata MCP: 60 s, perché una ricerca in modalità entrambe dura fino a ~28 s
+# più l'avvio del server (decisione dell'utente, 2026-11-20).
+def test_timeout_mcp_60_secondi():
+    from app import adattatore_mcp
+    assert adattatore_mcp.TIMEOUT_S == 60

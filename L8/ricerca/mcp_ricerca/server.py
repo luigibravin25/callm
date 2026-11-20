@@ -17,12 +17,14 @@ from fastmcp.exceptions import ToolError
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
-from app.config import carica_configurazione
+from app.chat import Chat, ChatLMStudio
+from app.config import Configurazione, carica_configurazione
 from app.corpus import CAPITOLI
 from app.embedding import EmbedderLMStudio
 from app.errori import ErroreRicerca
 from app.indice import Indice
-from mcp_ricerca.risultato import MODALITA, RisultatoRicerca, limita_top_k, passaggio
+from app.recupero import EsitoRecupero, recupera
+from mcp_ricerca.risultato import RisultatoRicerca, limita_top_k, passaggio
 
 # URI della resource con i valori del filtro per capitolo
 URI_CAPITOLI = "ricettario://capitoli"
@@ -73,6 +75,13 @@ def crea_indice() -> Indice:
                   EmbedderLMStudio(conf.lm_base_url, conf.modello_embedding))
 
 
+def crea_chat(conf: Configurazione) -> Chat | None:
+    """Modello di chat per riscrittura e reranking (nessuno in modalità base); i test lo sostituiscono."""
+    if conf.modalita == "base":
+        return None
+    return ChatLMStudio(conf.lm_base_url, conf.modello_chat)
+
+
 def _qdrant_url() -> str:
     """Indirizzo di Qdrant per il messaggio d'errore (dalla configurazione, se è valida)."""
     try:
@@ -87,22 +96,39 @@ def _testa_riga(query: str, top_k: int, capitolo: str) -> str:
     return f'query="{breve}" top_k={top_k} capitolo={capitolo.strip() or "-"}'
 
 
-def _cerca(query: str, top_k: int, capitolo: str) -> RisultatoRicerca:
-    """Ricerca vera e propria: gli errori previsti sono ErroreRicerca o errori del client di Qdrant."""
+def _cerca(query: str, top_k: int, capitolo: str) -> tuple[RisultatoRicerca, EsitoRecupero]:
+    """Ricerca vera e propria: gli errori previsti sono ErroreRicerca o errori del client di Qdrant;
+    riscrittura e reranking non sollevano errori (ripieghi)."""
     # top_k entro il massimo del codice (oltre: ridotto, con nota)
     k, nota = limita_top_k(top_k)
+    # modalità, candidati e tetto dalla configurazione del server, letta a ogni chiamata
+    conf = carica_configurazione()
     # stringa vuota o di soli spazi = nessun filtro; il confronto senza maiuscole lo fa la ricerca della lezione 7
-    risultati = crea_indice().cerca(query, capitolo=capitolo.strip() or None, k=k)
-    return RisultatoRicerca(modalita=MODALITA, query=query, top_k=k,
-                            capitolo=capitolo.strip().upper() if capitolo.strip() else "", nota=nota,
-                            passaggi=[passaggio(r) for r in risultati])
+    esito = recupera(query, k, capitolo.strip() or None, indice=crea_indice(), chat=crea_chat(conf),
+                     modalita=conf.modalita, candidati=conf.candidati, tetto=conf.tetto_rerank)
+    risultato = RisultatoRicerca(modalita=esito.modalita, query=query, query_usate=esito.query_usate,
+                                 ripieghi=esito.ripieghi, top_k=k,
+                                 capitolo=capitolo.strip().upper() if capitolo.strip() else "", nota=nota,
+                                 passaggi=[passaggio(r) for r in esito.risultati])
+    return risultato, esito
+
+
+def _parte_recupero(esito: EsitoRecupero) -> str:
+    """Parte della riga di log sul recupero: modalità, numero di query e di chiamate all'LLM, ripieghi, id scartati."""
+    parte = f"modalita={esito.modalita} query={len(esito.query_usate)} llm={esito.chiamate_llm}"
+    # ripieghi e id scartati solo se ci sono
+    if esito.ripieghi:
+        parte += f" ripieghi=[{'; '.join(esito.ripieghi)}]"
+    if esito.id_scartati:
+        parte += f" scartati={esito.id_scartati}"
+    return parte
 
 
 @mcp.tool(name="search_documents", description=DESCRIZIONE_TOOL)
 def search_documents(query: str, top_k: int = 5, capitolo: str = "") -> RisultatoRicerca:
     inizio = time.perf_counter()
     try:
-        risultato = _cerca(query, top_k, capitolo)
+        risultato, esito = _cerca(query, top_k, capitolo)
     except ErroreRicerca as errore:
         # errore previsto: messaggio comprensibile al modello, una riga di log senza traceback
         log.info("%s → errore: %s", _testa_riga(query, top_k, capitolo), errore)
@@ -120,8 +146,8 @@ def search_documents(query: str, top_k: int = 5, capitolo: str = "") -> Risultat
     # riga della chiamata riuscita: primi id con score e durata
     primi = ", ".join(f"{p['id']} {p['score']:.4f}" for p in risultato["passaggi"][:ID_MASSIMI_LOG])
     altri = ", …" if len(risultato["passaggi"]) > ID_MASSIMI_LOG else ""
-    log.info("%s → %d passaggi (%s%s) in %.2fs", _testa_riga(query, risultato["top_k"], capitolo),
-             len(risultato["passaggi"]), primi, altri, time.perf_counter() - inizio)
+    log.info("%s %s → %d passaggi (%s%s) in %.2fs", _testa_riga(query, risultato["top_k"], capitolo),
+             _parte_recupero(esito), len(risultato["passaggi"]), primi, altri, time.perf_counter() - inizio)
     return risultato
 
 
