@@ -8,7 +8,9 @@ from app.errori import ErroreRicerca
 VARIABILI = ("LM_BASE_URL", "EMBEDDING_MODEL", "QDRANT_URL", "QDRANT_COLLEZIONE", "CORPUS_FILE",
              "CHUNK_STRATEGIA", "CHUNK_DIMENSIONE", "CHUNK_OVERLAP", "TOP_K",
              # lezione 8, esercizio 3: modalità avanzata della ricerca
-             "RICERCA_MODALITA", "LM_MODEL", "RICERCA_CANDIDATI", "RERANK_TETTO")
+             "RICERCA_MODALITA", "LM_MODEL", "RICERCA_CANDIDATI", "RERANK_TETTO",
+             # lezione 8, esercizio 4: soglie sullo score
+             "SOGLIA_ALTA", "SOGLIA_BASSA")
 
 
 @pytest.fixture(autouse=True)
@@ -116,3 +118,36 @@ def test_candidati_e_tetto_ai_limiti(monkeypatch):
     monkeypatch.setenv("RERANK_TETTO", "10")
     conf = carica_configurazione()
     assert (conf.candidati, conf.tetto_rerank) == (20, 10)
+
+
+
+# --- lezione 8, esercizio 4: soglie sullo score ---
+
+# Verifica i predefiniti calibrati delle soglie.
+def test_soglie_predefinite():
+    conf = carica_configurazione()
+    assert (conf.soglia_alta, conf.soglia_bassa) == (0.60, 0.51)
+
+
+# Verifica le soglie lette dalla configurazione, anche negative (intervallo del coseno).
+def test_soglie_dalla_configurazione(monkeypatch):
+    monkeypatch.setenv("SOGLIA_ALTA", "0.7")
+    monkeypatch.setenv("SOGLIA_BASSA", "-1")
+    conf = carica_configurazione()
+    assert (conf.soglia_alta, conf.soglia_bassa) == (0.7, -1.0)
+
+
+# Verifica gli errori per soglie non numeriche o fuori da -1..1.
+@pytest.mark.parametrize("nome, valore", [("SOGLIA_ALTA", "alta"), ("SOGLIA_ALTA", "1.5"), ("SOGLIA_BASSA", "-1.1")])
+def test_soglie_non_valide(monkeypatch, nome, valore):
+    monkeypatch.setenv(nome, valore)
+    with pytest.raises(ErroreRicerca, match=f"{nome}.*-1.*1"):
+        carica_configurazione()
+
+
+# Verifica che la soglia bassa non possa superare quella alta.
+def test_soglie_invertite(monkeypatch):
+    monkeypatch.setenv("SOGLIA_ALTA", "0.4")
+    monkeypatch.setenv("SOGLIA_BASSA", "0.5")
+    with pytest.raises(ErroreRicerca, match="SOGLIA_BASSA.*SOGLIA_ALTA"):
+        carica_configurazione()
