@@ -235,3 +235,11 @@ def test_configurazione_ricerca_passa_la_modalita(monkeypatch):
 def test_timeout_mcp_60_secondi():
     from app import adattatore_mcp
     assert adattatore_mcp.TIMEOUT_S == 60
+
+
+# Verifica che le soglie sullo score arrivino al server di ricerca (esercizio 4).
+def test_configurazione_ricerca_passa_le_soglie(monkeypatch):
+    monkeypatch.setenv("SOGLIA_ALTA", "0.6")
+    monkeypatch.setenv("SOGLIA_BASSA", "0.51")
+    env = configurazione_ricerca()["env"]
+    assert (env["SOGLIA_ALTA"], env["SOGLIA_BASSA"]) == ("0.6", "0.51")
