@@ -23,3 +23,21 @@ class EmbedderFinto:
         if self.fallisci_alla_chiamata == len(self.chiamate):
             raise ErroreRicerca("LM Studio non risponde (embedder finto)")
         return [self._vettore(t) for t in testi]
+
+
+# modello di chat finto (lezione 8, esercizio 3): restituisce o solleva le risposte preparate, in ordine,
+# e registra ogni chiamata come (sistema, utente, nome dello schema)
+class ChatFinta:
+    def __init__(self, risposte: list):
+        self.risposte = list(risposte)
+        self.chiamate: list[tuple[str, str, str]] = []
+
+    def completa_json(self, sistema: str, utente: str, nome_schema: str, schema: dict) -> str:
+        self.chiamate.append((sistema, utente, nome_schema))
+        # più chiamate delle risposte preparate: il test è sbagliato
+        assert self.risposte, "ChatFinta: nessuna risposta preparata per questa chiamata"
+        risposta = self.risposte.pop(0)
+        # un'eccezione preparata simula LM Studio che non risponde
+        if isinstance(risposta, Exception):
+            raise risposta
+        return risposta
