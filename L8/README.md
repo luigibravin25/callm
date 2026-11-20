@@ -54,6 +54,44 @@ Modelli (LM Studio sull'host, dalla configurazione): chat `google/gemma-4-e2b`; 
 
 4. Collezione: se manca, da `L8\ricerca` `& ..\venv\Scripts\python.exe ingestion.py` (circa 5 minuti).
 
+## Avvio dell'app completa con Docker Compose
+
+L'app di chat della lezione 6 (front-end, back-end, agente, database) più Qdrant parte con un solo comando da
+`L8\`. Percorso di una richiesta:
+
+```text
+browser → 127.0.0.1:8080 (frontend: nginx) ── /api → backend:8001 → agente:8000 → LM Studio sull'host
+                                                        └→ database:5432
+qdrant → 127.0.0.1:6333 (usato dagli script e dall'agente sull'host)
+```
+
+1. `.env` in `L8\` (copiato da `.env.example`, escluso da Git) con `POSTGRES_USER`, `POSTGRES_PASSWORD` (solo
+   lettere, cifre, `-` e `_`) e `POSTGRES_DB`; gli indirizzi interni dei container li fissa `compose.yaml`.
+2. LM Studio acceso sull'host con `google/gemma-4-e2b` caricato (l'agente nel container lo raggiunge con
+   `host.docker.internal`).
+3. Avvio e uso:
+
+   ```powershell
+   docker compose up -d --build        # costruisce le immagini e avvia i cinque servizi
+   docker compose ps                   # stato: tutti "healthy" dopo qualche secondo
+   start http://127.0.0.1:8080         # interfaccia di chat
+   docker compose logs -f agente       # log dell'agente
+   ```
+
+4. Arresto:
+
+   ```powershell
+   docker compose down                 # ferma e rimuove i container: chat e collezione restano nei volumi
+   docker compose down -v              # ATTENZIONE: cancella anche i volumi (tutte le chat e la collezione)
+   ```
+
+Solo `127.0.0.1:8080` (interfaccia) e `127.0.0.1:6333` (Qdrant) sono pubblicate, e solo su questo computer.
+
+**La ricerca nel ricettario non è nell'app in Compose** (decisione dell'esercizio 2: solo host). L'agente nel
+container ha soltanto l'orologio; le risposte con citazioni dal ricettario, le modalità avanzate e le soglie si
+provano con l'agente avviato sull'host (`python -m app.api` + `python -m app.cli`, vedi la sezione «Test» qui sotto).
+Configurazione completa dell'app e dettagli dei servizi: [`../L6/README.md`](../L6/README.md).
+
 ## Test
 
 I test automatici non hanno bisogno di LM Studio né di Qdrant (embedder, modello e Qdrant finti o in memoria).
