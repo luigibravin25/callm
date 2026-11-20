@@ -6,7 +6,7 @@ import pytest
 
 from app.errori import ErroreRicerca
 from app.indice import Risultato
-from app.recupero import PROMPT_RERANKING, PROMPT_RISCRITTURA, fondi_rrf, query_di_ricerca, riordina
+from app.recupero import PROMPT_RERANKING, PROMPT_RISCRITTURA, fondi_rrf, query_di_ricerca, recupera, riordina
 from tests.finti import ChatFinta
 
 
@@ -154,3 +154,85 @@ def test_reranking_testo_troncato():
     riordina("D?", [lungo], chat, "vettoriale")
     riga = chat.chiamate[0][1].splitlines()[2]
     assert len(riga.split(": ", 1)[1]) <= 400
+
+
+# --- recupera: le quattro modalità ---
+
+# indice finto: risultati preparati per ogni query; registra (domanda, capitolo, k) di ogni ricerca
+class IndiceFinto:
+    def __init__(self, risultati_per_query: dict[str, list[Risultato]]):
+        self.risultati_per_query = risultati_per_query
+        self.chiamate: list[tuple[str, str | None, int]] = []
+
+    def cerca(self, domanda: str, capitolo: str | None = None, k: int = 5) -> list[Risultato]:
+        self.chiamate.append((domanda, capitolo, k))
+        return self.risultati_per_query.get(domanda, [])[:k]
+
+
+# Verifica che base dia i primi top_k in ordine vettoriale, cercando `candidati` chunk, senza LLM.
+def test_base_identica_alla_ricerca_vettoriale():
+    indice = IndiceFinto({"D?": [ris(n, 0, 1 - n / 100) for n in range(1, 11)]})
+    esito = recupera("D?", 5, None, indice=indice, chat=None, modalita="base", candidati=10, tetto=10)
+    assert [r.numero for r in esito.risultati] == [1, 2, 3, 4, 5]
+    assert (esito.modalita, esito.query_usate, esito.ripieghi, esito.chiamate_llm) == ("base", ["D?"], [], 0)
+    assert indice.chiamate == [("D?", None, 10)]
+
+
+# Verifica la fusione delle query riscritte.
+def test_riscrittura_fonde_le_query():
+    indice = IndiceFinto({"D?": [ris(1, 0, 0.9)], "q2": [ris(2, 0, 0.8), ris(1, 0, 0.7)]})
+    esito = recupera("D?", 5, None, indice=indice, chat=ChatFinta(['{"query": ["q2"]}']),
+                     modalita="riscrittura", candidati=10, tetto=10)
+    assert [r.numero for r in esito.risultati] == [1, 2]
+    assert esito.query_usate == ["D?", "q2"] and esito.chiamate_llm == 1
+
+
+# Verifica il reranking sulla sola domanda con al massimo `tetto` candidati.
+def test_reranking_sulla_sola_domanda_con_tetto():
+    indice = IndiceFinto({"D?": [ris(n, 0, 1 - n / 100) for n in range(1, 16)]})
+    chat = ChatFinta(['{"id": ["R3-1"]}'])
+    esito = recupera("D?", 5, None, indice=indice, chat=chat, modalita="reranking", candidati=15, tetto=10)
+    assert [r.numero for r in esito.risultati] == [3]
+    assert chat.chiamate[0][1].count("\n[R") == 10
+
+
+# Verifica entrambe: riscrittura, poi reranking sulla domanda originale che esclude tutti.
+def test_entrambe_riscrittura_e_reranking():
+    indice = IndiceFinto({"D?": [ris(1, 0, 0.9)], "q2": [ris(2, 0, 0.8)]})
+    chat = ChatFinta(['{"query": ["q2"]}', '{"id": []}'])
+    esito = recupera("D?", 5, None, indice=indice, chat=chat, modalita="entrambe", candidati=10, tetto=10)
+    assert esito.risultati == [] and esito.ripieghi == [] and esito.chiamate_llm == 2
+    assert chat.chiamate[1][1].startswith("Domanda: D?\n")
+
+
+# Verifica i due ripieghi in entrambe: sola domanda e ordine RRF.
+def test_entrambe_due_ripieghi():
+    indice = IndiceFinto({"D?": [ris(1, 0, 0.9)]})
+    esito = recupera("D?", 5, None, indice=indice, chat=ChatFinta(["x", "y"]), modalita="entrambe",
+                     candidati=10, tetto=10)
+    assert esito.ripieghi == ["riscrittura: JSON non valido → sola domanda",
+                              "reranking: JSON non valido → ordine RRF"]
+    assert [r.numero for r in esito.risultati] == [1]
+
+
+# Verifica che il filtro per capitolo valga per ogni query.
+def test_capitolo_su_ogni_query():
+    indice = IndiceFinto({"D?": [], "q2": []})
+    recupera("D?", 5, "DOLCI", indice=indice, chat=ChatFinta(['{"query": ["q2"]}']), modalita="riscrittura",
+             candidati=10, tetto=10)
+    assert [c[1] for c in indice.chiamate] == ["DOLCI", "DOLCI"]
+
+
+# Verifica il conteggio degli id scartati dal reranking.
+def test_id_scartati_contati():
+    indice = IndiceFinto({"D?": [ris(1, 0, 0.9)]})
+    esito = recupera("D?", 5, None, indice=indice, chat=ChatFinta(['{"id": ["R1-1", "R9-9"]}']),
+                     modalita="reranking", candidati=10, tetto=10)
+    assert esito.id_scartati == 1
+
+
+# Verifica che senza candidati non si chiami il reranking.
+def test_nessun_candidato_nessun_reranking():
+    esito = recupera("D?", 5, None, indice=IndiceFinto({}), chat=ChatFinta([]), modalita="reranking",
+                     candidati=10, tetto=10)
+    assert esito.risultati == [] and esito.chiamate_llm == 0

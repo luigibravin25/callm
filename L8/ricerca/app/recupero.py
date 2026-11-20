@@ -1,8 +1,8 @@
 """Modulo di recupero della lezione 8 (esercizio 3): riscrittura e scomposizione della domanda, fusione RRF,
 reranking listwise e ripieghi. Usato dal server MCP di ricerca e dallo script di confronto."""
-# librerie standard: JSON, copie modificate dei risultati
+# librerie standard: JSON, classi di dati e copie modificate dei risultati
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from app.chat import Chat
 from app.indice import Risultato
@@ -147,3 +147,42 @@ def riordina(domanda: str, candidati: list[Risultato], chat: Chat,
     if not tenuti:
         return candidati, f"reranking: id inventati → ordine {partenza}", scartati
     return _rinumera(tenuti), None, scartati
+
+
+# esito di una ricerca: passaggi nell'ordine finale e ciò che serve al risultato, al log e al confronto
+@dataclass(frozen=True)
+class EsitoRecupero:
+    risultati: list[Risultato]  # al massimo top_k, posizione 1..n
+    modalita: str  # modalità usata
+    query_usate: list[str]  # query cercate, la domanda per prima
+    ripieghi: list[str]  # ripieghi della chiamata, vuoto se nessuno
+    chiamate_llm: int  # chiamate al modello di chat tentate
+    id_scartati: int  # id inventati o doppioni scartati dal reranking
+
+
+def recupera(domanda: str, top_k: int, capitolo: str | None, *, indice, chat: Chat | None, modalita: str,
+             candidati: int, tetto: int) -> EsitoRecupero:
+    """Ricerca nella modalità indicata (specifica §6.1); gli errori dell'indice passano, quelli dell'LLM no."""
+    ripieghi: list[str] = []
+    chiamate = 0
+    query = [domanda]
+    # riscrittura: 1-3 query (la domanda per prima), oppure la sola domanda in ripiego
+    if modalita in ("riscrittura", "entrambe"):
+        query, ripiego = query_di_ricerca(domanda, chat)
+        chiamate += 1
+        if ripiego:
+            ripieghi.append(ripiego)
+    # stessi candidati per query in tutte le modalità (un solo fattore cambiato nel confronto)
+    liste = [indice.cerca(q, capitolo=capitolo, k=candidati) for q in query]
+    # con una sola query la fusione lascia l'ordine vettoriale
+    ordinati = fondi_rrf(liste)
+    scartati = 0
+    # reranking dei primi `tetto` candidati, giudicati sulla domanda originale; senza candidati non serve
+    if modalita in ("reranking", "entrambe") and ordinati:
+        partenza = "RRF" if modalita == "entrambe" else "vettoriale"
+        ordinati, ripiego, scartati = riordina(domanda, ordinati[:tetto], chat, partenza)
+        chiamate += 1
+        if ripiego:
+            ripieghi.append(ripiego)
+    return EsitoRecupero(risultati=_rinumera(ordinati[:top_k]), modalita=modalita, query_usate=query,
+                         ripieghi=ripieghi, chiamate_llm=chiamate, id_scartati=scartati)
