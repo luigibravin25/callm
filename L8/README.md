@@ -31,8 +31,10 @@ passaggi verificabili. Quattro esercizi, ognuno sul suo ramo:
 | 2 · aggancio all'agente | il server si aggiunge ai server MCP dell'agente; istruzioni per citare gli id e astenersi; controllo delle citazioni a fine turno | fatto |
 | 3 · riscrittura e reranking | riscrittura/scomposizione della domanda con fusione RRF, reranking listwise, attivabili dalla configurazione; confronto di quattro configurazioni | fatto |
 | 4 · soglie sullo score | due soglie dalla configurazione: passaggi affidabili, di affidabilità media, esclusi; calibrazione sugli score di bge-m3 | fatto |
+| fuori dagli esercizi · ricerca nell'app in Docker Compose | il server di ricerca anche nell'agente del container (domande sul ricettario dal browser, con modalità e soglie dal `.env`); nel front-end lo strumento si mostra come «📖 Ricettario» | fatto |
 
-Risultati, tracce e confronti della lezione 8: `docs/rag-agente.md` (si compila a ogni esercizio concluso).
+Risultati, tracce e confronti della lezione 8: `docs/rag-agente.md`. Lezione conclusa il 2026-11-20 (tutto in
+`develop`).
 
 Modelli (LM Studio sull'host, dalla configurazione): chat `google/gemma-4-e2b`; embedding
 `text-embedding-bge-m3` (il modello `gpustack/bge-m3-GGUF`, vettori da 1024 valori).
@@ -110,11 +112,12 @@ Configurazione completa dell'app e dettagli dei servizi: [`../L6/README.md`](../
 I test automatici non hanno bisogno di LM Studio né di Qdrant (embedder, modello e Qdrant finti o in memoria).
 Ambiente: `& .\venv\Scripts\python.exe -m pip install -r requirements.txt` (venv di `L8`).
 
-| Suite | Comando (PowerShell) | Esito (aggiornato all'esercizio 4, 2026-11-20) |
+| Suite | Comando (PowerShell) | Esito (aggiornato a fine lezione 8, 2026-11-20) |
 |---|---|---|
 | Ricerca (lezione 7 e server MCP) | da `L8\ricerca`: `& ..\venv\Scripts\python.exe -m pytest -q` | 285 passati (126 della lezione 7 + 29 del server MCP + 93 dell'esercizio 3 + 37 dell'esercizio 4) |
 | Agente (lezioni 5-6 e aggancio alla ricerca) | da `L8\assistente-laboratorio`: `& ..\venv\Scripts\python.exe -m pytest -q` | 381 passati, 12 saltati (345 di prima + 32 dell'esercizio 2 + 2 dell'esercizio 3 + 2 dell'esercizio 4) |
 | Configurazione Compose | da `L8\`: `& .\venv\Scripts\python.exe -m pytest tests_compose -q` (serve la CLI `docker`) | 36 passati, 1 saltato (prova reale dello stack, solo con `$env:RUN_COMPOSE = "1"`) |
+| Front-end (funzioni pure) | da `L8\frontend`, dopo `npm ci`: `npm test` | 110 passati (compresa la riga degli strumenti con «📖 Ricettario») |
 
 Prove reali della lezione 7 (servizi accesi), da `L8\ricerca`:
 
