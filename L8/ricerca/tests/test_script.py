@@ -4,6 +4,7 @@ import logging
 import pytest
 from qdrant_client import QdrantClient
 
+import calibra
 import cerca
 import confronta
 import ingestion
@@ -61,7 +62,7 @@ def test_argomenti():
 
 
 @pytest.mark.parametrize("principale", [lambda: cerca.main(["--help"]), lambda: valuta.main(["--help"]),
-                                        lambda: confronta.main(["--help"])])
+                                        lambda: confronta.main(["--help"]), lambda: calibra.main(["--help"])])
 def test_help_senza_configurazione(monkeypatch, capsys, principale):
     # l'aiuto non richiede variabili d'ambiente
     monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
