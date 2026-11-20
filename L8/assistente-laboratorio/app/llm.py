@@ -36,7 +36,10 @@ FRASI_RICERCA = (
     # esercizio 4: fasce di affidabilità dei passaggi e lista vuota (testo approvato nella specifica, §10);
     # ritocchi approvati dopo le prove reali: gemma non dichiarava la verifica, ora una frase fissa in fondo
     # con un esempio concreto
-    "Ogni passaggio ha il campo affidabilita: «affidabile» oppure «media». Se nella risposta usi anche un "
+    "Ogni passaggio ha il campo affidabilita: «affidabile» oppure «media». "
+    # ritocco approvato dopo la prova nel browser: gemma scriveva «(affidabile)» accanto alle citazioni
+    "Non scrivere nella risposta il valore del campo affidabilita; per i passaggi affidabili non aggiungere "
+    "nulla. Se nella risposta usi anche un "
     "solo passaggio con affidabilita «media», termina la risposta con la frase «Da verificare sulla "
     "fonte.», per esempio: «Si usa vino rosso [R208-1]. Da verificare sulla fonte.» Se "
     "search_documents restituisce una lista di passaggi vuota, rispondi «Nel ricettario non ho "
