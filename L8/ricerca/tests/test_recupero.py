@@ -268,3 +268,15 @@ def test_reranking_risposta_vuota():
 def test_reranking_id_in_minuscolo():
     ordinati, ripiego, scartati = riordina("D?", CANDIDATI, ChatFinta(['{"id": ["r208-1"]}']), "vettoriale")
     assert [r.numero for r in ordinati] == [208] and ripiego is None and scartati == 0
+
+
+# Verifica che un id senza la «R» iniziale (455-1) sia riconosciuto se corrisponde a un candidato.
+def test_reranking_id_senza_r():
+    ordinati, ripiego, scartati = riordina("D?", CANDIDATI, ChatFinta(['{"id": ["208-1", "89-1"]}']), "vettoriale")
+    assert [r.numero for r in ordinati] == [208, 89] and ripiego is None and scartati == 0
+
+
+# Verifica che un id senza «R» che non corrisponde a nessun candidato resti inventato (ripiego).
+def test_reranking_id_senza_r_inventato():
+    ordinati, ripiego, scartati = riordina("D?", CANDIDATI, ChatFinta(['{"id": ["999-1"]}']), "vettoriale")
+    assert ordinati == CANDIDATI and ripiego == "reranking: id inventati → ordine vettoriale" and scartati == 1

@@ -143,6 +143,10 @@ def riordina(domanda: str, candidati: list[Risultato], chat: Chat,
         # id senza spazi e parentesi quadre ai bordi (il modello può scriverli come nel messaggio), in maiuscolo
         # come gli id citabili (r89-1 = R89-1)
         pulito = grezzo.strip().strip("[]").strip().upper()
+        # id senza la «R» iniziale (gemma scrive a volte 455-1 per R455-1): si aggiunge; resta valido solo se
+        # corrisponde a un candidato ricevuto, quindi un id davvero inventato è comunque scartato
+        if pulito[:1].isdigit():
+            pulito = "R" + pulito
         # id inventato o già visto: scartato e contato
         if pulito not in per_id or pulito in visti:
             scartati += 1
