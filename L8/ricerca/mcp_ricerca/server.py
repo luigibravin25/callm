@@ -24,8 +24,8 @@ from app.embedding import EmbedderLMStudio
 from app.errori import ErroreRicerca
 from app.indice import Indice
 from app.recupero import EsitoRecupero, recupera
-from app.soglie import filtra
-from mcp_ricerca.risultato import RisultatoRicerca, limita_top_k, nota_lista_vuota, passaggio
+from app.soglie import MEDIA, filtra
+from mcp_ricerca.risultato import NOTA_MEDIA, RisultatoRicerca, limita_top_k, nota_lista_vuota, passaggio
 
 # URI della resource con i valori del filtro per capitolo
 URI_CAPITOLI = "ricettario://capitoli"
@@ -118,6 +118,9 @@ def _cerca(query: str, top_k: int, capitolo: str) -> tuple[RisultatoRicerca, Esi
         else:
             motivo = None
         nota = f"{nota}; {nota_lista_vuota(motivo)}" if nota else nota_lista_vuota(motivo)
+    # almeno un passaggio di affidabilità media: la nota ricorda all'agente di dichiarare la verifica
+    elif any(f == MEDIA for _, f in rimasti):
+        nota = f"{nota}; {NOTA_MEDIA}" if nota else NOTA_MEDIA
     risultato = RisultatoRicerca(modalita=esito.modalita, query=query, query_usate=esito.query_usate,
                                  ripieghi=esito.ripieghi, top_k=k,
                                  capitolo=capitolo.strip().upper() if capitolo.strip() else "", nota=nota,

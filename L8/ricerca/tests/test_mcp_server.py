@@ -264,3 +264,27 @@ def test_nota_top_k_e_lista_vuota(monkeypatch):
     monkeypatch.setenv("SOGLIA_ALTA", "1")
     monkeypatch.setenv("SOGLIA_BASSA", "1")
     assert cerca(query="brodo", top_k=50)["nota"].startswith("top_k 50 ridotto a 10; nessun passaggio rimasto")
+
+
+# Verifica l'indicazione per l'agente nella nota quando almeno un passaggio è di affidabilità media (ritocco C
+# approvato dopo le prove reali: la sola frase nelle istruzioni non bastava a gemma).
+def test_nota_con_passaggi_di_affidabilita_media(monkeypatch):
+    from mcp_ricerca.risultato import NOTA_MEDIA
+    score = [p["score"] for p in cerca(query="brodo", top_k=3)["passaggi"]]
+    monkeypatch.setenv("SOGLIA_ALTA", str(score[0] - 0.0001))
+    monkeypatch.setenv("SOGLIA_BASSA", str(score[1] - 0.0001))
+    assert cerca(query="brodo", top_k=3)["nota"] == NOTA_MEDIA
+    assert NOTA_MEDIA == ("alcuni passaggi hanno affidabilità media: se li usi, termina la risposta con "
+                          "«Da verificare sulla fonte.»")
+
+
+# Verifica che senza passaggi di affidabilità media la nota resti vuota.
+def test_nessuna_nota_con_soli_passaggi_affidabili():
+    assert cerca(query="brodo", top_k=3)["nota"] is None
+
+
+# Verifica che la nota del top_k ridotto e quella dei passaggi medi stiano insieme.
+def test_nota_top_k_e_media(monkeypatch):
+    from mcp_ricerca.risultato import NOTA_MEDIA
+    monkeypatch.setenv("SOGLIA_ALTA", "1")
+    assert cerca(query="brodo", top_k=50)["nota"] == f"top_k 50 ridotto a 10; {NOTA_MEDIA}"

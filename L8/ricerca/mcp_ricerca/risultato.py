@@ -61,6 +61,12 @@ def limita_top_k(top_k: int) -> tuple[int, str | None]:
     return top_k, None
 
 
+# indicazione per l'agente quando almeno un passaggio è di affidabilità media (ritocco approvato dopo le prove
+# reali dell'esercizio 4: la sola frase nelle istruzioni dell'agente non bastava a gemma)
+NOTA_MEDIA = ("alcuni passaggi hanno affidabilità media: se li usi, termina la risposta con "
+              "«Da verificare sulla fonte.»")
+
+
 def nota_lista_vuota(motivo: str | None) -> str:
     """Dichiarazione della lista vuota nel risultato, con il motivo quando è noto (soglie o reranking)."""
     return "nessun passaggio rimasto: lista vuota" + (f" ({motivo})" if motivo else "")
