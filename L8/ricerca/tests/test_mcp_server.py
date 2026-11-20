@@ -27,6 +27,9 @@ def configurazione_base(monkeypatch):
     monkeypatch.setenv("EMBEDDING_MODEL", "bge")
     for nome in ("RICERCA_MODALITA", "LM_MODEL", "RICERCA_CANDIDATI", "RERANK_TETTO"):
         monkeypatch.delenv(nome, raising=False)
+    # esercizio 4: soglie a -1, nessun passaggio escluso (l'embedder finto dà anche score negativi)
+    monkeypatch.setenv("SOGLIA_ALTA", "-1")
+    monkeypatch.setenv("SOGLIA_BASSA", "-1")
 
 
 # testo di prova diverso per ogni ricetta, lungo circa `caratteri`
@@ -90,7 +93,8 @@ def test_formato_del_risultato():
     assert set(r) == {"modalita", "query", "query_usate", "ripieghi", "top_k", "capitolo", "nota", "passaggi"}
     assert (r["modalita"], r["query"], r["top_k"], r["capitolo"], r["nota"]) == ("base", "brodo di carne", 5, "", None)
     p = r["passaggi"][0]
-    assert set(p) == {"id", "ricetta", "titolo", "capitolo", "posizione", "score", "testo", "troncato"}
+    assert set(p) == {"id", "ricetta", "titolo", "capitolo", "posizione", "score", "testo", "troncato",
+                      "affidabilita"}
     numero, chunk = p["id"][1:].split("-")
     assert int(numero) == p["ricetta"] and p["posizione"].startswith(f"chunk {chunk} di ")
 
@@ -201,3 +205,62 @@ def test_crea_chat(monkeypatch):
     monkeypatch.setenv("LM_MODEL", "gemma")
     chat = server.crea_chat(carica_configurazione())
     assert chat.modello == "gemma" and chat.base_url == "http://127.0.0.1:1234/v1"
+
+
+
+# --- lezione 8, esercizio 4: soglie sullo score ---
+
+# indice che non trova nulla (per esempio un filtro senza risultati)
+class IndiceVuoto:
+    def cerca(self, domanda, capitolo=None, k=5):
+        return []
+
+
+# Verifica la fascia in ogni passaggio (soglie a -1: tutti affidabili).
+def test_affidabilita_in_ogni_passaggio():
+    assert {p["affidabilita"] for p in cerca(query="brodo")["passaggi"]} == {"affidabile"}
+
+
+# Verifica fasce ed esclusi con soglie appena sotto gli score di due passaggi (i confini esatti sono provati in
+# test_soglie.py: qui lo score del risultato è arrotondato a 4 decimali, la fascia usa quello non arrotondato).
+def test_soglie_escludono_e_classificano(monkeypatch):
+    score = [p["score"] for p in cerca(query="brodo", top_k=3)["passaggi"]]
+    monkeypatch.setenv("SOGLIA_ALTA", str(score[0] - 0.0001))
+    monkeypatch.setenv("SOGLIA_BASSA", str(score[1] - 0.0001))
+    passaggi = cerca(query="brodo", top_k=3)["passaggi"]
+    assert [p["affidabilita"] for p in passaggi] == ["affidabile", "media"]
+
+
+# Verifica la lista vuota dichiarata quando le soglie escludono tutto, e la riga di log.
+def test_lista_vuota_per_le_soglie(monkeypatch, caplog):
+    monkeypatch.setenv("SOGLIA_ALTA", "1")
+    monkeypatch.setenv("SOGLIA_BASSA", "1")
+    with caplog.at_level(logging.INFO, logger="mcp_ricerca"):
+        r = cerca(query="brodo", top_k=3)
+    assert r["passaggi"] == []
+    assert r["nota"] == "nessun passaggio rimasto: lista vuota (tutti sotto la soglia bassa 1.00)"
+    riga = [x.getMessage() for x in caplog.records if x.name == "mcp_ricerca"][-1]
+    assert "soglie=1.00/1.00 esclusi=3" in riga
+
+
+# Verifica la lista vuota dichiarata quando il reranking esclude tutto.
+def test_lista_vuota_dal_reranking_dichiarata(monkeypatch):
+    monkeypatch.setenv("RICERCA_MODALITA", "reranking")
+    monkeypatch.setenv("LM_MODEL", "gemma")
+    monkeypatch.setattr(server, "crea_chat", lambda conf: ChatFinta(['{"id": []}']))
+    r = cerca(query="tiramisù")
+    assert r["nota"] == "nessun passaggio rimasto: lista vuota (esclusi tutti dal reranking)"
+
+
+# Verifica la lista vuota dichiarata senza motivo quando la ricerca non trova nulla.
+def test_lista_vuota_senza_motivo(monkeypatch):
+    monkeypatch.setattr(server, "crea_indice", lambda: IndiceVuoto())
+    r = cerca(query="brodo")
+    assert r["passaggi"] == [] and r["nota"] == "nessun passaggio rimasto: lista vuota"
+
+
+# Verifica che la nota del top_k ridotto resti accanto a quella della lista vuota.
+def test_nota_top_k_e_lista_vuota(monkeypatch):
+    monkeypatch.setenv("SOGLIA_ALTA", "1")
+    monkeypatch.setenv("SOGLIA_BASSA", "1")
+    assert cerca(query="brodo", top_k=50)["nota"].startswith("top_k 50 ridotto a 10; nessun passaggio rimasto")

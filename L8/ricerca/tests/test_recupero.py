@@ -280,3 +280,13 @@ def test_reranking_id_senza_r():
 def test_reranking_id_senza_r_inventato():
     ordinati, ripiego, scartati = riordina("D?", CANDIDATI, ChatFinta(['{"id": ["999-1"]}']), "vettoriale")
     assert ordinati == CANDIDATI and ripiego == "reranking: id inventati → ordine vettoriale" and scartati == 1
+
+
+
+# Verifica che recupera segnali la lista vuota decisa dal reranking (esercizio 4, nota del risultato).
+def test_vuota_dal_reranking():
+    esito = recupera("D?", 5, None, indice=IndiceFinto({"D?": [ris(1, 0, 0.9)]}), chat=ChatFinta(['{"id": []}']),
+                     modalita="reranking", candidati=10, tetto=10)
+    assert esito.vuota_dal_reranking
+    base = recupera("D?", 5, None, indice=IndiceFinto({}), chat=None, modalita="base", candidati=10, tetto=10)
+    assert not base.vuota_dal_reranking

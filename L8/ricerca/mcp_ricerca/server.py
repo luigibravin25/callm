@@ -24,7 +24,8 @@ from app.embedding import EmbedderLMStudio
 from app.errori import ErroreRicerca
 from app.indice import Indice
 from app.recupero import EsitoRecupero, recupera
-from mcp_ricerca.risultato import RisultatoRicerca, limita_top_k, passaggio
+from app.soglie import filtra
+from mcp_ricerca.risultato import RisultatoRicerca, limita_top_k, nota_lista_vuota, passaggio
 
 # URI della resource con i valori del filtro per capitolo
 URI_CAPITOLI = "ricettario://capitoli"
@@ -96,7 +97,7 @@ def _testa_riga(query: str, top_k: int, capitolo: str) -> str:
     return f'query="{breve}" top_k={top_k} capitolo={capitolo.strip() or "-"}'
 
 
-def _cerca(query: str, top_k: int, capitolo: str) -> tuple[RisultatoRicerca, EsitoRecupero]:
+def _cerca(query: str, top_k: int, capitolo: str) -> tuple[RisultatoRicerca, EsitoRecupero, str]:
     """Ricerca vera e propria: gli errori previsti sono ErroreRicerca o errori del client di Qdrant;
     riscrittura e reranking non sollevano errori (ripieghi)."""
     # top_k entro il massimo del codice (oltre: ridotto, con nota)
@@ -106,11 +107,24 @@ def _cerca(query: str, top_k: int, capitolo: str) -> tuple[RisultatoRicerca, Esi
     # stringa vuota o di soli spazi = nessun filtro; il confronto senza maiuscole lo fa la ricerca della lezione 7
     esito = recupera(query, k, capitolo.strip() or None, indice=crea_indice(), chat=crea_chat(conf),
                      modalita=conf.modalita, candidati=conf.candidati, tetto=conf.tetto_rerank)
+    # soglie sullo score (esercizio 4): fascia di ogni passaggio, esclusi non inviati al modello
+    rimasti, esclusi = filtra(esito.risultati, conf.soglia_alta, conf.soglia_bassa)
+    # nessun passaggio rimasto: lista vuota dichiarata nella nota, con il motivo quando è noto
+    if not rimasti:
+        if esito.risultati:
+            motivo = f"tutti sotto la soglia bassa {conf.soglia_bassa:.2f}"
+        elif esito.vuota_dal_reranking:
+            motivo = "esclusi tutti dal reranking"
+        else:
+            motivo = None
+        nota = f"{nota}; {nota_lista_vuota(motivo)}" if nota else nota_lista_vuota(motivo)
     risultato = RisultatoRicerca(modalita=esito.modalita, query=query, query_usate=esito.query_usate,
                                  ripieghi=esito.ripieghi, top_k=k,
                                  capitolo=capitolo.strip().upper() if capitolo.strip() else "", nota=nota,
-                                 passaggi=[passaggio(r) for r in esito.risultati])
-    return risultato, esito
+                                 passaggi=[passaggio(r, f) for r, f in rimasti])
+    # parte della riga di log sulle soglie: valori usati e passaggi esclusi
+    parte_soglie = f"soglie={conf.soglia_alta:.2f}/{conf.soglia_bassa:.2f} esclusi={esclusi}"
+    return risultato, esito, parte_soglie
 
 
 def _parte_recupero(esito: EsitoRecupero) -> str:
@@ -128,7 +142,7 @@ def _parte_recupero(esito: EsitoRecupero) -> str:
 def search_documents(query: str, top_k: int = 5, capitolo: str = "") -> RisultatoRicerca:
     inizio = time.perf_counter()
     try:
-        risultato, esito = _cerca(query, top_k, capitolo)
+        risultato, esito, parte_soglie = _cerca(query, top_k, capitolo)
     except ErroreRicerca as errore:
         # errore previsto: messaggio comprensibile al modello, una riga di log senza traceback
         log.info("%s → errore: %s", _testa_riga(query, top_k, capitolo), errore)
@@ -146,8 +160,9 @@ def search_documents(query: str, top_k: int = 5, capitolo: str = "") -> Risultat
     # riga della chiamata riuscita: primi id con score e durata
     primi = ", ".join(f"{p['id']} {p['score']:.4f}" for p in risultato["passaggi"][:ID_MASSIMI_LOG])
     altri = ", …" if len(risultato["passaggi"]) > ID_MASSIMI_LOG else ""
-    log.info("%s %s → %d passaggi (%s%s) in %.2fs", _testa_riga(query, risultato["top_k"], capitolo),
-             _parte_recupero(esito), len(risultato["passaggi"]), primi, altri, time.perf_counter() - inizio)
+    log.info("%s %s %s → %d passaggi (%s%s) in %.2fs", _testa_riga(query, risultato["top_k"], capitolo),
+             _parte_recupero(esito), parte_soglie, len(risultato["passaggi"]), primi, altri,
+             time.perf_counter() - inizio)
     return risultato
 
 
