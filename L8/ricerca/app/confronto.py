@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from app.valutazione import Domanda
 
+from app.config import Configurazione
+
 # configurazioni a confronto, nell'ordine delle colonne: un solo fattore cambiato tra una e l'altra
 CONFIGURAZIONI = ("base", "riscrittura", "reranking", "entrambe")
 
@@ -16,6 +18,23 @@ class EsitoDomanda:
     chiamate_llm: int  # chiamate al modello di chat
     latenza: float  # secondi della ricerca
     ripieghi: int  # ripieghi della ricerca
+
+
+def intestazione_confronto(conf: Configurazione, k: int, punti: int, soglie: bool) -> dict[str, str]:
+    """Parametri rimasti fissi tra le colonne; con le soglie (esercizio 4) solo quelli che servono a base."""
+    intestazione = {"modello di embedding": conf.modello_embedding}
+    if soglie:
+        # base con e senza soglie: niente gemma, quindi niente modello di chat né tetto del reranking
+        intestazione["soglie (alta/bassa)"] = f"{conf.soglia_alta:.2f}/{conf.soglia_bassa:.2f}"
+    else:
+        intestazione["modello di chat"] = conf.modello_chat
+    intestazione["collezione"] = f"{conf.collezione} ({punti} punti)"
+    intestazione["k"] = str(k)
+    intestazione["candidati per query"] = str(conf.candidati)
+    if not soglie:
+        intestazione["tetto del reranking"] = str(conf.tetto_rerank)
+        intestazione["temperatura"] = "0"
+    return intestazione
 
 
 def posizione_fonte(e: EsitoDomanda) -> int | None:
@@ -101,7 +120,9 @@ def _cella(e: EsitoDomanda) -> str:
 
 def tabelle_markdown(esiti: dict[str, list[EsitoDomanda]], intestazione: dict[str, str]) -> str:
     """Parametri della prova, tabella riassuntiva e tabella domanda per domanda (da copiare in rag-agente.md)."""
-    configurazioni = [c for c in CONFIGURAZIONI if c in esiti]
+    # colonne nell'ordine delle chiavi (base per prima: è il riferimento di migliorata/peggiorata); così si possono
+    # confrontare anche colonne fuori da CONFIGURAZIONI, come «base + soglie» (esercizio 4)
+    configurazioni = list(esiti)
     testa = [f"- {chiave}: {valore}" for chiave, valore in intestazione.items()]
     # tabella riassuntiva: una riga per metrica, una colonna per configurazione
     riepiloghi = {c: riepilogo(esiti[c]) for c in configurazioni}

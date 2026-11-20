@@ -23,6 +23,10 @@ MODALITA = ("base", "riscrittura", "reranking", "entrambe")
 CANDIDATI_MINIMO = 10
 CANDIDATI_MASSIMO = TOP_K_MASSIMO
 
+# soglie sullo score (lezione 8, esercizio 4): predefiniti calibrati sugli score di bge-m3 (docs/rag-agente.md)
+SOGLIA_ALTA_PREDEFINITA = 0.60
+SOGLIA_BASSA_PREDEFINITA = 0.51
+
 
 # contenitore della configurazione: frozen=True la rende immutabile dopo la creazione
 @dataclass(frozen=True)
@@ -41,6 +45,9 @@ class Configurazione:
     modello_chat: str = ""  # id del modello di chat per riscrittura e reranking (LM_MODEL)
     candidati: int = CANDIDATI_MINIMO  # candidati chiesti a Qdrant per ogni query (RICERCA_CANDIDATI)
     tetto_rerank: int = CANDIDATI_MINIMO  # massimo di candidati mandati al reranking (RERANK_TETTO)
+    # lezione 8, esercizio 4: soglie sullo score coseno
+    soglia_alta: float = SOGLIA_ALTA_PREDEFINITA  # da qui in su: affidabile (SOGLIA_ALTA)
+    soglia_bassa: float = SOGLIA_BASSA_PREDEFINITA  # sotto: escluso; tra le due: media (SOGLIA_BASSA)
 
 
 # valore di una variabile senza spazi ai bordi; vuota o assente → predefinito
@@ -59,6 +66,19 @@ def _intero(nome: str, predefinito: int, minimo: int, massimo: int | None = None
         raise ErroreRicerca(f"{nome}={grezzo!r} non è un intero (ammesso: {ammesso})") from None
     if valore < minimo or (massimo is not None and valore > massimo):
         raise ErroreRicerca(f"{nome}={valore} non valido (ammesso: {ammesso})")
+    return valore
+
+
+# numero decimale di una variabile tra minimo e massimo (intervallo del coseno); errore con nome e valori ammessi
+def _decimale(nome: str, predefinito: float, minimo: float = -1.0, massimo: float = 1.0) -> float:
+    grezzo = _testo(nome, str(predefinito))
+    try:
+        valore = float(grezzo)
+    except ValueError:
+        raise ErroreRicerca(f"{nome}={grezzo!r} non è un numero (ammesso: numero tra {minimo:g} e "
+                            f"{massimo:g})") from None
+    if not minimo <= valore <= massimo:
+        raise ErroreRicerca(f"{nome}={valore:g} non valido (ammesso: numero tra {minimo:g} e {massimo:g})")
     return valore
 
 
@@ -91,6 +111,12 @@ def carica_configurazione() -> Configurazione:
     if modalita != "base" and not modello_chat:
         raise ErroreRicerca(f"LM_MODEL non impostata: serve alla modalità {modalita} (riscrittura e reranking "
                             "con il modello di chat di LM Studio), es. $env:LM_MODEL = \"google/gemma-4-e2b\"")
+    # soglie sullo score: la bassa non può superare l'alta
+    soglia_alta = _decimale("SOGLIA_ALTA", SOGLIA_ALTA_PREDEFINITA)
+    soglia_bassa = _decimale("SOGLIA_BASSA", SOGLIA_BASSA_PREDEFINITA)
+    if soglia_bassa > soglia_alta:
+        raise ErroreRicerca(f"SOGLIA_BASSA={soglia_bassa:g} maggiore di SOGLIA_ALTA={soglia_alta:g} (ammesso: "
+                            "SOGLIA_BASSA <= SOGLIA_ALTA)")
     return Configurazione(
         lm_base_url=_testo("LM_BASE_URL", "http://127.0.0.1:1234/v1"),
         modello_embedding=modello,
@@ -105,4 +131,6 @@ def carica_configurazione() -> Configurazione:
         modello_chat=modello_chat,
         candidati=_intero("RICERCA_CANDIDATI", CANDIDATI_MINIMO, CANDIDATI_MINIMO, CANDIDATI_MASSIMO),
         tetto_rerank=_intero("RERANK_TETTO", CANDIDATI_MINIMO, CANDIDATI_MINIMO, CANDIDATI_MASSIMO),
+        soglia_alta=soglia_alta,
+        soglia_bassa=soglia_bassa,
     )

@@ -21,6 +21,7 @@ class Passaggio(TypedDict):
     score: float  # similarità coseno, 4 decimali
     testo: str  # testo del chunk, al massimo TESTO_MASSIMO caratteri
     troncato: bool  # il testo è stato tagliato
+    affidabilita: str  # fascia dello score: "affidabile" o "media" (esercizio 4; gli esclusi non arrivano qui)
 
 
 # risultato completo del tool
@@ -31,7 +32,7 @@ class RisultatoRicerca(TypedDict):
     ripieghi: list[str]  # ripieghi di riscrittura o reranking, vuoto se nessuno (esercizio 3)
     top_k: int  # passaggi richiesti, dopo l'eventuale riduzione
     capitolo: str  # capitolo del filtro, "" se nessuno
-    nota: str | None  # es. top_k ridotto
+    nota: str | None  # es. top_k ridotto, lista vuota dichiarata
     passaggi: list[Passaggio]  # anche meno di top_k, o nessuno se il reranking li esclude tutti
 
 
@@ -60,9 +61,20 @@ def limita_top_k(top_k: int) -> tuple[int, str | None]:
     return top_k, None
 
 
-def passaggio(r: Risultato) -> Passaggio:
-    """Risultato della ricerca → passaggio per il modello (id citabile, fonte, testo troncato)."""
+# indicazione per l'agente quando almeno un passaggio è di affidabilità media (ritocco approvato dopo le prove
+# reali dell'esercizio 4: la sola frase nelle istruzioni dell'agente non bastava a gemma)
+NOTA_MEDIA = ("alcuni passaggi hanno affidabilità media: se li usi, termina la risposta con "
+              "«Da verificare sulla fonte.»")
+
+
+def nota_lista_vuota(motivo: str | None) -> str:
+    """Dichiarazione della lista vuota nel risultato, con il motivo quando è noto (soglie o reranking)."""
+    return "nessun passaggio rimasto: lista vuota" + (f" ({motivo})" if motivo else "")
+
+
+def passaggio(r: Risultato, affidabilita: str) -> Passaggio:
+    """Risultato della ricerca → passaggio per il modello (id citabile, fonte, testo troncato, fascia)."""
     testo, troncato = tronca(r.testo)
     return Passaggio(id=id_citabile(r.numero, r.indice_chunk), ricetta=r.numero, titolo=r.titolo,
                      capitolo=r.capitolo, posizione=f"chunk {r.indice_chunk + 1} di {r.totale_chunk}",
-                     score=round(r.score, 4), testo=testo, troncato=troncato)
+                     score=round(r.score, 4), testo=testo, troncato=troncato, affidabilita=affidabilita)

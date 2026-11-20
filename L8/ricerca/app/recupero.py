@@ -168,6 +168,7 @@ class EsitoRecupero:
     ripieghi: list[str]  # ripieghi della chiamata, vuoto se nessuno
     chiamate_llm: int  # chiamate al modello di chat tentate
     id_scartati: int  # id inventati o doppioni scartati dal reranking
+    vuota_dal_reranking: bool = False  # il reranking ha escluso tutti i candidati (esercizio 4: motivo della nota)
 
 
 def recupera(domanda: str, top_k: int, capitolo: str | None, *, indice, chat: Chat | None, modalita: str,
@@ -187,6 +188,7 @@ def recupera(domanda: str, top_k: int, capitolo: str | None, *, indice, chat: Ch
     # con una sola query la fusione lascia l'ordine vettoriale
     ordinati = fondi_rrf(liste)
     scartati = 0
+    vuota_dal_reranking = False
     # reranking dei primi `tetto` candidati, giudicati sulla domanda originale; senza candidati non serve
     if modalita in ("reranking", "entrambe") and ordinati:
         partenza = "RRF" if modalita == "entrambe" else "vettoriale"
@@ -194,5 +196,8 @@ def recupera(domanda: str, top_k: int, capitolo: str | None, *, indice, chat: Ch
         chiamate += 1
         if ripiego:
             ripieghi.append(ripiego)
+        # lista vuota senza ripiego: il reranking ha escluso tutti i candidati
+        vuota_dal_reranking = not ordinati and ripiego is None
     return EsitoRecupero(risultati=_rinumera(ordinati[:top_k]), modalita=modalita, query_usate=query,
-                         ripieghi=ripieghi, chiamate_llm=chiamate, id_scartati=scartati)
+                         ripieghi=ripieghi, chiamate_llm=chiamate, id_scartati=scartati,
+                         vuota_dal_reranking=vuota_dal_reranking)

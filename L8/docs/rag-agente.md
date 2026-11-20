@@ -203,7 +203,7 @@ Il modulo `ricerca/app/recupero.py` (usato dal server e dallo script di confront
 
 | Modalità | Query | Ordine | Chiamate a gemma |
 |---|---|---|---|
-| `base` | la domanda | vettoriale | 0 |
+| `base` (predefinita) | la sola domanda: ricerca vettoriale semplice dell'esercizio 1 (embedding bge-m3, Qdrant restituisce i chunk più simili) | vettoriale (score coseno) | 0 |
 | `riscrittura` | la domanda + al massimo 2 query riscritte o scomposte | fusione RRF (1/(60 + rango)) | 1 |
 | `reranking` | la domanda | gemma riordina i primi `RERANK_TETTO` candidati e può escluderli | 1 |
 | `entrambe` | come `riscrittura` | RRF, poi reranking sulla domanda originale | 2 |
@@ -331,3 +331,132 @@ messaggio e da come si leggono le sue risposte.
   chiamata MCP).
 - Ripieghi osservati nell'esecuzione finale: 0 su 40 ricerche; il reranking ha scartato 2 id non validi (cacciucco e
   tiramisù in `entrambe`, `scartati=1`) tenendo gli altri.
+
+## Esercizio 4 · soglie di confidenza sullo score
+
+Specifica: `docs/specs/esercizio-4-soglie.md`. Il server di ricerca classifica ogni passaggio con due soglie sullo
+score coseno di bge-m3, lette dalla configurazione (`SOGLIA_ALTA`, `SOGLIA_BASSA`, predefiniti 0.60 e 0.51):
+
+| Score | Fascia (`affidabilita` nel passaggio) | Inviato al modello |
+|---|---|---|
+| ≥ 0.60 | `affidabile` | sì |
+| ≥ 0.51 e < 0.60 | `media` | sì |
+| < 0.51 | escluso | no |
+
+Il confronto usa lo score a 4 decimali, lo stesso mostrato nel risultato (`ricerca/app/soglie.py`: Qdrant calcola in
+float32, quindi 0.51 arriverebbe come 0.50999999); le soglie valgono in ogni modalità. Se non resta
+nessun passaggio, la `nota` del risultato lo dichiara: `nessun passaggio rimasto: lista vuota (tutti sotto la soglia
+bassa 0.51)` (oppure `(esclusi tutti dal reranking)`). Se almeno un passaggio è di affidabilità media, la `nota` dice
+all'agente: `alcuni passaggi hanno affidabilità media: se li usi, termina la risposta con «Da verificare sulla
+fonte.»`. La riga di log aggiunge `soglie=0.60/0.51 esclusi=n`.
+
+Istruzioni dell'agente (in coda a `FRASI_RICERCA`): se la risposta usa anche un solo passaggio di affidabilità media,
+termina con «Da verificare sulla fonte.» (con l'esempio «Si usa vino rosso [R208-1]. Da verificare sulla fonte.»); con
+la lista vuota risponde «Nel ricettario non ho trovato questa informazione» senza citare id.
+
+### Calibrazione (2026-11-20)
+Comando, da `L8\ricerca` con Qdrant e LM Studio accesi: `& ..\venv\Scripts\python.exe calibra.py` (modalità `base`,
+k = 5, le 10 domande dell'esercizio 3; evidenza in `docs/evidenze-lezione8/esercizio4-calibrazione.txt`).
+
+| domanda | tipo | score delle fonti attese | score dei passaggi |
+|---|---|---|---|
+| Quanta farina serve per fare gli gnocchi con 400 g di patate? | con risposta | 89: 0.7173 | 0.7173, 0.6692, 0.6101, 0.6042, 0.5985 |
+| Quanti cappelletti bastano a chi mangia con moderazione? | con risposta | 7: 0.5569 | 0.5569, 0.5484, 0.5409, 0.5409, 0.4965 |
+| Che vino si usa nel pollo alla cacciatora? | con risposta | 208: 0.6136 | 0.6136, 0.5257, 0.5247, 0.5135, 0.5121 |
+| Perché gli gnocchi si disfano quando li butto nell'acqua? | con risposta | 89: 0.6162 | 0.6162, 0.5495, 0.5307, 0.5070, 0.5019 |
+| Com'è il cacciucco sulle coste dell'Adriatico? | con risposta | 455: 0.5344 | 0.5549, 0.5344, 0.5224, 0.5220, 0.4937 |
+| Come si prepara il tiramisù? | senza risposta | — | 0.5447, 0.5371, 0.5365, 0.5340, 0.5337 |
+| Quanti tuorli servono per la salsa maionese e quante uova per gli gnocchi alla romana? | composta | 126: 0.6377, 231: 0.6007 | 0.6377, 0.6007, 0.5751, 0.5698, 0.5465 |
+| Quanta salvia va sui saltimbocca alla romana e quante uova servono per il pan di Spagna? | composta | 222: 0.5429, 599: 0.5190 | 0.5429, 0.5207, 0.5200, 0.5190, 0.5154 |
+| Come si prepara il sushi? | senza risposta | — | 0.5255, 0.5136, 0.5094, 0.5082, 0.5080 |
+| Quanto cioccolato serve per la torta Sacher? | senza risposta | — | 0.5907, 0.5838, 0.5619, 0.5606, 0.5602 |
+
+- score minimo di una fonte attesa (`min_fonti`, chunk migliore della fonte): **0.5190** (Pane di Spagna);
+- score massimo di un passaggio delle domande senza risposta (`max_senza`): **0.5907** (Sacher, «Dolce tedesco»);
+- le due fasce si sovrappongono: 4 fonti vere su 9 (cappelletti 0.5569, saltimbocca 0.5429, cacciucco 0.5344, pan di
+  Spagna 0.5190) hanno uno score più basso del primo passaggio della Sacher.
+
+**Perché 0.60 e 0.51.** Gli score non sono probabilità: sono similarità coseno di bge-m3, tutte strette tra 0.49 e
+0.72 su questo corpus, e cambierebbero con un altro modello. Poiché le fasce si sovrappongono, nessuna coppia di
+soglie separa le domande con risposta da quelle senza: bisognava scegliere quale errore evitare. Il criterio scelto è
+**non perdere risposte vere**:
+- `SOGLIA_BASSA` = `min_fonti` arrotondato per difetto = **0.51**: nessuna fonte attesa viene esclusa (una soglia
+  bassa a 0.60 escluderebbe cappelletti, cacciucco, saltimbocca e pan di Spagna e svuoterebbe tre liste su domande che
+  hanno risposta);
+- `SOGLIA_ALTA` = `max_senza` arrotondato per eccesso = **0.60**: i passaggi delle domande senza risposta restano al
+  massimo di affidabilità media, quindi l'agente li deve dichiarare da verificare (e, non trovandoci la risposta, si
+  astiene).
+
+Il margine è stretto: tra la fonte più debole (0.519) e la soglia bassa ci sono 0.009. L'astensione sulle domande
+senza risposta del confronto resta compito dell'agente; la soglia bassa svuota la lista solo per ricerche lontane dal
+libro (per esempio «ramen», score massimo 0.4487, o «pad thai», 0.4280: evidenza in
+`docs/evidenze-lezione8/esercizio4-score-ramen-pad-thai.txt`).
+
+### Confronto con e senza soglie (2026-11-20)
+Comando: `& ..\venv\Scripts\python.exe confronta.py --soglie` (base una volta sola, la seconda colonna filtra gli
+stessi risultati con le soglie della configurazione; non serve `LM_MODEL`; evidenza in
+`docs/evidenze-lezione8/esercizio4-confronto.txt`).
+
+| metrica | base | base + soglie |
+|---|---|---|
+| fonte nei primi k | 7/7 | 7/7 |
+| astensioni corrette | 0/3 | 0/3 |
+| astensioni errate | 0/7 | 0/7 |
+| MRR | 0.929 | 0.929 |
+| copertura delle composte | 4/4 | 4/4 |
+
+Le metriche coincidono, ed è l'effetto atteso del criterio: la soglia bassa è calcolata proprio per non escludere
+nessuna fonte di queste domande (quindi né fonti perse né astensioni errate), e i passaggi delle domande senza
+risposta stanno tutti sopra 0.51 (quindi nessuna lista svuotata). Le soglie cambiano però ciò che riceve il modello:
+- i passaggi sotto 0.51 sono esclusi (il sushi passa da 5 a 2 passaggi, «Perché gli gnocchi si disfano…» da 5 a 3,
+  cappelletti e cacciucco perdono il quinto);
+- ogni passaggio porta la sua fascia: con queste domande solo gnocchi, vino e maionese hanno passaggi affidabili, e
+  tutti i passaggi delle domande senza risposta sono di affidabilità media, da dichiarare da verificare.
+
+### Le tre tracce (2026-11-20, `google/gemma-4-e2b`, modalità `base`, soglie 0.60/0.51)
+Evidenze complete in `docs/evidenze-lezione8/esercizio4-traccia-*.txt` (domanda, risposta, log dell'agente).
+
+**Risposta da passaggi affidabili**: «Che vino si usa nel pollo alla cacciatora?»
+
+```text
+[mcp_ricerca] query="vino pollo alla cacciatora" top_k=5 capitolo=- modalita=base query=1 llm=0 soglie=0.60/0.51
+esclusi=0 → 5 passaggi (R208-1 0.6549, R43-2 0.5574, R43-1 0.5529, R211-1 0.5435, R541-1 0.5390) in 2.25s
+risposta: Si può usare mezzo bicchiere di San Giovese o altro vino rosso del migliore per condire il pollo alla
+cacciatora, insieme a sugo di pomodoro [R208-1].
+[citazioni] verificate=R208-1 sconosciute=- ricerche=1 passaggi=5
+```
+
+R208-1 è l'unico passaggio affidabile ed è l'unico usato: correttamente nessuna dichiarazione di verifica.
+
+**Risposta che dichiara la verifica**: «Com'è il cacciucco sulle coste dell'Adriatico?»
+
+```text
+[mcp_ricerca] query="cacciucco sulle coste dell'Adriatico" top_k=5 capitolo=- modalita=base query=1 llm=0
+soglie=0.60/0.51 esclusi=0 → 5 passaggi (R481-1 0.5459, R455-2 0.5450, R456-1 0.5340, R455-1 0.5297, R455-3 0.5235)
+risposta: Il cacciucco sulle coste dell'Adriatico è un piatto tradizionale dove si utilizzano pesci freschi
+disponibili nelle acque locali [R455-1]. […] [R455-3]. Da verificare sulla fonte.
+[citazioni] verificate=R455-1,R455-2,R456-1,R455-3 sconosciute=- ricerche=1 passaggi=5
+```
+
+Tutti i passaggi sono di affidabilità media e la risposta lo dichiara.
+
+**Domanda senza risposta, lista vuota e astensione**: «Il ramen è nel ricettario dell'Artusi?»
+
+```text
+[mcp_ricerca] query="ramen" top_k=5 capitolo=- modalita=base query=1 llm=0 soglie=0.60/0.51 esclusi=5 → 0 passaggi
+"nota": "nessun passaggio rimasto: lista vuota (tutti sotto la soglia bassa 0.51)"
+risposta: Nel ricettario di Pellegrino Artusi non ho trovato informazioni riguardanti il ramen.
+[revisore] coerente motivo="Il ramen è nel ricettario dell'Artusi: astensione dichiarata, coperta" → fine
+[citazioni] verificate=- sconosciute=- ricerche=1 passaggi=0
+```
+
+### Come ci si è arrivati (tentativi in `docs/evidenze-lezione8/esercizio4-tentativo-*.txt`)
+- «Quanti cappelletti bastano a chi mangia con moderazione?» è stata rifiutata dal router come fuori ambito: per la
+  traccia «da verificare» si è usato il cacciucco, domanda della lezione 7 con tutti i passaggi di affidabilità media.
+- «Come si prepara il ramen giapponese?»: gemma ha cercato «come si prepara il ramen», che somiglia al testo delle
+  ricette (5 passaggi tra 0.518 e 0.529): lista non vuota, ma astensione. Con «Il ramen è nel ricettario
+  dell'Artusi?» gemma cerca «ramen» e la lista si svuota (lo stesso con «Come si fa il pad thai?»; «Che cos'è il
+  kimchi?» è stata rifiutata dal router).
+- Con la sola frase nelle istruzioni, e poi con un esempio, gemma usava passaggi di affidabilità media senza
+  dichiarare la verifica (due tentativi). L'indicazione nella `nota` del risultato, letta subito prima di rispondere,
+  ha fatto comparire «Da verificare sulla fonte.»: è sempre l'agente a dichiararla, il codice non modifica la risposta.

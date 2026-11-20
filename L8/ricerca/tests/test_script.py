@@ -4,6 +4,7 @@ import logging
 import pytest
 from qdrant_client import QdrantClient
 
+import calibra
 import cerca
 import confronta
 import ingestion
@@ -61,7 +62,7 @@ def test_argomenti():
 
 
 @pytest.mark.parametrize("principale", [lambda: cerca.main(["--help"]), lambda: valuta.main(["--help"]),
-                                        lambda: confronta.main(["--help"])])
+                                        lambda: confronta.main(["--help"]), lambda: calibra.main(["--help"])])
 def test_help_senza_configurazione(monkeypatch, capsys, principale):
     # l'aiuto non richiede variabili d'ambiente
     monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
@@ -156,3 +157,16 @@ def test_confronta_senza_avvisi_di_sintassi():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         compile(sorgente, "confronta.py", "exec")
+
+
+# Verifica che con --soglie il confronto non richieda LM_MODEL (nessuna chiamata a gemma in base): l'errore
+# atteso a servizi spenti è quello di Qdrant, non quello di LM_MODEL.
+def test_confronta_soglie_senza_lm_model(monkeypatch, caplog):
+    monkeypatch.setenv("EMBEDDING_MODEL", "bge")
+    monkeypatch.setenv("QDRANT_URL", "http://127.0.0.1:6399")
+    for nome in ("LM_MODEL", "RICERCA_MODALITA"):
+        monkeypatch.delenv(nome, raising=False)
+    with pytest.raises(SystemExit) as uscita:
+        confronta.main(["--soglie"])
+    assert uscita.value.code == 1
+    assert "LM_MODEL" not in caplog.text and "6399" in caplog.text

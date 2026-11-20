@@ -42,6 +42,16 @@ def test_limita_top_k():
 def test_passaggio_da_risultato():
     r = Risultato(posizione=1, score=0.61357, numero=208, titolo="Pollo alla cacciatora", capitolo="FRITTI",
                   indice_chunk=0, totale_chunk=1, testo="Prendete un pollo.")
-    assert passaggio(r) == {"id": "R208-1", "ricetta": 208, "titolo": "Pollo alla cacciatora", "capitolo": "FRITTI",
-                            "posizione": "chunk 1 di 1", "score": 0.6136, "testo": "Prendete un pollo.",
-                            "troncato": False}
+    assert passaggio(r, "affidabile") == {"id": "R208-1", "ricetta": 208, "titolo": "Pollo alla cacciatora",
+                                          "capitolo": "FRITTI", "posizione": "chunk 1 di 1", "score": 0.6136,
+                                          "testo": "Prendete un pollo.", "troncato": False,
+                                          "affidabilita": "affidabile"}
+
+
+
+# Verifica il testo della lista vuota dichiarata, con e senza motivo (esercizio 4).
+def test_nota_lista_vuota():
+    from mcp_ricerca.risultato import nota_lista_vuota
+    assert nota_lista_vuota(None) == "nessun passaggio rimasto: lista vuota"
+    assert nota_lista_vuota("esclusi tutti dal reranking") == \
+        "nessun passaggio rimasto: lista vuota (esclusi tutti dal reranking)"

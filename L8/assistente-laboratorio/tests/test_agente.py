@@ -260,3 +260,16 @@ def test_prepara_senza_ricerca(monkeypatch):
     agente.turno([HumanMessage("Ciao")], [], "")
     prompt = _prompt_di_sistema(modelli[0])
     assert FRASE_SENZA_RICERCA in prompt and FRASI_RICERCA not in prompt
+
+
+# --- lezione 8, esercizio 4: fasce di affidabilità ---
+
+# Verifica la frase sulle fasce in coda alle istruzioni della ricerca (testo approvato nella specifica, §10).
+def test_frase_delle_fasce_nelle_istruzioni():
+    from app.llm import FRASI_RICERCA
+    # ritocco dopo la prova reale (gemma non dichiarava la verifica): una frase fissa in fondo alla risposta
+    assert "anche un solo passaggio con affidabilita «media»" in FRASI_RICERCA
+    # ritocco 2: un esempio concreto (come per le citazioni nell'esercizio 2)
+    assert ("termina la risposta con la frase «Da verificare sulla fonte.», per esempio: «Si usa vino rosso "
+            "[R208-1]. Da verificare sulla fonte.»") in FRASI_RICERCA
+    assert "lista di passaggi vuota" in FRASI_RICERCA and FRASI_RICERCA.endswith("non citare nessun id.")
